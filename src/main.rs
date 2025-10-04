@@ -52,12 +52,15 @@ fn main() {
         &p, sender_init_s, &delta_s
     ).unwrap();
     assert_eq!(sender_receipt.secrets.x, 40);
+
+    // In reality you do this as sender and send to reciever to fullfill
     let mut receiver_receipt = trxs::state_transition_receiver(
         &p, receiver_init_s, &delta_s
     ).unwrap();
     assert_eq!(receiver_receipt.secrets.x, 2);
 
     // Copy values from receipt into TRX
+    // In practice sender would copy and send to receiver to copy
     trx.copy_sender_receipt(&sender, &mut sender_receipt);
     trx.copy_receiver_receipt(&receiver, &mut receiver_receipt);
 

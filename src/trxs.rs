@@ -8,6 +8,24 @@ const VALUE_SIZE: usize = 64;
 pub const PROOF_LENGTH: usize = 672; // (2(log2(64)) + 9) * 32
 pub const TRX_LENGTH: usize = (2 * PROOF_LENGTH) + (5 * 32);
 
+/*
+*   TRX FORMAT     |size|
+*   ---------------------- ======I
+*   | sender_commit   32 |       I
+*   | sender_proof   672 |       I== Sender Hashes
+*   |--------------------|       I      & signs
+*   | sender          32 | ==========I
+*   | delta_commit    32 |       I   I
+*   | receiver        32 | ======I   I
+*   |------------------- |           I== Receiver Hashes 
+*   | receiver_commit 32 |           I      & signs
+*   | receiver_proof 672 |           I
+*   ---------------------- ==========I
+*   | sender_sig      64 |
+*   | receiver_sig    64 |
+*   ----------------------
+*/
+
 pub struct Trx {
     pub delta_commit: CompressedRistretto,
 
@@ -70,51 +88,61 @@ impl Trx {
     }
 
     pub fn sign_sender(&mut self, priv_key: &Scalar, prefix: &[u8;32]) {
-        let sig = accounts::sign(priv_key, prefix, &self.buffer[..TRX_LENGTH]);
+        let data = &self.buffer[..TRX_LENGTH - PROOF_LENGTH - 32];
+        let sig = accounts::sign(priv_key, prefix, data);
         self.buffer[TRX_LENGTH..TRX_LENGTH+64].copy_from_slice(&sig);
     }
 
     pub fn sign_receiver(&mut self, priv_key: &Scalar, prefix: &[u8;32]) {
-        let sig = accounts::sign(priv_key, prefix, &self.buffer[..TRX_LENGTH]);
+        let data = &self.buffer[PROOF_LENGTH + 32..TRX_LENGTH];
+        let sig = accounts::sign(priv_key, prefix, data);
         self.buffer[TRX_LENGTH+64..].copy_from_slice(&sig);
     }
 
     pub fn verify_signatures(&self) -> bool {
         let sender_sig = &self.buffer[TRX_LENGTH..TRX_LENGTH+64];
+        let sender_data = &self.buffer[..TRX_LENGTH - PROOF_LENGTH - 32];
+
         let receiver_sig = &self.buffer[TRX_LENGTH+64..];
-        let raw_trx = &self.buffer[..TRX_LENGTH];
-        return accounts::verify(&self.sender, raw_trx, sender_sig)
-        && accounts::verify(&self.receiver, raw_trx, receiver_sig)
+        let receiver_data = &self.buffer[PROOF_LENGTH + 32..TRX_LENGTH];
+
+        return accounts::verify(&self.sender, sender_data, sender_sig)
+        && accounts::verify(&self.receiver, receiver_data, receiver_sig)
     }
 
     pub fn to_bytes(&mut self) {
-        self.buffer[..32].copy_from_slice(&self.delta_commit.to_bytes());
 
-        self.buffer[32..64].copy_from_slice(&self.sender);
-        self.buffer[64..96].copy_from_slice(&self.sender_commit.to_bytes());
+        let mut c = 32;
+        // Sender
+        self.buffer[..c].copy_from_slice(&self.sender_commit.to_bytes());
         if let Some(proof) = &self.sender_proof.take() {
-            self.buffer[96..96+PROOF_LENGTH].copy_from_slice(&proof.to_bytes());
+            self.buffer[c..c+PROOF_LENGTH].copy_from_slice(&proof.to_bytes());
+            c += PROOF_LENGTH;
         }
 
-        let p = 96 + PROOF_LENGTH;
-        self.buffer[p..p+32].copy_from_slice(&self.receiver);
-        self.buffer[p+32..p+64].copy_from_slice(&self.receiver_commit.to_bytes());
+        // Shared
+        self.buffer[c..c+32].copy_from_slice(&self.sender);
+        self.buffer[c+32..c+64].copy_from_slice(&self.delta_commit.to_bytes());
+        self.buffer[c+64..c+96].copy_from_slice(&self.receiver);
+
+        // Recevier
+        self.buffer[c+96..c+128].copy_from_slice(&self.receiver_commit.to_bytes());
         if let Some(proof) = &self.receiver_proof.take() {
-            self.buffer[p+64..TRX_LENGTH].copy_from_slice(&proof.to_bytes());
+            self.buffer[c+128..TRX_LENGTH].copy_from_slice(&proof.to_bytes());
         }
     }
 
     pub fn from_bytes(&mut self) -> Result<(), Box<dyn error::Error>> {
-        self.delta_commit.0.copy_from_slice(&mut self.buffer[..32]);
+        self.sender_commit.0.copy_from_slice(&mut self.buffer[..32]);
+        self.sender_proof = Some(RangeProof::from_bytes(&self.buffer[32..32+PROOF_LENGTH])?);
 
-        self.sender.copy_from_slice(&self.buffer[32..64]);
-        self.sender_commit.0.copy_from_slice(&mut self.buffer[64..96]);
-        self.sender_proof = Some(RangeProof::from_bytes(&self.buffer[96..96+PROOF_LENGTH])?);
+        let p1 = 32 + PROOF_LENGTH;
+        self.sender.copy_from_slice(&self.buffer[p1..p1+32]);
+        self.delta_commit.0.copy_from_slice(&mut self.buffer[p1+32..p1+64]);
+        self.receiver.copy_from_slice(&self.buffer[p1+64..p1+96]);
 
-        let p = 96+PROOF_LENGTH;
-        self.receiver.copy_from_slice(&self.buffer[p..p+32]);
-        self.receiver_commit.0.copy_from_slice(&mut self.buffer[p+32..p+64]);
-        self.receiver_proof = Some(RangeProof::from_bytes(&self.buffer[p+64..TRX_LENGTH])?);
+        self.receiver_commit.0.copy_from_slice(&mut self.buffer[p1+96..p1+128]);
+        self.receiver_proof = Some(RangeProof::from_bytes(&self.buffer[p1+128..TRX_LENGTH])?);
         Ok(())
     }
 }
