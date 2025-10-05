@@ -2,17 +2,18 @@ use rand::{rngs::OsRng, TryRngCore};
 use bulletproofs::{BulletproofGens, PedersenGens};
 
 pub fn random_b32() -> [u8; 32] {
-    let mut seed = [0u8; 32];
-    OsRng.try_fill_bytes(&mut seed).unwrap();
-    seed
+    let mut buff = [0u8; 32];
+    OsRng.try_fill_bytes(&mut buff).unwrap();
+    buff
 }
 
-pub struct Params {
+pub struct TrxGenerators {
     pub pedersen: PedersenGens,
     pub bullet: BulletproofGens,
     pub tag: &'static [u8],
 }
-impl Params {
+
+impl TrxGenerators {
     pub fn new(tag: &'static str, bullet_count: usize) -> Self {
         Self { 
             pedersen: PedersenGens::default(), 

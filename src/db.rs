@@ -5,8 +5,7 @@ pub fn start_db() -> Result<Connection> {
     let conn = Connection::open("ledger.sqlite3")?;
     conn.execute(
         "CREATE TABLE IF NOT EXISTS ledger (
-            account BLOB PRIMARY KEY,
-            balance BLOB
+            claim BLOB PRIMARY KEY
         )", 
         [],
     )?;
@@ -15,36 +14,21 @@ pub fn start_db() -> Result<Connection> {
 
 pub fn initialize_account(
     conn: &Connection, 
-    account: &[u8;32], 
-    balance: &CompressedRistretto,
+    commit: &CompressedRistretto,
 ) -> Result<usize> {
     conn.execute(
-        "INSERT OR IGNORE INTO ledger (account, balance) VALUES (?1, ?2)",
-        [account, balance.as_bytes()],
+        "INSERT OR IGNORE INTO ledger (claim) VALUES (?1)",
+        [commit.as_bytes()],
     )
 }
 
 pub fn update_balance(
     conn: &Connection, 
-    account: &[u8;32], 
-    balance: &CompressedRistretto,
+    commit: &CompressedRistretto,
+    new_commit: &CompressedRistretto,
 ) -> Result<usize> {
     conn.execute(
-        "UPDATE ledger SET balance = ?1 WHERE account = ?2", 
-        [balance.as_bytes(), account],
+        "UPDATE ledger SET claim = ?1 WHERE claim = ?2", 
+        [new_commit.as_bytes(), commit.as_bytes()],
     )
 }
-
-pub fn get_balance(
-    conn: &Connection, 
-    account: &[u8;32], 
-) -> Result<CompressedRistretto> {
-    Ok(CompressedRistretto(
-        conn.query_row(
-            "SELECT balance FROM ledger WHERE account = ?1", 
-            [account], 
-            |row| row.get(0)
-        )?
-    ))
-}
-

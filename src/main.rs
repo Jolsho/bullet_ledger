@@ -1,103 +1,57 @@
-use std::fs;
-use std::time::Instant;
-
 mod trxs;
-mod accounts;
-mod utils;
+mod generators;
 mod db;
 mod stream;
+mod tests;
+mod schnorr;
 
 fn main() {
-    println!("TRANSACTION LENGTH: {} bytes", trxs::TRX_LENGTH);
-    println!("PROOF LENGTH: {} bytes", trxs::PROOF_LENGTH);
-    let ledger = db::start_db().unwrap();
-    let p = utils::Params::new("custom_zkp", 1);
-
-
-
-    // ==================================================
-    // Initialize some balances to work with
-    // ==================================================
-
-    // initialize sender account
-    let sender_seed = utils::random_b32();
-    let (sender, sender_pre, sender_priv) = accounts::keypair_from_seed(&sender_seed);
-    let (sender_init_s, sender_init_c) = trxs::value_commit(&p, 42);
-    db::initialize_account(&ledger, &sender, &sender_init_c).unwrap();
-
-    // initialize receiver account
-    let rec_seed = utils::random_b32();
-    let (receiver, receiver_pre, receiver_priv) = accounts::keypair_from_seed(&rec_seed);
-    let (receiver_init_s, receiver_init_c) = trxs::value_commit(&p, 0);
-    db::initialize_account(&ledger, &receiver, &receiver_init_c).unwrap();
-
-
-
-    // ==================================================
-    // generate commits and proofs and build trx
-    // ==================================================
-    let start = Instant::now();
-
-    // sender and receiver share the same delta commit
-    let (delta_s, delta_c) = trxs::value_commit(&p, 2);
-
-    // start with the basics
-    let mut trx = trxs::Trx::new();
-    trx.set_delta_commit(&delta_c);
-    trx.set_sender(&sender);
-    trx.set_receiver(&receiver);
-
-    // both also commit to own final balance and generate proof
-    let mut sender_receipt = trxs::state_transition_sender(
-        &p, sender_init_s, &delta_s
-    ).unwrap();
-    assert_eq!(sender_receipt.secrets.x, 40);
-
-    // In reality you do this as sender and send to reciever to fullfill
-    let mut receiver_receipt = trxs::state_transition_receiver(
-        &p, receiver_init_s, &delta_s
-    ).unwrap();
-    assert_eq!(receiver_receipt.secrets.x, 2);
-
-    // Copy values from receipt into TRX
-    // In practice sender would copy and send to receiver to copy
-    trx.copy_sender_receipt(&sender, &mut sender_receipt);
-    trx.copy_receiver_receipt(&receiver, &mut receiver_receipt);
-
-    // Make sure everything is written to internal buffer
-    trx.to_bytes();
-
-    // both sign transaction for testing
-    // in practice sender would sign and send to receiver to submit
-    trx.sign_sender(&sender_priv, &sender_pre);
-    trx.sign_receiver(&receiver_priv, &receiver_pre);
-
-    println!("Generation 2x(time estimate): {:.3?}", start.elapsed());
-
-
-
-    // ==================================================
-    // trx_bytes WOULD BE gossiped through network 
-    // for purpose of testing just rebuild and validate
-    // ==================================================
-    let start = Instant::now();
-
-    // reconstruct trx
-    trx.from_bytes().unwrap();
-
-    // validate Trx signatures
-    assert!(trx.verify_signatures());
-
-    // get account balance from local db & validate state transition
-    let sender_balance = db::get_balance(&ledger, &sender).unwrap();
-    let receiver_balance = db::get_balance(&ledger, &receiver).unwrap();
-    assert!(trxs::validate_trx(&p, &mut trx, &sender_balance, &receiver_balance));
-
-    // update local balance
-    db::update_balance(&ledger, &sender, &trx.sender_commit).unwrap();
-    db::update_balance(&ledger, &receiver, &trx.receiver_commit).unwrap();
-
-    println!("Validation (time estimate): {:.3?}", start.elapsed());
-    let _ = fs::remove_file("ledger.sqlite3");
 }
 
+/*
+*   Have working bullet_proof, account based structure.
+*       Can do trxs in the clear and hidden.
+*       Uses signatures for state transitions.
+*       Required by both parties, because of hiding factor.
+*       (will discuss later, but could do no signature for public Trxs)
+*
+*   Also have "Schnorr" which does hidden and not but without accounts. 
+*       Balances essentially act as accounts. 
+*       Then you can put these all in a merkle tree. 
+*       Potential for super small state without accounts. 
+*       Kinda interesting, but has caveats.
+*
+*
+*   Either way Receiver still has to be aware of what they are receiving.
+*       IF HIDDEN:: They have to agree to it, to update (r * H + x * G).
+*
+*       ELSE:: sender reveals the value(or x * G) to the public. Then the 
+*       receiver would have to retrieve x * G, So that they could update 
+*       their internal balance(claim).
+*
+*
+*   Well if you do it where the receiver doesn't need to approve
+*       each transaction that means you need to hold historical state.
+*       I personally don't like that. I would rather the state stay
+*       temporally lean. So that would mean we would ideally make 
+*       receivers publish TRXS. Which I think in practice is fine.
+*       Since they don't have to generate proofs, its not that difficult.
+*       You could easily process these rapidly.
+*
+*   Otherwise,
+*       you are going to need to hold past state. And maybe you could 
+*       implement some way of removing retrieved state. So like when a 
+*       person comes back online, they catch up, and tell the other 
+*       nodes they can trim that part of the history. You could do 
+*       that as well. And just do a schnoor to prove they "own" that 
+*       series of transitions.
+*       
+*
+*   How to do Trx Fees?
+*       You would have some number left in the clear.
+*       With a corresponding delta.
+*       The senders final state includes that deduction.
+*       You use transaction context hash for binding to TRX.
+*           this way people cant just take it
+*       The network can realize that delta wasn't intended for this.
+*/
