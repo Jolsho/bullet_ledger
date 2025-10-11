@@ -14,7 +14,7 @@ pub struct NetMsg {
     pub addr: Option<SocketAddr>,
     pub code: PacketCode,
     pub from_code: i32,
-    pub body: Vec<u8>,
+    pub body: Box<Vec<u8>>,
 }
 const DEFAULT_BUFFER_SIZE:usize = 1024;
 
@@ -22,10 +22,10 @@ impl Default for NetMsg {
     fn default() -> Self { 
         Self { 
             code: PacketCode::None,
-            stream_fd: 0, 
+            stream_fd: -1, 
             from_code: 0,
             addr: None,
-            body: Vec::with_capacity(DEFAULT_BUFFER_SIZE)
+            body: Box::new(Vec::with_capacity(DEFAULT_BUFFER_SIZE))
         }
     }
 }

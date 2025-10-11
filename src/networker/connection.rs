@@ -1,11 +1,12 @@
-use std::collections::HashMap;
 use std::io::{self, Error, Read, Write};
 use std::net::TcpStream;
 use std::os::fd::AsRawFd;
 use std::time::Instant;
 use nix::sys::epoll::EpollEvent;
 use nix::sys::socket::{getsockopt, sockopt};
-use crate::msging::{Poller, RingCons};
+use ringbuf::traits::{Consumer, Observer, Producer};
+use ringbuf::HeapRb;
+use crate::msging::Poller;
 use crate::networker::handlers::code_switcher;
 use crate::networker::header::{Header, HEADER_LEN};
 use crate::networker::netman::NetMsg;
@@ -42,7 +43,7 @@ pub struct Connection {
 
     pub write_buf: Vec<u8>,
     pub write_pos: usize,
-    pub outbound: Vec<Box<NetMsg>>
+    pub outbound: HeapRb<Box<NetMsg>>
 }
 
 impl Connection {
@@ -58,7 +59,7 @@ impl Connection {
             write_pos: 0,
             state: Some(ConnState::Negotiating(dir)),
             last_deadline: next_deadline(net_man.config.idle_timeout),
-            outbound: Vec::with_capacity(3),
+            outbound: HeapRb::new(3),
         })
     }
 
@@ -249,7 +250,7 @@ impl Connection {
         if self.enable_writable(epoll).is_err() {
             return Err(msg);
         }
-        Ok(self.outbound.push(msg))
+        self.outbound.try_push(msg)
     }
 
 
@@ -261,45 +262,50 @@ impl Connection {
     ) -> io::Result<bool> {
 
         // If there appears to be nothing to write
-        // check outbound queue for queued msgs...
+        // check outbound buffer for queued msgs...
         if self.write_buf.len() == 0 {
-            if let Some(msg) = self.outbound.pop() {
+            if let Some(mut msg) = self.outbound.try_pop() {
+
                 self.header.code = msg.code;
-                self.write_buf.copy_from_slice(&msg.body);
-                if let Some(cons) = messengers.get_mut(&msg.from_code) {
-                    // Recycle when done
-                    cons.recycle(msg);
+                // switch buffers
+                std::mem::swap(&mut self.write_buf, &mut msg.body);
+               
+                if let Some(consumer) = messengers.get_mut(&msg.from_code) {
+                    // Recycle msg
+                    consumer.recycle(msg);
                 }
             } else {
+
+                let _ = self.disable_writable(&mut net_man.epoll);
                 return Ok(false)
             }
         }
 
         // WRITE HEADER
-        let did_work = self.write_buffer(Self::HEADER)?;
+        let did_work = self.write_to_stream(Self::HEADER)?;
         self.write_pos = 0;
         if !did_work { return Ok(did_work); }
 
         // WRITE BODY
-        let did_work = self.write_buffer(Self::BODY)?;
+        let did_work = self.write_to_stream(Self::BODY)?;
 
         // fully written
         self.write_buf.clear();
         self.write_pos = 0;
-        if let Some(ConnState::Writing(Some(next_state))) = &self.state {
-            self.state = Some(*next_state.clone());
-        } else {
-            self.state = Some(ConnState::ReadingHeader(None));
-        }
+        self.state = match self.state.take() {
+            Some(ConnState::Writing(Some(next_state))) => Some(*next_state),
+            Some(ConnState::Writing(None)) | None => Some(ConnState::ReadingHeader(None)),
+            state => state,
+        };
 
         // if no more messages queued
-        if self.outbound.len() == 0 {
+        if self.outbound.occupied_len() == 0 {
             let _ = self.disable_writable(&mut net_man.epoll);
         }
         Ok(did_work)
     }
 
-    pub fn write_buffer(&mut self, buffer: u8) -> io::Result<bool> {
+    pub fn write_to_stream(&mut self, buffer: u8) -> io::Result<bool> {
         let mut did_work = false;
 
         let buff: &mut[u8];
@@ -322,6 +328,8 @@ impl Connection {
         }
         Ok(did_work)
     }
+
+
 
     // -- ERROR ---------------------------------------------------------------
     #[allow(unused)]

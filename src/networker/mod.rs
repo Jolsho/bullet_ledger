@@ -9,17 +9,17 @@ use nix::sys::epoll::{EpollEvent, EpollFlags};
 use crate::config::NetworkConfig;
 use crate::core::msg::CoreMsg;
 use crate::msging::{MsgCons, MsgProd, Poller, RingCons};
-use crate::networker::connection::{ConnDirection, Connection};
-use crate::networker::handlers::{dial_outbound, handle_new_connection};
-use crate::networker::netman::{NetMan, NetMsg};
-use crate::shutdown::should_shutdown;
-use crate::trxs::Trx;
-use crate::{CORE, TRX_POOL};
+use crate::{CORE, TRX_POOL, trxs::Trx, shutdown};
+
+use connection::{ConnDirection, Connection};
+use initial::{dial_outbound, new_connection};
+use netman::{NetMan, NetMsg};
 
 pub mod handlers;
 pub mod connection;
 pub mod netman;
 pub mod header;
+pub mod initial;
 
 type ConsMap = HashMap<i32, Connection>;
 pub fn next_deadline(timeout: u64) -> Instant {
@@ -66,7 +66,7 @@ pub fn start_networker(
     std::thread::spawn(move || {
         loop {
             // GLOBAL VAR OF ACTIVE STATUS
-            if should_shutdown() { break; }
+            if shutdown::should_shutdown() { break; }
 
             // GET THE NEXT DEADLINE FOR ACTIVE CONNECTIONS
             // OR DEFAULT DEADLINE FROM NOW
@@ -85,7 +85,7 @@ pub fn start_networker(
                     fd if fd == listener_fd => {
                         if let Ok((stream, addr)) = listener.accept() {
                             // println!("new_conn: {}", stream.as_raw_fd());
-                            handle_new_connection( 
+                            new_connection( 
                                 stream, &addr, 
                                 &mut net_man, &mut conns,
                                 ConnDirection::Inbound,
@@ -103,7 +103,7 @@ pub fn start_networker(
                                     if let Some(addr) = msg.addr.take() {
                                         if let Ok(stream) = dial_outbound(&addr) {
                                             let stream_fd = stream.as_raw_fd();
-                                            handle_new_connection( 
+                                            new_connection( 
                                                 stream, &addr, 
                                                 &mut net_man, &mut conns,
                                                 ConnDirection::Outbound,
@@ -113,10 +113,8 @@ pub fn start_networker(
                                     }
                                 }
                                 if conn.is_some() {
-                                    if let Err(msg) = conn.unwrap()
-                                        .queue_msg(msg, &mut net_man.epoll) 
-                                    {
-                                        from.recycle(msg);
+                                    if let Err(msg) = conn.unwrap().queue_msg(msg, &mut net_man.epoll) { 
+                                        from.recycle(msg); 
                                     }
                                 } else {
                                     from.recycle(msg);
@@ -147,6 +145,7 @@ pub fn start_networker(
                             if res.is_err() {
                                 let _ = net_man.epoll.delete(&conn.stream);
                                 if let Some(c) = conns.remove(&fd) {
+                                    println!("Connection Closed");
                                     net_man.put_buff(c.read_buf);
                                     net_man.put_buff(c.write_buf);
                                 }
