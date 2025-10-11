@@ -1,0 +1,48 @@
+# =====================
+# Default Configuration
+# =====================
+
+[network]
+# The address and port your server will bind to.
+bind_addr = "127.0.0.1:4141"
+
+# Time (in seconds) before closing an idle connection.
+idle_timeout = 5
+
+# Maximum number of active TCP connections allowed.
+max_connections = 512
+
+# The capacity of your event buffer (e.g., for epoll events).
+event_buffer_size = 512
+
+# Poll timeout (in milliseconds) for idle network polls.
+idle_polltimeout = 100
+
+# How many buffers of size max_buffer_size net_man holds.
+net_man_buffers_cap = 512
+
+# The maximum buffer size per connection (in bytes).
+max_buffer_size = 2048
+
+
+[database]
+# Database connection URI (e.g., PostgreSQL).
+uri = "postgres://user:password@localhost:5432/mydb"
+
+# Maximum number of pooled database connections.
+pool_size = 16
+
+
+[core]
+# Poll timeout (in milliseconds) for idle core tasks.
+idle_polltimeout = 100
+
+# Initial transaction buffer length (e.g., preallocated task queue size).
+init_trx_len = 512
+
+# Event queue capacity (used for cross-actor event passing).
+event_len = 128
+
+# TRX pool capacity.
+pool_cap = 8
+

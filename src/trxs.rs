@@ -2,15 +2,16 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use merlin::Transcript;
 use bulletproofs::{ProofError, RangeProof};
 use sha2::{Digest, Sha256};
-use crate::generators::{random_b32, TrxGenerators};
-use crate::schnorr::SchnorrProof;
+use crate::crypto::{random_b32, TrxGenerators};
+use crate::crypto::schnorr::SchnorrProof;
 
 const VALUE_SIZE: usize = 64;
 pub const PROOF_LENGTH: usize = 672; // (2(log2(64)) + 9) * 32
-pub const TRX_LENGTH: usize = PROOF_LENGTH + (6 * 32);
+pub const TRX_LENGTH: usize = PROOF_LENGTH + (6 * 32) + 8;
 pub const TOTAL_TRX_PROOF: usize = TRX_LENGTH + (96 *2);
 pub const SENDER: bool = true;
 pub const RECEIVER: bool = false;
+
 
 #[derive(Clone)]
 pub struct TrxSecrets {
@@ -48,8 +49,9 @@ pub fn visible_value_commit(p: &TrxGenerators, val: u64) -> TrxSecrets {
 *   | sender_proof_F    672 |   
 *   |-----------------------|      
 *   | sender_commit_I    32 | ======I 
-*   | delta_commit       32 |       I Schnorr Hash Context
-*   | fee_commit         32 |       I
+*   | delta_commit       32 |       I 
+*   | fee_commit         32 |       I Schnorr Hash Context
+*   | fee value          8  |       I
 *   | receiver_commit_I  32 |=======I       
 *   |-----------------------|
 *   | receiver_commit_F  32 |      
@@ -68,9 +70,12 @@ pub fn visible_value_commit(p: &TrxGenerators, val: u64) -> TrxSecrets {
 *       the need for a range proof.
 */
 
+#[derive(Clone)]
 pub struct Trx {
+    pub tag: &'static [u8],
     pub delta_commit: CompressedRistretto,
     pub fee_commit: CompressedRistretto,
+    pub fee_value: u64,
 
     pub sender_proof: Option<RangeProof>,
     pub sender_init: CompressedRistretto,
@@ -81,15 +86,25 @@ pub struct Trx {
     pub receiver_final: CompressedRistretto,
     pub receiver_schnorr: SchnorrProof,
 
+    pub hash: [u8; 32],
     pub buffer: [u8; TOTAL_TRX_PROOF],
 }
 
+impl Default for Trx {
+    fn default() -> Self {
+        Self::new(b"bullet_ledger")
+    }
+}
+
 impl Trx {
-    pub fn new() -> Self {
+    pub fn new(tag: &'static [u8]) -> Self {
         Self { 
+            tag,
             buffer: [0u8; TOTAL_TRX_PROOF],
+            hash: [0u8; 32],
             delta_commit: CompressedRistretto::default(),
             fee_commit: CompressedRistretto::default(),
+            fee_value: 0u64,
 
             sender_init: CompressedRistretto::default(),
             sender_proof: None, 
@@ -106,8 +121,9 @@ impl Trx {
         self.delta_commit.0.copy_from_slice(&delta.0);
     }
 
-    pub fn set_fee_commit(&mut self, fee: &CompressedRistretto) {
-        self.fee_commit.0.copy_from_slice(&fee.0);
+    pub fn set_fee(&mut self, fee: &TrxSecrets) {
+        self.fee_commit.0.copy_from_slice(&fee.commit.0);
+        self.fee_value = fee.val;
     }
 
     pub fn set_init(&mut self, is_sender: bool, init: &CompressedRistretto) {
@@ -123,8 +139,8 @@ impl Trx {
     /// In prod you won't call schnorr_sender() & schnorr_receiver() sequentially
     pub fn schnorr_sender(&mut self, gens: &TrxGenerators, s: &TrxSecrets) {
         self.marshal_internal();
-        let hash = self.compute_hash(gens.tag);
-        self.sender_schnorr.generate(gens, s.x, s.r, &hash);
+        self.compute_hash();
+        self.sender_schnorr.generate(gens, s.x, s.r, &self.hash);
         self.buffer[TRX_LENGTH..TRX_LENGTH+96].copy_from_slice(
             self.sender_schnorr.as_mut_slice()
         );
@@ -135,35 +151,33 @@ impl Trx {
     /// In prod you won't call schnorr_sender() & schnorr_receiver() sequentially
     pub fn schnorr_receiver(&mut self, gens: &TrxGenerators, s: &TrxSecrets) {
         self.marshal_internal();
-        let hash = self.compute_hash(gens.tag);
-        self.receiver_schnorr.generate(gens, s.x, s.r, &hash);
+        self.compute_hash();
+        self.receiver_schnorr.generate(gens, s.x, s.r, &self.hash);
         self.buffer[TRX_LENGTH+96..].copy_from_slice(
             self.receiver_schnorr.as_mut_slice()
         );
     }
 
-    pub fn verify_schnorrs(&self, gens: &TrxGenerators) -> bool {
-        let hash = self.compute_hash(gens.tag);
+    pub fn verify_schnorrs(&mut self, gens: &TrxGenerators) -> bool {
+        self.compute_hash();
         return self.sender_schnorr.verify(gens,
             &self.sender_init.decompress().unwrap(), 
-            &hash
+            &self.hash
         ) &&
         self.receiver_schnorr.verify(gens,
             &self.receiver_init.decompress().unwrap(), 
-            &hash
+            &self.hash
         )
     }
 
-    pub fn compute_hash(&self, tag: &[u8]) -> [u8;32] {
+    pub fn compute_hash(&mut self) {
         let mut hasher = Sha256::new();
-        hasher.update(tag);
+        hasher.update(self.tag);
         hasher.update(&self.sender_init.as_bytes());
         hasher.update(&self.delta_commit.as_bytes());
         hasher.update(&self.fee_commit.as_bytes());
         hasher.update(&self.receiver_init.as_bytes());
-        let mut hash = [0u8;32];
-        hash.copy_from_slice(hasher.finalize().as_slice());
-        hash
+        self.hash.copy_from_slice(hasher.finalize().as_slice());
     }
 
     pub fn marshal_internal(&mut self) {
@@ -179,10 +193,11 @@ impl Trx {
         self.buffer[c..c+32].copy_from_slice(self.sender_init.as_bytes());
         self.buffer[c+32..c+64].copy_from_slice(self.delta_commit.as_bytes());
         self.buffer[c+64..c+96].copy_from_slice(self.fee_commit.as_bytes());
-        self.buffer[c+96..c+128].copy_from_slice(self.receiver_init.as_bytes());
+        self.buffer[c+96..c+104].copy_from_slice(&self.fee_value.to_le_bytes());
+        self.buffer[c+104..c+136].copy_from_slice(self.receiver_init.as_bytes());
 
         // Recevier
-        self.buffer[c+128..TRX_LENGTH].copy_from_slice(self.receiver_final.as_bytes());
+        self.buffer[c+136..TRX_LENGTH].copy_from_slice(self.receiver_final.as_bytes());
     }
 
     pub fn unmarshal_internal(&mut self) -> Result<(), ProofError> {
@@ -194,12 +209,16 @@ impl Trx {
         self.sender_init.0.copy_from_slice(&self.buffer[p..p+32]);
         self.delta_commit.0.copy_from_slice(&mut self.buffer[p+32..p+64]);
         self.fee_commit.0.copy_from_slice(&self.buffer[p+64..p+96]);
-        self.receiver_init.0.copy_from_slice(&self.buffer[p+96..p+128]);
+        let mut fee = [0u8; 8];
+        fee.copy_from_slice(&self.buffer[p+96..p+104]);
+        self.fee_value = u64::from_le_bytes(fee);
+        self.receiver_init.0.copy_from_slice(&self.buffer[p+104..p+136]);
 
-        self.receiver_final.0.copy_from_slice(&mut self.buffer[p+128..TRX_LENGTH]);
+        self.receiver_final.0.copy_from_slice(&mut self.buffer[p+136..TRX_LENGTH]);
 
         self.sender_schnorr.from_bytes(&mut self.buffer[TRX_LENGTH..TRX_LENGTH+96]);
         self.receiver_schnorr.from_bytes(&mut self.buffer[TRX_LENGTH+96..]);
+        self.compute_hash();
         Ok(())
     }
 
@@ -217,7 +236,7 @@ impl Trx {
         let val: u64;
         self.set_init(is_sender, &init.commit);
         self.set_delta_commit(&delta.commit);
-        self.set_fee_commit(&fee.commit);
+        self.set_fee(&fee);
 
         if is_sender {
             new_r = init.r - delta.r - fee.r;
@@ -225,15 +244,15 @@ impl Trx {
             y = init.x - delta.x - fee.x;
             val = init.val - delta.val - fee.val;
 
-            let (rp, c) = RangeProof::prove_single(
+            let (range_proof, commit) = RangeProof::prove_single(
                 &gens.bullet, 
                 &gens.pedersen, 
                 &mut Transcript::new(gens.tag), 
                 val, &new_r, 
                 VALUE_SIZE,
             )?;
-            self.sender_proof = Some(rp);
-            self.sender_final = c;
+            self.sender_proof = Some(range_proof);
+            self.sender_final = commit;
 
         } else {
             y = init.x + delta.x;

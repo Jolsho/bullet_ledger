@@ -1,11 +1,9 @@
-
 #[test]
 fn schnorr() {
     use curve25519_dalek::Scalar;
     use sha2::{Sha256, Digest};
-    use crate::generators::random_b32;
-    use crate::generators::TrxGenerators;
-    use crate::schnorr::SchnorrProof;
+    use crate::crypto::{random_b32, TrxGenerators};
+    use crate::crypto::schnorr::SchnorrProof;
 
     let gens = TrxGenerators::new("zk_schnorr", 1);
     let mut proof = SchnorrProof::default();

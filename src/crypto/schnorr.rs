@@ -1,7 +1,8 @@
 use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint, Scalar};
 use sha2::{Digest, Sha256};
-use crate::generators::{random_b32, TrxGenerators};
+use super::{random_b32, TrxGenerators};
 
+#[derive(Clone)]
 pub struct SchnorrProof {
     pub random: CompressedRistretto,
     pub s1: Scalar,

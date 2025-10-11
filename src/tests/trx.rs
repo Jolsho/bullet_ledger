@@ -1,10 +1,8 @@
-
-
 #[test]
 fn trxx() {
     use std::fs;
     use std::time::Instant;
-    use crate::{db, trxs, generators};
+    use crate::{db, trxs, crypto};
     use crate::trxs::{RECEIVER, SENDER};
     use crate::trxs::Trx;
 
@@ -13,7 +11,7 @@ fn trxx() {
     println!("SCHNORRS:      {} bytes", 96 * 2);
     println!("TOTAL TRX:     {} bytes", trxs::TOTAL_TRX_PROOF);
     let ledger = db::start_db().unwrap();
-    let gens = generators::TrxGenerators::new("custom_zkp", 1);
+    let gens = crypto::TrxGenerators::new("custom_zkp", 1);
 
 
 
@@ -41,7 +39,7 @@ fn trxx() {
     let delta = trxs::hidden_value_commit(&gens, 2u64);
     let fee = trxs::hidden_value_commit(&gens, 2u64);
 
-    let mut trx = Trx::new();
+    let mut trx = Trx::new(gens.tag);
 
     // both also commit to own final balance and generate proof
     let new_sender = trx.state_transition(

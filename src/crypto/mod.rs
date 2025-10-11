@@ -1,3 +1,5 @@
+pub mod schnorr;
+
 use rand::{rngs::OsRng, TryRngCore};
 use bulletproofs::{BulletproofGens, PedersenGens};
 
@@ -8,9 +10,9 @@ pub fn random_b32() -> [u8; 32] {
 }
 
 pub struct TrxGenerators {
+    pub tag: &'static [u8],
     pub pedersen: PedersenGens,
     pub bullet: BulletproofGens,
-    pub tag: &'static [u8],
 }
 
 impl TrxGenerators {
