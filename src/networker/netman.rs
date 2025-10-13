@@ -1,43 +1,118 @@
 use nix::poll::PollTimeout;
 use std::net::SocketAddr;
-use std::os::fd::RawFd;
+use std::ops::{Deref, DerefMut};
+use std::os::fd::{AsFd, AsRawFd, RawFd};
 use std::{collections::BinaryHeap, time::Instant};
 use crate::config::NetworkConfig;
 use crate::core::msg::CoreMsg;
+use crate::crypto::random_b2;
 use crate::msging::{MsgProd, Poller, RingCons};
-use crate::networker::header::PacketCode;
+use crate::networker::connection::Connection;
+use crate::networker::handlers::Handler;
+use crate::networker::header::{PacketCode, HEADER_LEN, PREFIX_LEN};
 use crate::trxs::Trx;
 use crate::networker::{next_deadline, ConsMap};
 
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct WriteBuffer {
+    buf: Vec<u8>,
+}
+
+impl WriteBuffer {
+    pub fn new() -> Self {
+        let mut s = Self { 
+            buf: Vec::with_capacity(DEFAULT_BUFFER_SIZE), 
+        };
+        s.reset();
+
+        s
+    }
+    pub fn from_vec(buf: Vec<u8>) -> Self {
+        Self { buf }
+    }
+    pub fn release_buffer(&mut self) -> Vec<u8> {
+        let mut read_buf = Vec::with_capacity(0);
+        std::mem::swap(&mut read_buf, &mut self.buf);
+        read_buf
+    }
+    // resize back to PREFIX_LEN + HEADER_LEN
+    pub fn reset(&mut self) {
+        self.buf.resize(PREFIX_LEN + HEADER_LEN, 0);
+    }
+}
+
+impl Deref for WriteBuffer {
+    type Target = Vec<u8>;
+    fn deref(&self) -> &Self::Target {
+        &self.buf
+    }
+}
+impl DerefMut for WriteBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.buf
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
 pub struct NetMsg {
-    pub stream_fd: RawFd,
-    pub addr: Option<SocketAddr>,
-    pub code: PacketCode,
+    pub id: u16,
     pub from_code: i32,
-    pub body: Box<Vec<u8>>,
+    pub stream_fd: RawFd,
+
+    pub addr: Option<SocketAddr>,
+    pub pub_key: Option<[u8;32]>,
+
+    pub code: PacketCode,
+    pub body: WriteBuffer,
+    pub handler: Option<Handler>,
 }
 const DEFAULT_BUFFER_SIZE:usize = 1024;
 
 impl Default for NetMsg {
     fn default() -> Self { 
         Self { 
+            id: u16::from_le_bytes(random_b2()),
             code: PacketCode::None,
             stream_fd: -1, 
             from_code: 0,
             addr: None,
-            body: Box::new(Vec::with_capacity(DEFAULT_BUFFER_SIZE))
+            body: WriteBuffer::new(),
+            handler: None,
+            pub_key: None,
         }
+    }
+}
+
+impl NetMsg {
+    pub fn fill_fd_and_id(&mut self, conn: &mut Connection) {
+        self.id = u16::from_le_bytes(random_b2());
+        self.stream_fd = conn.as_fd().as_raw_fd();
+        self.from_code = 0;
+        self.addr = None;
+        self.pub_key = None;
+    }
+    pub fn reset(&mut self) {
+        self.id = u16::from_le_bytes(random_b2());
+        self.stream_fd = -1;
+        self.from_code = 0;
+        self.addr = None;
+        self.pub_key = None;
+        self.body.reset();
+
     }
 }
 
 pub struct NetMan {
     pub epoll: Poller,
-    time_table: BinaryHeap<TimeoutEntry>,
     pub buffs: Vec<Vec<u8>>,
+    time_table: BinaryHeap<TimeoutEntry>,
 
     pub to_core: MsgProd<CoreMsg>,
     pub trx_con: RingCons<Trx>, 
     pub config: NetworkConfig,
+
+    pub pub_key: [u8;32],
+    pub priv_key: [u8;32],
 }
 
 impl NetMan {
@@ -46,14 +121,17 @@ impl NetMan {
         to_core: MsgProd<CoreMsg>,
         epoll: Poller,
         config: NetworkConfig,
-    ) -> nix::Result<Self> {
-        Ok(Self { 
+        pub_key: [u8; 32],
+        priv_key: [u8; 32],
+    ) -> Self {
+        Self { 
+            priv_key, pub_key,
             buffs: Vec::with_capacity(config.net_man_buffers_cap),
             time_table: BinaryHeap::with_capacity(config.max_connections),
             trx_con, epoll, to_core, config,
-        })
+        }
     }
-
+    
     pub fn get_buff(&mut self) -> Vec<u8> {
         let mut buf = self.buffs.pop();
         if buf.is_none() {
@@ -61,10 +139,11 @@ impl NetMan {
         }
         buf.unwrap()
     }
+    pub fn put_buff(&mut self, buff: Vec<u8>) { self.buffs.push(buff); }
 
-    pub fn put_buff(&mut self, buff: Vec<u8>) {
-        self.buffs.push(buff);
-    }
+    //////////////////////////////////////////////////////////////////////////////
+    ////       TIMEOUTS      ////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////////
 
     pub fn handle_timeouts(&mut self, conns: &mut ConsMap) -> PollTimeout {
         let now = Instant::now();
@@ -81,10 +160,9 @@ impl NetMan {
             if let Some(c) = conns.get(&entry.fd) {
                 if c.last_deadline == entry.when {
                     println!("EXPIRED {}", entry.fd);
-                    if let Some(c) = conns.remove(&entry.fd) {
-                        let _ = self.epoll.delete(&c.stream);
-                        self.put_buff(c.read_buf);
-                        self.put_buff(c.write_buf);
+
+                    if let Some(mut c) = conns.remove(&entry.fd) {
+                        c.strip_and_delete(self);
                     }
                 }
             }

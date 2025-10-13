@@ -1,6 +1,5 @@
 use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint, Scalar};
 use sha2::{Digest, Sha256};
-use super::{random_b32, TrxGenerators};
 
 #[derive(Clone)]
 pub struct SchnorrProof {
@@ -34,13 +33,13 @@ impl SchnorrProof {
     }
 
     pub fn generate(&mut self, 
-        gens: &TrxGenerators, 
+        gens: &super::TrxGenerators, 
         x: Scalar, r:Scalar, 
         context_hash: &[u8; 32],
     ) {
         let commit = gens.pedersen.commit(x, r);
-        let r1 = Scalar::from_bytes_mod_order(random_b32());
-        let r2 = Scalar::from_bytes_mod_order(random_b32());
+        let r1 = Scalar::from_bytes_mod_order(super::random_b32());
+        let r2 = Scalar::from_bytes_mod_order(super::random_b32());
         self.random = gens.pedersen.commit(r1, r2).compress();
 
         let c = self.compute_challenge(commit.compress(), context_hash);
@@ -51,7 +50,7 @@ impl SchnorrProof {
 
     pub fn verify( 
         &self,
-        gens: &TrxGenerators, 
+        gens: &super::TrxGenerators, 
         commit: &RistrettoPoint,
         context_hash: &[u8; 32],
     ) -> bool {

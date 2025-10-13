@@ -17,6 +17,8 @@ pub struct NetworkConfig {
     pub idle_polltimeout: u16,
     pub net_man_buffers_cap: usize,
     pub max_buffer_size: usize,
+    pub in_out_q_size: usize,
+    pub key_path: String,
 
     pub bind_addr: String,
 }

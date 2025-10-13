@@ -1,4 +1,4 @@
-use std::{os::fd::AsRawFd, net::{SocketAddr, TcpStream}};
+use std::{net::{SocketAddr, TcpStream}, os::fd::{AsFd, AsRawFd}};
 use nix::{errno::Errno, sys::epoll::EpollEvent, unistd};
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, SockaddrIn, SockProtocol};
 
@@ -47,7 +47,8 @@ pub fn dial_outbound(addr: &SocketAddr) -> nix::Result<TcpStream> {
 /// add connection to cons, and set timeout deadline.
 pub fn new_connection(
     stream: TcpStream, 
-    _addr: &SocketAddr,
+    addr: SocketAddr,
+    pub_key: [u8; 32],
     net_man: &mut NetMan,
     conns: &mut ConsMap,
     dir: ConnDirection,
@@ -63,14 +64,12 @@ pub fn new_connection(
 
     if net_man.epoll.add(&stream, ev).is_err() { return; }
 
-    match Connection::new(stream, net_man, dir) {
+    match Connection::new(stream, addr, net_man, pub_key, dir) {
         Ok(new_conn) => {
-            let fd = new_conn.stream.as_raw_fd();
+            let fd = new_conn.as_fd().as_raw_fd();
             conns.insert(fd, new_conn);
             net_man.update_timeout(&fd, conns);
         }
-        Err(stream) => {
-            net_man.epoll.delete(&stream).ok();
-        }
+        Err(_) => {}
     }
 }

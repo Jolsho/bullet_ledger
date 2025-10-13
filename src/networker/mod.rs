@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::io;
 use std::net::TcpListener;
 use std::os::fd::{AsRawFd, RawFd};
 use std::thread::JoinHandle;
@@ -8,7 +7,9 @@ use nix::sys::epoll::{EpollEvent, EpollFlags};
 
 use crate::config::NetworkConfig;
 use crate::core::msg::CoreMsg;
+use crate::crypto::montgomery::load_keys;
 use crate::msging::{MsgCons, MsgProd, Poller, RingCons};
+use crate::networker::connection::{NetError, NetResult};
 use crate::{CORE, TRX_POOL, trxs::Trx, shutdown};
 
 use connection::{ConnDirection, Connection};
@@ -38,18 +39,26 @@ type Messengers = HashMap<i32, MsgCons<NetMsg>>;
 
 pub fn start_networker(
     config: NetworkConfig, trx_con: RingCons<Trx>, 
-    to_core: MsgProd<CoreMsg>, from_core: MsgCons<NetMsg>,
+    to_core: MsgProd<CoreMsg>, froms: Vec<(MsgCons<NetMsg>, i32)>,
 ) ->JoinHandle<()> {
 
     // REGISTER OUTBOUND MESSENGERS WITH EPOLL AND INSERT INTO MAPPING
     let mut messengers = Messengers::with_capacity(OUTBOUND_CHANS);
     let mut epoll = Poller::new().unwrap();
-    epoll.listen_to(&from_core).unwrap();
-    messengers.insert(CORE, from_core);
+    let mut conns = ConsMap::with_capacity(config.max_connections);
+
+    for (chan, code) in froms {
+        epoll.listen_to(&chan).unwrap();
+        messengers.insert(code, chan);
+    }
+
 
     // BUILD THE NETWORK MANAGER AND CONNECTION MAPPING
-    let mut net_man = NetMan::new(trx_con, to_core, epoll, config).unwrap();
-    let mut conns = ConsMap::with_capacity(net_man.config.max_connections);
+    let keys = load_keys(&config.key_path).unwrap();
+    let mut net_man = NetMan::new(
+        trx_con, to_core, epoll, 
+        config, keys.0, keys.1,
+    );
 
     // CREATE THE LISTENER
     let listener = TcpListener::bind(net_man.config.bind_addr.clone()).unwrap();
@@ -86,7 +95,7 @@ pub fn start_networker(
                         if let Ok((stream, addr)) = listener.accept() {
                             // println!("new_conn: {}", stream.as_raw_fd());
                             new_connection( 
-                                stream, &addr, 
+                                stream, addr, [0u8;32],
                                 &mut net_man, &mut conns,
                                 ConnDirection::Inbound,
                             )
@@ -97,14 +106,16 @@ pub fn start_networker(
                     CORE | TRX_POOL => {
                         if let Some(from) = messengers.get_mut(&fd) {
                             let _ = from.read_event();
+
                             while let Some(mut msg) = from.pop() {
+
                                 let mut conn = conns.get_mut(&msg.stream_fd);
                                 if conn.is_none() {
-                                    if let Some(addr) = msg.addr.take() {
+                                    if let (Some(addr),Some(pub_key)) = (msg.addr.take(),msg.pub_key.take()) {
                                         if let Ok(stream) = dial_outbound(&addr) {
                                             let stream_fd = stream.as_raw_fd();
                                             new_connection( 
-                                                stream, &addr, 
+                                                stream, addr, pub_key,
                                                 &mut net_man, &mut conns,
                                                 ConnDirection::Outbound,
                                             );
@@ -112,11 +123,12 @@ pub fn start_networker(
                                         }
                                     }
                                 }
-                                if conn.is_some() {
-                                    if let Err(msg) = conn.unwrap().queue_msg(msg, &mut net_man.epoll) { 
-                                        from.recycle(msg); 
-                                    }
-                                } else {
+
+                                let m = match conn {
+                                    Some(c) => c.queue_msg(msg, &mut net_man.epoll),
+                                    None => Err(msg),
+                                };
+                                if let Err(msg) = m {
                                     from.recycle(msg);
                                 }
                             }
@@ -126,7 +138,7 @@ pub fn start_networker(
                     // HANDLE ACTIVE CONNECTIONS
                     _ => {
                         if let Some(conn) = conns.get_mut(&fd) {
-                            let mut res: io::Result<bool> = Ok(false);
+                            let mut res: NetResult<bool> = Ok(false);
                             match conn.check_socket_error() {
                                 Ok(_) => {
                                     if flags.contains(EpollFlags::EPOLLIN) {
@@ -134,20 +146,15 @@ pub fn start_networker(
                                     }
 
                                     if flags.contains(EpollFlags::EPOLLOUT) {
-                                        res = conn.on_writable(
-                                            &mut net_man,
-                                            &mut messengers,
-                                        );
+                                        res = conn.on_writable(&mut net_man, &mut messengers);
                                     }
                                 }
-                                Err(e) => res = Err(e),
+                                Err(e) => res = Err(NetError::Other(e.to_string())),
                             };
                             if res.is_err() {
-                                let _ = net_man.epoll.delete(&conn.stream);
-                                if let Some(c) = conns.remove(&fd) {
+                                if let Some(mut c) = conns.remove(&fd) {
                                     println!("Connection Closed");
-                                    net_man.put_buff(c.read_buf);
-                                    net_man.put_buff(c.write_buf);
+                                    c.strip_and_delete(&mut net_man);
                                 }
 
                             } else if res.unwrap() {

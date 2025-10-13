@@ -1,4 +1,6 @@
 
+// TODO -- both of these tests are trash...
+// they dont create the right packets.
 
 #[test]
 fn net_timeout() {
@@ -25,13 +27,12 @@ fn net_timeout() {
     let net_to_core = MsgQ::<CoreMsg>::new(128, NETWORKER).unwrap();
     let core_to_net = MsgQ::<NetMsg>::new(128, CORE).unwrap();
 
-    let (net_core_prod, _net_core_cons) = net_to_core.split().unwrap();
-    let (_core_net_prod, core_net_cons) = core_to_net.split().unwrap();
+    let (net_core_prod, _) = net_to_core.split().unwrap();
+    let (_, core_net_cons) = core_to_net.split().unwrap();
 
     let addr = "127.0.0.1:4141".to_string();
-    let net_handle = start_networker(
-        config.network.clone(),
-        trx_con, net_core_prod, core_net_cons
+    let net_handle = start_networker( config.network.clone(), trx_con, net_core_prod, 
+        vec![(core_net_cons, CORE)]
     );
 
     // -- connect ----------------------------------------------------------------
@@ -95,7 +96,7 @@ fn net_stress() {
     use crate::shutdown;
 
     // -- setup ----------------------------------------------------------------
-    let config = load_config("config.toml");
+    let mut config = load_config("config.toml");
 
     let trx_ring = Ring::<Trx>::new(512);
     let (_trx_prod, trx_con) = trx_ring.split();
@@ -106,10 +107,13 @@ fn net_stress() {
     let core_to_net = MsgQ::<NetMsg>::new(128, CORE).unwrap();
     let (_core_net_prod, core_net_cons) = core_to_net.split().unwrap();
 
-    let addr = "127.0.0.1:4141".to_string();
+    let addr = "127.0.0.1:4142".to_string();
+    config.network.bind_addr = addr.clone();
     let net_handle = start_networker(
-        config.network.clone(),
-        trx_con, net_core_prod, core_net_cons);
+        config.network.clone(), trx_con, net_core_prod, 
+        vec![(core_net_cons, CORE)]
+    );
+
 
     // -- connect ----------------------------------------------------------------
     let size:usize = 6;
@@ -119,6 +123,7 @@ fn net_stress() {
         let addr_clone = addr.clone();
         threads.push(std::thread::spawn(move || {
             let mut s = TcpStream::connect(&addr_clone).unwrap();
+            s.set_nonblocking(false).unwrap();
             s.set_nodelay(true).unwrap();
             s.set_read_timeout(Some(Duration::from_secs(1))).unwrap();
             s.set_write_timeout(Some(Duration::from_secs(1))).unwrap();

@@ -1,10 +1,18 @@
 pub mod schnorr;
+pub mod montgomery;
+pub mod chacha;
 
 use rand::{rngs::OsRng, TryRngCore};
 use bulletproofs::{BulletproofGens, PedersenGens};
 
 pub fn random_b32() -> [u8; 32] {
     let mut buff = [0u8; 32];
+    OsRng.try_fill_bytes(&mut buff).unwrap();
+    buff
+}
+
+pub fn random_b2() -> [u8; 2] {
+    let mut buff = [0u8; 2];
     OsRng.try_fill_bytes(&mut buff).unwrap();
     buff
 }

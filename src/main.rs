@@ -25,17 +25,22 @@ fn main() {
     let trx_ring = Ring::<Trx>::new(512);
     let (trx_prod, trx_con) = trx_ring.split();
 
+    // Channel from networker to core.
     let net_to_core =  MsgQ::<CoreMsg>::new(128, NETWORKER).unwrap();
-    let (net_core_prod, net_core_cons) = net_to_core.split().unwrap();
+    let (to_core, from_net) = net_to_core.split().unwrap();
 
+    // Channel core to networker.
     let core_to_net =  MsgQ::<NetMsg>::new(128, CORE).unwrap();
-    let (core_net_prod, core_net_cons) = core_to_net.split().unwrap();
+    let (to_net, from_core) = core_to_net.split().unwrap();
 
-    let core_handle = start_core(config.core.clone(), 
-        trx_prod, net_core_cons, core_net_prod
+    let core_handle = start_core(
+        config.core.clone(), 
+        trx_prod, from_net, to_net
     );
-    let net_handle = start_networker(config.network.clone(),
-        trx_con, net_core_prod, core_net_cons,
+    let net_handle = start_networker(
+        config.network.clone(), 
+        trx_con, to_core, 
+        vec![(from_core, CORE)],
     );
 
     core_handle.join().unwrap();

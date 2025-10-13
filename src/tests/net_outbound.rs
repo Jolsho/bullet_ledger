@@ -1,21 +1,8 @@
-use std::time::Duration;
 
 #[test]
 fn net_outbound() {
-    /*
-    *   TODO
-    *   
-    *
-    * Start two servers...
-    *   Ask one of them to contact the other...
-    *   Just start with basic ping/pong
-    *
-    *   Maybe test some errors... like when one times out...
-    *   Or some other kind of error...
-    *       make sure the other one can notice, and clean up the dead one
-    *
-    */
     use ringbuf::traits::Split;
+    use std::time::Duration;
 
     use crate::config::load_config;
     use crate::core::msg::CoreMsg;
@@ -32,6 +19,7 @@ fn net_outbound() {
     }
 
     let mut config = load_config("config.toml");
+    config.network.bind_addr = "127.0.0.1:4143".to_string();
 
     // -- setup1 (receiver) ----------------------------------------------------------------
     let (trx,n_to_c, c_to_n) = get_stuff();
@@ -40,11 +28,14 @@ fn net_outbound() {
     let (_to_n, from_c) = c_to_n.split().unwrap();
 
     let cfg = config.network.clone();
-    let net_handle1 = start_networker(cfg, trx_con, to_c, from_c);
+    let net_handle1 = start_networker(
+        cfg, trx_con, to_c, 
+        vec![(from_c, CORE), ]
+    );
 
     // -- setup2 (sender)----------------------------------------------------------------
     let remote = config.network.bind_addr;
-    config.network.bind_addr = "127.0.0.1:4242".to_string();
+    config.network.bind_addr = "127.0.0.1:4144".to_string();
 
     let (trx,n_to_c, c_to_n) = get_stuff();
     let (trx_prod, trx_con) = trx.split();
@@ -52,7 +43,10 @@ fn net_outbound() {
     let (mut to_n, from_c) = c_to_n.split().unwrap();
 
     let cfg = config.network.clone();
-    let net_handle2 = start_networker(cfg, trx_con, to_c, from_c);
+    let net_handle2 = start_networker(
+        cfg, trx_con, to_c, 
+        vec![(from_c, CORE), ]
+    );
 
     // -- send da ting ----------------------------------------------------------------
     let mut msg = NetMsg::default();
@@ -70,7 +64,6 @@ fn net_outbound() {
     *   because of how the write flags are written
     *   
     */
-
 
     std::thread::sleep(Duration::from_secs(4));
     // -----------------------------------------------------------------
