@@ -5,7 +5,6 @@ use toml;
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub network: NetworkConfig,
-    pub database: DatabaseConfig,
     pub core: CoreConfig,
 }
 
@@ -19,22 +18,21 @@ pub struct NetworkConfig {
     pub max_buffer_size: usize,
     pub in_out_q_size: usize,
     pub key_path: String,
+    pub db_path: String,
+    pub score_threshold: usize,
+    pub bootstraps: Vec<[u8;4]>,
 
     pub bind_addr: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
-pub struct DatabaseConfig {
-    pub uri: String,
-    pub pool_size: usize,
-}
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CoreConfig {
     pub idle_polltimeout: u16,
-    pub init_trx_len: usize,
     pub event_len: usize,
     pub pool_cap: usize,
+    pub bullet_count: usize,
+    pub db_path: String,
 }
 
 pub fn load_config(path: &str) -> Config {

@@ -6,6 +6,7 @@ pub fn should_shutdown() -> bool {
     SHUTDOWN.load(Ordering::SeqCst)
 }
 
+#[allow(unused)]
 pub fn request_shutdown() {
     SHUTDOWN.store(true, Ordering::SeqCst);
 }

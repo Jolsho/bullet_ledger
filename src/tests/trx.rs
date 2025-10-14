@@ -1,18 +1,20 @@
+
+
 #[test]
 fn trxx() {
     use std::fs;
     use std::time::Instant;
-    use crate::{db, trxs, crypto};
-    use crate::trxs::{RECEIVER, SENDER};
-    use crate::trxs::Trx;
+    use crate::{trxs, crypto};
+    use crate::trxs::{RECEIVER, SENDER, Trx};
+    use crate::core::db::Ledger;
 
     println!("RANGE PROOF:   {} bytes", trxs::PROOF_LENGTH);
     println!("COMMITMENTS:   {} bytes", trxs::TRX_LENGTH - trxs::PROOF_LENGTH);
     println!("SCHNORRS:      {} bytes", 96 * 2);
     println!("TOTAL TRX:     {} bytes", trxs::TOTAL_TRX_PROOF);
-    let ledger = db::start_db().unwrap();
-    let gens = crypto::TrxGenerators::new("custom_zkp", 1);
 
+    let ledger = Ledger::new("ledger.sqlit3".to_string()).unwrap();
+    let gens = crypto::TrxGenerators::new("custom_zkp", 1);
 
 
     // ==================================================
@@ -22,11 +24,11 @@ fn trxx() {
     // initialize sender account
     let x = 42u64;
     let sender = trxs::hidden_value_commit(&gens, x);
-    db::initialize_account(&ledger, &sender.commit).unwrap();
+    assert_eq!(ledger.initialize_balance(&sender.commit).unwrap(), 1);
 
     // initialize receiver account
     let receiver = trxs::hidden_value_commit(&gens, 0u64);
-    db::initialize_account(&ledger, &receiver.commit).unwrap();
+    assert_eq!(ledger.initialize_balance(&receiver.commit).unwrap(), 1);
 
 
 
@@ -73,10 +75,10 @@ fn trxx() {
     assert!(trx.is_valid(&gens));
 
     // update local balance
-    db::update_balance(&ledger, &trx.sender_init, &trx.sender_final).unwrap();
-    db::update_balance(&ledger, &trx.receiver_init, &trx.receiver_final).unwrap();
+    assert_eq!(ledger.update_balance(&trx.sender_init, &trx.sender_final).unwrap(), 1);
+    assert_eq!(ledger.update_balance(&trx.receiver_init, &trx.receiver_final).unwrap(), 1);
 
     println!("Validation (time estimate): {:.3?}", start.elapsed());
-    let _ = fs::remove_file("ledger.sqlite3");
+    let _ = fs::remove_file("ledger.sqlit3");
 }
 

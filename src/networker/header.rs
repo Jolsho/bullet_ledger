@@ -1,27 +1,8 @@
 use chacha20poly1305::{aead::{AeadMutInPlace, OsRng}, AeadCore, ChaCha20Poly1305, Key, KeyInit};
 
-use crate::{crypto::random_b2, networker::{connection::{NetError, NetResult}, handlers::Handler}};
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum PacketCode {
-    None = 0,
-    PingPong = 1,
-
-    NegotiationSyn = 2,
-    NegotiationAck = 3,
-}
-
-pub fn code_from_u8(dig: u8) -> PacketCode {
-    match dig {
-        1 => PacketCode::PingPong,
-        2 => PacketCode::NegotiationSyn,
-        3 => PacketCode::NegotiationAck,
-        _ => PacketCode::None,
-    }
-}
-
-
+use crate::crypto::random_b2; 
+use crate::networker::utils::{NetError, NetResult};
+use crate::networker::handlers::{code_from_u8, Handler, PacketCode};
 
 // Length + Nonce + Tag
 pub const PREFIX_LEN: usize = 8 + 12 + 16; 
@@ -54,11 +35,9 @@ impl Header {
     pub fn raw_unmarshal(&mut self, buff: &[u8]) 
         -> NetResult<()> 
     {
-        let mut cursor = PREFIX_LEN;
-        self.code = code_from_u8(buff[cursor]);
-        cursor += 1;
+        self.code = code_from_u8(buff[0]);
 
-        let msg_id_bytes: [u8; 2] = buff[cursor..cursor + 2].try_into()
+        let msg_id_bytes: [u8; 2] = buff[1..3].try_into()
             .map_err(|_| NetError::Other("Invalid msg id".to_string()))?;
         self.msg_id = u16::from_le_bytes(msg_id_bytes);
         Ok(())
@@ -71,7 +50,7 @@ impl Header {
         cipher.decrypt_in_place_detached(
             &self.nonce.into(), 
             b"bullet_ledger", 
-            &mut buff[HEADER_LEN..], 
+            buff, 
             &self.tag.into(),
         ).map_err(|e| NetError::Decryption(e.to_string()))?;
 
@@ -79,9 +58,9 @@ impl Header {
     }
 
     pub fn raw_marshal(&mut self, buff: &mut [u8]) {
-        let len = buff.len() - HEADER_LEN - PREFIX_LEN;
+        let len = buff.len() - PREFIX_LEN;
 
-        buff[0..9].copy_from_slice(&len.to_ne_bytes());
+        buff[0..8].copy_from_slice(&len.to_le_bytes());
         buff[PREFIX_LEN] = self.code as u8;
         buff[PREFIX_LEN + 1..PREFIX_LEN + 3].copy_from_slice(&self.msg_id.to_le_bytes());
         self.is_marshalled = true;

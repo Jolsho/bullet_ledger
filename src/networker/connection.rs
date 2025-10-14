@@ -1,21 +1,18 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::{io::{self, Read, Write},time::Instant, net::TcpStream};
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
 use chacha20poly1305::aead::{AeadMutInPlace, OsRng};
 use chacha20poly1305::{AeadCore, ChaCha20Poly1305, Key, KeyInit};
 use nix::sys::{epoll::EpollEvent, socket::{getsockopt, sockopt}};
-use ringbuf::{traits::{Consumer, Observer, Producer}, HeapRb};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
-use crate::crypto::montgomery::{ecdh_shared_secret, hkdf_derive_key};
-use crate::crypto::random_b32;
+use crate::crypto::{ random_b32, montgomery::{ecdh_shared_secret, hkdf_derive_key}};
 use crate::msging::Poller;
-use crate::networker::handlers::{code_switcher, Handler, HandlerRes};
-use crate::networker::header::{PacketCode, PREFIX_LEN};
-use crate::networker::netman::WriteBuffer;
-use crate::networker::{netman::NetMsg, header::{Header, HEADER_LEN}};
+use crate::networker::handlers::{code_switcher, Handler, HandlerRes, PacketCode};
+use crate::networker::header::{Header, HEADER_LEN,PREFIX_LEN};
+use crate::networker::utils::{epoll_flags, epoll_flags_write, next_deadline, Messengers, NetError, NetMsg, NetMsgCode, NetResult, WriteBuffer};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ConnDirection {
@@ -36,19 +33,6 @@ pub enum WriteState {
     Writing,
 }
 
-#[derive(PartialEq, Eq, Debug, Clone)]
-pub enum NetError {
-    ConnectionAborted,
-    MalformedPrefix,
-    Unauthorized,
-    NegotiationFailed,
-    Encryption(String),
-    Decryption(String),
-    Other(String),
-}
-
-pub type NetResult<T> = Result<T, NetError>;
-
 pub struct Connection {
     stream: TcpStream,
     fd: i32,
@@ -58,15 +42,16 @@ pub struct Connection {
     pub remote_pub_key: [u8;32],
     key: Key,
     is_negotiated: bool,
+    is_acking: bool,
 
-    outbound: HeapRb<Box<NetMsg>>,
+    outbound: VecDeque<Box<NetMsg>>,
     pub local_net_msgs: Vec<Box<NetMsg>>,
     inbound_handlers: HashMap<u16, Handler>,
 
     pub read_header: Header,
     read_state: Option<ReadState>,
-    read_buf: Vec<u8>,
-    read_pos: usize, 
+    pub read_buf: Vec<u8>,
+    pub read_pos: usize, 
     read_target: usize,
 
     pub write_header: Header,
@@ -100,15 +85,16 @@ impl Connection {
             fd: stream.as_raw_fd(), 
             stream, 
             addr,
-            last_deadline: super::next_deadline(net_man.config.idle_timeout),
+            last_deadline: next_deadline(net_man.config.idle_timeout),
 
             // ENCRYPTION
             remote_pub_key, 
             key: *Key::from_slice(&[0u8; 32]),
             is_negotiated: false,
+            is_acking: false,
 
             // MSG QUEUES
-            outbound: HeapRb::new(net_man.config.in_out_q_size),
+            outbound: VecDeque::with_capacity(net_man.config.in_out_q_size),
             local_net_msgs: Vec::with_capacity(net_man.config.in_out_q_size),
             inbound_handlers: HashMap::with_capacity(net_man.config.in_out_q_size),
 
@@ -139,7 +125,10 @@ impl Connection {
     /// Return conns resources back to net_man
     /// aka mem::swap buffers with zero_cap Vecs
     /// and push them back into net_man.buffers
-    pub fn strip_and_delete(&mut self, net_man: &mut super::NetMan) {
+    pub fn strip_and_delete(&mut self, 
+        net_man: &mut super::NetMan,
+        messengers: &mut Messengers
+    ) {
         let _ = net_man.epoll.delete(&self);
         let mut read_buf = Vec::with_capacity(0);
         std::mem::swap(&mut read_buf, &mut self.read_buf);
@@ -147,6 +136,14 @@ impl Connection {
 
         let write_buf = self.write_buf.release_buffer();
         net_man.put_buff(write_buf);
+
+        while let Some(mut msg) = self.outbound.pop_front() {
+            if let Some(consumer) = messengers.get_mut(&msg.from_code) {
+                consumer.recycle(msg);
+            } else {
+                net_man.buffs.push(msg.body.release_buffer());
+            }
+        }
     }
 
 
@@ -167,6 +164,7 @@ impl Connection {
         }
         let mut msg = msg.unwrap();
         msg.fill_fd_and_id(self);
+        msg.body.reset();
         msg
     }
 
@@ -182,20 +180,18 @@ impl Connection {
         res
     }
 
-    pub fn on_readable(&mut self, net_man: &mut super::NetMan) -> Result<bool, NetError> {
+    pub fn on_readable(&mut self, net_man: &mut super::NetMan) -> NetResult<bool> {
         let mut did_work = false;
         loop {
             match self.read_state.take() {
-                //==================================================================
-                //==================================================================
-                
+
                 Some(ReadState::ReadingPrefix) => {
                     if self.read_buf.len() < PREFIX_LEN {
                         self.read_buf.resize(PREFIX_LEN, 0);
                     }
 
-                    match self.stream.read(&mut self.read_buf[..HEADER_LEN]) {
-                        Ok(0) => { return Err(NetError::ConnectionAborted); }
+                    match self.stream.read(&mut self.read_buf[..PREFIX_LEN]) {
+                        Ok(0) => return Err(NetError::ConnectionAborted),
                         Ok(n) => {
                             did_work = true;
                             self.read_pos += n;
@@ -210,6 +206,7 @@ impl Connection {
                                 self.read_buf[..8].try_into()
                                 .map_err(|_| NetError::MalformedPrefix)?
                             );
+
 
                             // Read NONCE of encrypted load
                             self.read_header.nonce.copy_from_slice(
@@ -249,6 +246,7 @@ impl Connection {
                                 self.read_state = Some(ReadState::Reading);
                                 continue; 
                             }
+
                             if self.is_negotiated {
                                 self.read_header.encrypt_unmarshal(
                                     &mut self.read_buf, &self.key
@@ -276,13 +274,12 @@ impl Connection {
 
                 Some(ReadState::Processing) => {
 
-                    self.read_pos = 0;
+                    self.read_pos = HEADER_LEN;
 
                     // if not negotiated and attempting to do anything that is not negotiating
                     if !self.is_negotiated && 
                     self.read_header.code != PacketCode::NegotiationAck &&
                     self.read_header.code != PacketCode::NegotiationSyn {
-
                         return Err(NetError::Unauthorized);
                     }
 
@@ -301,7 +298,7 @@ impl Connection {
                     self.read_target = PREFIX_LEN;
                     match res {
                         Ok(HandlerRes::Write(msg)) => {
-                            if let Err(msg) = self.queue_msg(msg, &mut net_man.epoll) {
+                            if let Err(msg) = self.enqueue_msg(msg, net_man) {
                                 self.local_net_msgs.push(msg);
                             } else {
 
@@ -336,30 +333,30 @@ impl Connection {
     /// Adds EPOLLOUT flag to streams epoll event
     fn enable_writable(&mut self, epoll: &mut Poller) -> nix::Result<()> {
         epoll.modify(&self.stream, &mut EpollEvent::new(
-            super::epoll_flags_write(), self.fd as u64,
+            epoll_flags_write(), self.fd as u64,
         ))
     }
 
     /// Removes EPOLLOUT flag to streams epoll event
     fn disable_writable(&mut self, epoll: &mut Poller) -> nix::Result<()> {
         epoll.modify(&self.stream, &mut EpollEvent::new(
-            super::epoll_flags(), self.fd as u64
+            epoll_flags(), self.fd as u64
         ))
     }
 
     /// Enqueues an outgoing message to be delivered when available
-    pub fn queue_msg(&mut self, msg: Box<NetMsg>, epoll: &mut Poller) -> Result<(),Box<NetMsg>> {
-        if self.outbound.occupied_len() == 0 {
-            if self.enable_writable(epoll).is_err() {
+    pub fn enqueue_msg(&mut self, msg: Box<NetMsg>, net_man: &mut super::NetMan) -> Result<(),Box<NetMsg>> {
+        if self.outbound.len() == 0 {
+            if self.enable_writable(&mut net_man.epoll).is_err() {
                 return Err(msg);
             }
         }
-        self.outbound.try_push(msg)
+        Ok(self.outbound.push_back(msg))
     }
 
     pub fn on_writable(&mut self, 
         net_man: &mut super::NetMan,
-        messengers: &mut super::Messengers
+        messengers: &mut Messengers
     ) -> NetResult<bool> {
         let mut did_work = false;
         loop {
@@ -368,9 +365,25 @@ impl Connection {
                 Some(WriteState::Idle) => {
                     // If there appears to be nothing to write
                     // check outbound buffer for queued msgs...
-                    if let Some(mut msg) = self.outbound.try_pop() {
+                    if let Some(mut msg) = self.outbound.pop_front() {
 
-                        self.write_header.code = msg.code;
+                        if self.outbound.len() < self.outbound.capacity() / 2 {
+                            self.outbound.shrink_to_fit();
+                        }
+
+                        if let NetMsgCode::External(c) = msg.code {
+                            self.write_header.code = c;
+
+                        } else {
+                            if let Some(consumer) = messengers.get_mut(&msg.from_code) {
+                                // Recycle msg
+                                consumer.recycle(msg);
+                            } else {
+                                self.local_net_msgs.push(msg);
+                            }
+                            self.write_state = Some(WriteState::Idle);
+                            continue;
+                        }
                         self.write_header.response_handler = msg.handler.take();
                         self.write_header.msg_id = msg.id;
 
@@ -379,10 +392,12 @@ impl Connection {
                        
                         // if our local supply isn't full fill it first.
                         // there is just less locally... so better use it...
-                        if self.local_net_msgs.len() == self.local_net_msgs.capacity() {
+                        if msg.from_code > -1 {
                             if let Some(consumer) = messengers.get_mut(&msg.from_code) {
                                 // Recycle msg
                                 consumer.recycle(msg);
+                            } else {
+                                self.local_net_msgs.push(msg);
                             }
                         } else {
                             self.local_net_msgs.push(msg);
@@ -403,13 +418,13 @@ impl Connection {
                 Some(WriteState::Writing) => {
                     if self.is_negotiated && !self.write_header.is_marshalled {
                         self.write_header.encrypt_marshal(&mut *self.write_buf, &self.key)?;
-                    } else {
+                    } else if !self.write_header.is_marshalled {
                         self.write_header.raw_marshal(&mut *self.write_buf);
                     }
 
                     while self.write_pos < self.write_buf.len() {
                         match self.stream.write(&self.write_buf[self.write_pos..]) {
-                            Ok(0) => return Err(NetError::ConnectionAborted),
+                            Ok(0) => {return Err(NetError::ConnectionAborted)},
                             Ok(n) => {
                                 did_work = true;
                                 self.write_pos += n;
@@ -425,14 +440,20 @@ impl Connection {
 
                     self.write_buf.reset();
                     self.write_pos = 0;
+                    self.write_header.is_marshalled = false;
 
                     if let Some(res_handle) = self.write_header.response_handler.take() {
                         self.inbound_handlers.insert(self.write_header.msg_id, res_handle);
                     }
 
+                    if self.is_acking {
+                        self.is_acking = false;
+                        self.is_negotiated = true;
+                    }
+
                     self.write_state = Some(WriteState::Idle);
                     // if no more messages queued Or wait until negotiation has finsihed
-                    if self.outbound.occupied_len() == 0 || !self.is_negotiated {
+                    if self.outbound.len() == 0 || !self.is_negotiated {
                         let _ = self.disable_writable(&mut net_man.epoll);
                     }
                     break;
@@ -466,8 +487,8 @@ impl Connection {
             self.read_pos += 32;
 
             // recover initiator salt
-            let mut salt = [0u8;32];
-            salt.copy_from_slice(
+            let mut remote_salt = [0u8;32];
+            remote_salt.copy_from_slice(
                 &self.read_buf[self.read_pos..self.read_pos+32]
             );
             self.read_pos += 32;
@@ -475,19 +496,20 @@ impl Connection {
             // derive final salt
             let mut local_salt = random_b32();
             let mut hasher = Sha256::default();
-            hasher.update(&salt);
+            hasher.update(&remote_salt);
             hasher.update(&local_salt);
             let mut final_salt = hasher.finalize();
-            salt.zeroize();
+            remote_salt.zeroize();
 
             // derive shared secret
             let mut secret = ecdh_shared_secret(net_man.priv_key.clone(), self.remote_pub_key.clone());
 
             // derive the key and assign to conn.key
             self.key = Key::from_slice(&hkdf_derive_key(
-                &secret, b"bullet_ledger", 
-                final_salt.into())
-            ).to_owned();
+                &secret, 
+                b"bullet_ledger", 
+                final_salt.into()
+            )).to_owned();
             secret.zeroize();
 
             // get a message to fill out
@@ -509,8 +531,10 @@ impl Connection {
             msg.body.extend_from_slice(&tag);
             msg.body.extend_from_slice(&final_salt);
 
+            self.is_acking = true;
+
             // Set msg id, code, is_negotiated, and write_state
-            msg.code = PacketCode::NegotiationAck;
+            msg.code = NetMsgCode::External(PacketCode::NegotiationAck);
 
             return Ok(HandlerRes::Write(msg));
 
@@ -536,8 +560,8 @@ impl Connection {
 
             // derive hashed_salt
             let mut hasher = Sha256::default();
-            hasher.update(&remote_salt);
             hasher.update(&local_salt);
+            hasher.update(&remote_salt);
             let final_salt = hasher.finalize();
             local_salt.zeroize();
             remote_salt.zeroize();
@@ -547,15 +571,17 @@ impl Connection {
 
             // derive the key and assign to conn.key
             self.key = Key::from_slice(&hkdf_derive_key(
-                &secret, b"bullet_ledger", 
-                final_salt.into())
-            ).to_owned();
+                &secret, 
+                b"bullet_ledger", 
+                final_salt.into()
+            )).to_owned();
             secret.zeroize();
 
             self.read_header.nonce.copy_from_slice(
                 &self.read_buf[self.read_pos..self.read_pos+12]
             );
             self.read_pos += 12;
+
             self.read_header.tag.copy_from_slice(
                 &self.read_buf[self.read_pos..self.read_pos+16]
             );
@@ -571,7 +597,7 @@ impl Connection {
                     &self.read_header.nonce.into(), 
                     b"bullet_ledger", 
                     &mut local_salt, 
-                    &mut self.read_header.tag.into()
+                    &self.read_header.tag.into(),
                 ).map_err( |e| NetError::Decryption(e.to_string()))?;
 
             if local_salt != *final_salt {
@@ -586,6 +612,7 @@ impl Connection {
 
             self.read_state = Some(ReadState::ReadingPrefix);
             self.write_state = Some(WriteState::Idle);
+
             return Ok(HandlerRes::None);
         }
     }
@@ -600,11 +627,11 @@ impl Connection {
         msg.body.extend_from_slice(&salt);
 
         // Set msg id, code, is_negotiated, and write_state
-        msg.code = PacketCode::NegotiationSyn;
+        msg.code = NetMsgCode::External(PacketCode::NegotiationSyn);
 
         self.is_negotiated = false;
 
-        if let Err(mut m) = self.queue_msg(msg, &mut net_man.epoll) {
+        if let Err(mut m) = self.enqueue_msg(msg, net_man) {
             m.reset();
             self.local_net_msgs.push(m);
             return Err(NetError::NegotiationFailed);

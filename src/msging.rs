@@ -20,9 +20,6 @@ pub trait Pollable {
     fn clone_event(&self) -> EpollEvent;
 }
 
-pub type Ring<T> = HeapRb<Box<T>>;
-pub type RingProd<T> = HeapProd<Box<T>>;
-pub type RingCons<T> = HeapCons<Box<T>>;
 
 pub struct MsgQ<T:Default> {
     pub q: HeapRb<Box<T>>,
@@ -44,7 +41,7 @@ impl<T:Default> MsgQ<T> {
     pub fn split(self) -> io::Result<(MsgProd<T>, MsgCons<T>)> {
         let (prod, cons) = self.q.split();
         let (recycler, collector) = self.shute.split();
-        let prod = MsgProd::new(prod, collector, &self.eventfd, &self.event)?;
+        let prod = MsgProd::new(prod, collector, &self.eventfd)?;
         let cons = MsgCons::new(cons, recycler, &self.eventfd, &self.event)?;
         Ok((prod, cons))
     }
@@ -60,7 +57,6 @@ pub struct MsgProd<T> {
     producer: HeapProd<Box<T>>,
     collector: HeapCons<Box<T>>,
     eventfd: OwnedFd,
-    event: EpollEvent,
     b: [u8;8],
 }
 
@@ -68,12 +64,11 @@ impl<T: Default> MsgProd<T> {
     pub fn new(
         producer: HeapProd<Box<T>>, 
         collector: HeapCons<Box<T>>,
-        fd: &OwnedFd, event: &EpollEvent,
+        fd: &OwnedFd,
     ) -> io::Result<Self> {
         Ok(Self { 
             producer, collector,
             eventfd: clone_owned_fd(fd)?, 
-            event: event.clone(), 
             b: 1u64.to_ne_bytes()
         })
     }

@@ -1,18 +1,19 @@
 #[test]
 fn key_ex() {
+    use std::fs;
     use zeroize::Zeroize;
     use chacha20poly1305::aead::{OsRng, AeadMutInPlace};
     use chacha20poly1305::{AeadCore, ChaCha20Poly1305, KeyInit};
     use crate::crypto::random_b32;
     use crate::crypto::montgomery::ecdh_shared_secret; 
-    use crate::crypto::montgomery::generate_keypair; 
     use crate::crypto::montgomery::hkdf_derive_key;
+    use crate::crypto::montgomery::load_keys;
 
     // Alice
-    let (mut alice_sk, alice_pk) = generate_keypair();
+    let (alice_pk, mut alice_sk) = load_keys("assets/test1.keys").unwrap();
 
     // Bob
-    let (mut bob_sk, bob_pk) = generate_keypair();
+    let (bob_pk, mut bob_sk) = load_keys("assets/test2.keys").unwrap();
 
     // Compute shared secrets
     let mut alice_shared = ecdh_shared_secret(alice_sk, bob_pk);
@@ -53,5 +54,7 @@ fn key_ex() {
 
     symmetric_key.zeroize();
     nonce.zeroize();
+    let _ = fs::remove_file("assets/test1.keys".to_string());
+    let _ = fs::remove_file("assets/test2.keys".to_string());
 }
 

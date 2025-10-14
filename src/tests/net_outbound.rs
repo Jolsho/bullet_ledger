@@ -1,74 +1,71 @@
 
 #[test]
 fn net_outbound() {
-    use ringbuf::traits::Split;
-    use std::time::Duration;
-
+    use std::{time::Duration, fs};
     use crate::config::load_config;
-    use crate::core::msg::CoreMsg;
-    use crate::msging::{MsgQ, Ring};
-    use crate::networker::{start_networker, netman::NetMsg};
-    use crate::{trxs::Trx, NETWORKER, CORE};
+    use crate::msging::MsgQ;
+    use crate::networker::handlers::ping_pong::send_ping;
+    use crate::networker::{start_networker, utils::NetMsg};
+    use crate::crypto::montgomery::load_keys;
+    use crate::{NETWORKER, CORE};
     use crate::shutdown;
 
-    fn get_stuff() -> (Ring<Trx>, MsgQ<CoreMsg>,MsgQ<NetMsg>) {
-        let trx = Ring::<Trx>::new(64);
-        let ntc = MsgQ::<CoreMsg>::new(32, NETWORKER).unwrap();
+    fn get_stuff() -> (MsgQ<NetMsg>,MsgQ<NetMsg>) {
+        let ntc = MsgQ::<NetMsg>::new(32, NETWORKER).unwrap();
         let ctn = MsgQ::<NetMsg>::new(32, CORE).unwrap();
-        (trx, ntc, ctn)
+        (ntc, ctn)
     }
 
     let mut config = load_config("config.toml");
     config.network.bind_addr = "127.0.0.1:4143".to_string();
+    config.network.key_path = "assets/keys1.bullet".to_string();
+    config.network.db_path = "assets/net1.sqlit3".to_string();
 
     // -- setup1 (receiver) ----------------------------------------------------------------
-    let (trx,n_to_c, c_to_n) = get_stuff();
-    let (_trx_prod, trx_con) = trx.split();
+    let (n_to_c, c_to_n) = get_stuff();
     let (to_c, _from_n) = n_to_c.split().unwrap();
     let (_to_n, from_c) = c_to_n.split().unwrap();
 
     let cfg = config.network.clone();
     let net_handle1 = start_networker(
-        cfg, trx_con, to_c, 
-        vec![(from_c, CORE), ]
-    );
+        cfg, to_c, vec![(from_c, CORE), ]
+    ).unwrap();
 
     // -- setup2 (sender)----------------------------------------------------------------
     let remote = config.network.bind_addr;
     config.network.bind_addr = "127.0.0.1:4144".to_string();
+    config.network.key_path = "assets/keys2.bullet".to_string();
+    config.network.db_path = "assets/net2.sqlit3".to_string();
 
-    let (trx,n_to_c, c_to_n) = get_stuff();
-    let (trx_prod, trx_con) = trx.split();
-    let (to_c, from_n) = n_to_c.split().unwrap();
+    let (n_to_c, c_to_n) = get_stuff();
+    let (to_c, _from_n) = n_to_c.split().unwrap();
     let (mut to_n, from_c) = c_to_n.split().unwrap();
 
     let cfg = config.network.clone();
     let net_handle2 = start_networker(
-        cfg, trx_con, to_c, 
-        vec![(from_c, CORE), ]
-    );
+        cfg, to_c, vec![(from_c, CORE), ]
+    ).unwrap();
 
-    // -- send da ting ----------------------------------------------------------------
-    let mut msg = NetMsg::default();
-    msg.addr = Some(remote.parse().unwrap());
-    msg.code = crate::networker::header::PacketCode::PingPong;
-    msg.from_code = CORE;
-    msg.body.extend_from_slice(b"Ping");
-    assert_eq!(to_n.push(Box::new(msg)).is_ok(), true);
-    /*
-    *
-    *   when connection gets create it has write flags...
-    *       but it has negotiation connstate
-    *
-    *   this means it will write the packet right away...
-    *   because of how the write flags are written
-    *   
-    */
+    // -- send da tings ----------------------------------------------------------------
+    
+    let (public, _private) = load_keys("assets/keys1.bullet").unwrap();
+    for i in 0..100 { 
+        send_ping(
+            &mut to_n, remote.clone(), public, CORE, Some(i)
+        ).unwrap();
+    }
 
-    std::thread::sleep(Duration::from_secs(4));
     // -----------------------------------------------------------------
+    
+    std::thread::sleep(Duration::from_secs(3));
     shutdown::request_shutdown();
     net_handle1.join().unwrap();
     net_handle2.join().unwrap();
+
+    let _ = fs::remove_file("assets/keys1.bullet".to_string());
+    let _ = fs::remove_file("assets/net1.sqlit3".to_string());
+
+    let _ = fs::remove_file("assets/keys2.bullet".to_string());
+    let _ = fs::remove_file("assets/net2.sqlit3".to_string());
 }
 

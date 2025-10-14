@@ -2,8 +2,9 @@ use curve25519_dalek::{ristretto::CompressedRistretto, scalar::Scalar};
 use merlin::Transcript;
 use bulletproofs::{ProofError, RangeProof};
 use sha2::{Digest, Sha256};
-use crate::crypto::{random_b32, TrxGenerators};
-use crate::crypto::schnorr::SchnorrProof;
+
+use crate::core::{priority::DeriveStuff, Hash};
+use crate::crypto::{random_b32, TrxGenerators, schnorr::SchnorrProof};
 
 const VALUE_SIZE: usize = 64;
 pub const PROOF_LENGTH: usize = 672; // (2(log2(64)) + 9) * 32
@@ -45,19 +46,19 @@ pub fn visible_value_commit(p: &TrxGenerators, val: u64) -> TrxSecrets {
 /*
 *   TRX FORMAT         |size|
 *   ------------------------|
-*   | sender_commit_F    32 | 
-*   | sender_proof_F    672 |   
-*   |-----------------------|      
-*   | sender_commit_I    32 | ======I 
-*   | delta_commit       32 |       I 
-*   | fee_commit         32 |       I Schnorr Hash Context
-*   | fee value          8  |       I
-*   | receiver_commit_I  32 |=======I       
-*   |-----------------------|
-*   | receiver_commit_F  32 |      
-*   ------------------------|
-*   | sender_Schnoor     96 |
-*   | receiver_Schnoor   96 |
+*   | sender_commit_F    32 |====I
+*   | sender_proof_F    672 <====I=== PROOF_LEN
+*   |-----------------------|    I  
+*   | sender_commit_I    32 |----I---I 
+*   | delta_commit       32 |    I   I 
+*   | fee_commit         32 |    I   I Schnorr Hash Context
+*   | fee value          8  |    I   I
+*   | receiver_commit_I  32 |----I---I       
+*   |-----------------------|    I
+*   | receiver_commit_F  32 |====I TRX_LENGTH 
+*   ------------------------|    I
+*   | sender_Schnoor     96 |    I
+*   | receiver_Schnoor   96 |====I TOTAL_TRX_PROOF
 *   -------------------------
 *
 *   NOTE::
@@ -87,7 +88,7 @@ pub struct Trx {
     pub receiver_schnorr: SchnorrProof,
 
     pub hash: [u8; 32],
-    pub buffer: [u8; TOTAL_TRX_PROOF],
+    pub buffer: Vec<u8>,
 }
 
 impl Default for Trx {
@@ -95,12 +96,22 @@ impl Default for Trx {
         Self::new(b"bullet_ledger")
     }
 }
+impl DeriveStuff<Box<Hash>> for Box<Trx> {
+    fn fill_key(&self, key: &mut Box<Hash>) {
+        key.copy_from_slice(&self.hash);
+    }
+    fn get_comperator(&self) -> u64 {
+        self.fee_value
+    }
+}
 
 impl Trx {
     pub fn new(tag: &'static [u8]) -> Self {
+        let mut buffer = Vec::with_capacity(TOTAL_TRX_PROOF);
+        buffer.resize(TOTAL_TRX_PROOF, 0);
         Self { 
             tag,
-            buffer: [0u8; TOTAL_TRX_PROOF],
+            buffer,
             hash: [0u8; 32],
             delta_commit: CompressedRistretto::default(),
             fee_commit: CompressedRistretto::default(),

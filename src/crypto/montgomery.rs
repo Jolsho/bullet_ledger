@@ -1,4 +1,5 @@
-use std::io::{self, Read, Write};
+use std::fs::OpenOptions;
+use std::io::{self, Read, Seek, SeekFrom, Write};
 
 use curve25519_dalek::constants::X25519_BASEPOINT;
 use curve25519_dalek::montgomery::MontgomeryPoint;
@@ -35,7 +36,7 @@ pub fn generate_keypair() -> ([u8; 32], [u8; 32]) {
     // We will return priv_bytes, but if you keep it in memory longer, ensure secure storage.
     raw.zeroize();
 
-    (priv_bytes, pub_bytes)
+    (pub_bytes, priv_bytes)
 }
 
 /// Compute ECDH shared coordinate: returns 32 bytes (u-coordinate)
@@ -64,26 +65,34 @@ pub fn hkdf_derive_key(shared_secret: &[u8; 32], info: &[u8], salt: [u8;32]) -> 
     okm
 }
 
-pub fn load_keys(key_path: &str) -> io::Result<([u8;32],[u8;32])> {
-    let mut key_file = std::fs::OpenOptions::new()
-        .read(true) .write(true)
-        .create(true) .open(key_path)?;
+
+pub fn load_keys(key_path: &str) -> io::Result<([u8; 32], [u8; 32])> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(key_path)?;
 
     let mut pub_key = [0u8; 32];
     let mut priv_key = [0u8; 32];
 
-    let n = key_file.read(&mut pub_key)?;
-    if n == 0 {
-        (pub_key, priv_key) = generate_keypair();
-        key_file.write(&pub_key)?;
-        key_file.write(&priv_key)?;
+    // Try reading both keys completely
+    let result = file.read_exact(&mut pub_key)
+        .and_then(|_| file.read_exact(&mut priv_key));
+
+    if result.is_err() {
+        // Rewind to start before writing new keys
+        file.set_len(0)?;               // clear file
+        file.seek(SeekFrom::Start(0))?;
+
+        // Generate new keypair
+        let (new_pub, new_priv) = generate_keypair();
+        file.write_all(&new_pub)?;
+        file.write_all(&new_priv)?;
+        file.flush()?;
+
+        Ok((new_pub, new_priv))
     } else {
-        let n = key_file.read(&mut priv_key)?;
-        if n == 0 {
-            (pub_key, priv_key) = generate_keypair();
-            key_file.write(&pub_key)?;
-            key_file.write(&priv_key)?;
-        }
+        Ok((pub_key, priv_key))
     }
-    Ok((pub_key, priv_key))
 }

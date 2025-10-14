@@ -1,4 +1,3 @@
-
 [network]
 # The address and port your server will bind to.
 bind_addr = "127.0.0.1:4141"
@@ -22,18 +21,18 @@ net_man_buffers_cap = 512
 max_buffer_size = 2048
 
 # Capacity of inbound and outbound msg queue per connection.
-in_out_q_size = 5
+in_out_q_size = 32
 
 # Path to file with pub/priv key pair.
-key_path = "keys.bullet"
+key_path = "assets/keys.bullet"
 
+# Database path.
+db_path = "assets/ledger.sqlit3"
 
-[database]
-# Database connection URI (e.g., PostgreSQL).
-uri = "postgres://user:password@localhost:5432/mydb"
+# The score at which a peer becomes banned.
+score_threshold = 200
 
-# Maximum number of pooled database connections.
-pool_size = 16
+bootstraps = [[127,0,0,1]]
 
 
 [core]
@@ -49,3 +48,8 @@ event_len = 128
 # TRX pool capacity.
 pool_cap = 8
 
+# How many bulletproofs to validate at once
+bullet_count = 1
+
+# Database path.
+db_path = "assets/ledger.sqlit3"
