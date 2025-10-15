@@ -7,12 +7,12 @@ fn net_outbound() {
     use crate::networker::handlers::ping_pong::send_ping;
     use crate::networker::{start_networker, utils::NetMsg};
     use crate::crypto::montgomery::load_keys;
-    use crate::{NETWORKER, CORE};
+    use crate::CORE;
     use crate::shutdown;
 
     fn get_stuff() -> (MsgQ<NetMsg>,MsgQ<NetMsg>) {
-        let ntc = MsgQ::<NetMsg>::new(32, NETWORKER).unwrap();
-        let ctn = MsgQ::<NetMsg>::new(32, CORE).unwrap();
+        let ntc = MsgQ::<NetMsg>::new(32).unwrap();
+        let ctn = MsgQ::<NetMsg>::new(32).unwrap();
         (ntc, ctn)
     }
 

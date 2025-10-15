@@ -1,3 +1,5 @@
+use mio::Token;
+
 use crate::networker::connection::Connection;
 use crate::networker::utils::{NetError, NetMsgCode, NetResult};
 use crate::networker::NetMan;
@@ -12,7 +14,7 @@ pub fn send_ping(
     sender: &mut MsgProd<NetMsg>, 
     remote_addr: String, 
     remote_pub_key: [u8; 32],
-    from: i32,
+    from: Token,
     index: Option<usize>,
 ) -> Result<(), Box<dyn error::Error>> {
 

@@ -1,13 +1,14 @@
 use std::ops::{Deref, DerefMut};
-use crate::{msging::MsgCons, networker::{connection::Connection, header::{HEADER_LEN, PREFIX_LEN}}};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
-use nix::sys::epoll::EpollFlags;
 
-use std::os::fd::{AsFd, AsRawFd, RawFd};
-use crate::crypto::random_b2;
+use mio::Token;
+
+use crate::{msging::MsgCons, crypto::random_b2};
 use crate::networker::handlers::{Handler, PacketCode};
+use crate::networker::connection::Connection; 
+use crate::networker::header::{HEADER_LEN, PREFIX_LEN};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum NetManCode {
@@ -21,7 +22,6 @@ pub enum NetMsgCode {
     Internal(NetManCode),
     External(PacketCode),
 }
-
 impl NetMsgCode {
     pub fn is_internal(&self) -> bool {
         match self {
@@ -34,8 +34,8 @@ impl NetMsgCode {
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub struct NetMsg {
     pub id: u16,
-    pub from_code: i32,
-    pub stream_fd: RawFd,
+    pub from_code: Token,
+    pub stream_token: Token,
 
     pub addr: Option<SocketAddr>,
     pub pub_key: Option<[u8;32]>,
@@ -44,6 +44,7 @@ pub struct NetMsg {
     pub body: WriteBuffer,
     pub handler: Option<Handler>,
 }
+
 pub const DEFAULT_BUFFER_SIZE:usize = 1024;
 
 impl Default for NetMsg {
@@ -51,8 +52,8 @@ impl Default for NetMsg {
         let mut s = Self { 
             id: u16::from_le_bytes(random_b2()),
             code: NetMsgCode::Internal(NetManCode::None),
-            stream_fd: -1, 
-            from_code: -1,
+            stream_token: Token(0), 
+            from_code: Token(0),
             addr: None,
             body: WriteBuffer::new(),
             handler: None,
@@ -66,18 +67,25 @@ impl Default for NetMsg {
 impl NetMsg {
     pub fn fill_fd_and_id(&mut self, conn: &mut Connection) {
         self.id = u16::from_le_bytes(random_b2());
-        self.stream_fd = conn.as_fd().as_raw_fd();
-        self.from_code = 0;
+        self.stream_token = conn.token;
+        self.from_code = Token(0);
         self.addr = None;
         self.pub_key = None;
     }
     pub fn reset(&mut self) {
         self.id = u16::from_le_bytes(random_b2());
-        self.stream_fd = -1;
-        self.from_code = 0;
+        self.stream_token =  Token(0);
+        self.from_code = Token(0);
         self.addr = None;
         self.pub_key = None;
         self.body.reset();
+    }
+
+    pub fn fill_for_internal(&mut self, from_code: Token, code: NetManCode, buff: &[u8]) {
+        self.reset();
+        self.from_code = from_code;
+        self.code = NetMsgCode::Internal(code);
+        self.body.extend_from_slice(buff);
     }
 }
 
@@ -87,8 +95,8 @@ impl NetMsg {
 
 
 pub struct Mappings {
-    pub conns: HashMap<i32, Connection>,
-    pub addrs: HashMap<SocketAddr, i32>,
+    pub conns: HashMap<Token, Connection>,
+    pub addrs: HashMap<SocketAddr, Token>,
 }
 
 impl Mappings {
@@ -103,14 +111,8 @@ impl Mappings {
 pub fn next_deadline(timeout: u64) -> Instant {
     Instant::now() + Duration::from_secs(timeout)
 }
-pub fn epoll_flags() -> EpollFlags {
-    EpollFlags::EPOLLIN | EpollFlags::EPOLLHUP | EpollFlags::EPOLLERR
-}
-pub fn epoll_flags_write() -> EpollFlags {
-    epoll_flags() | EpollFlags::EPOLLOUT
-}
 
-pub type Messengers = HashMap<i32, MsgCons<NetMsg>>;
+pub type Messengers = HashMap<Token, MsgCons<NetMsg>>;
 
 
 ////////////////////////////////////////////////////////
@@ -125,7 +127,7 @@ pub enum NetError {
     NegotiationFailed,
     Encryption(String),
     Decryption(String),
-    SocketFailed(String),
+    SocketFailed,
     Other(String),
 
     PeerDbQ(String),

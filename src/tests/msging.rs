@@ -1,23 +1,23 @@
+
+
 #[test]
 fn msging() {
-    use crate::msging::{MsgQ, Poller};
+    use mio::{Interest, Poll, Token, Events};
+    use crate::msging::MsgQ;
     use std::{thread::{self}, time::Duration};
-    use std::os::fd::RawFd;
-    use nix::{poll::PollTimeout, sys::{epoll::EpollEvent}};
 
-    const U64:i32 = 1;
-    const STR:i32 = 2;
-    const IDLE_POLLTIMEOUT: u16 = 100;
+    const U64:Token = Token(1);
+    const STR:Token = Token(2);
 
-    let q_num =  MsgQ::<u64>::new(12, U64).unwrap();
-    let q_string =  MsgQ::<String>::new(12, STR).unwrap();
-
-    let mut epoll = Poller::new().unwrap();
-    epoll.listen_to(&q_string).unwrap();
-    epoll.listen_to(&q_num).unwrap();
+    let q_num =  MsgQ::<u64>::new(12).unwrap();
+    let q_string =  MsgQ::<String>::new(12).unwrap();
 
     let (mut num_prod, mut num_cons) = q_num.split().unwrap();
     let (mut string_prod, mut string_cons) = q_string.split().unwrap();
+
+    let mut poll = Poll::new().unwrap();
+    poll.registry().register(&mut num_cons, U64, Interest::READABLE).unwrap();
+    poll.registry().register(&mut string_cons, STR, Interest::READABLE).unwrap();
 
     let num_sender = thread::spawn(move || {
         let mut num = Err(Box::new(0));
@@ -53,13 +53,13 @@ fn msging() {
 
     let consumer = thread::spawn(move || {
         // Consumer thread
-        let mut events = vec![EpollEvent::empty(); 2];
+        let mut events = Events::with_capacity(16);
         let mut num_count = 0;
         let mut str_count = 0;
         loop {
-            let n = epoll.wait(&mut events, PollTimeout::from(IDLE_POLLTIMEOUT)).unwrap();
-            for ev in &events[..n] {
-                match ev.data() as RawFd {
+            poll.poll(&mut events, Some(Duration::from_millis(100))).unwrap();
+            for ev in events.iter() {
+                match ev.token() {
                     U64 => {
                         let _ = num_cons.read_event();
                         while let Some(num) = num_cons.pop() {

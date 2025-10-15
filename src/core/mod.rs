@@ -1,12 +1,12 @@
 use core::error;
-use std::os::fd::RawFd;
+use std::time::Duration;
 use std::{thread::JoinHandle};
-use nix::{poll::PollTimeout, sys::epoll::EpollEvent};
+use mio::{Events, Interest, Poll};
 
 use crate::core::db::Ledger;
 use crate::networker::utils::NetMsgCode;
 use crate::{config::CoreConfig, crypto::TrxGenerators, trxs::Trx};
-use crate::msging::{MsgCons, MsgProd, Poller};
+use crate::msging::{MsgCons, MsgProd};
 use crate::{networker::{utils::NetMsg, handlers::PacketCode}, NETWORKER};
 use {consensus::Consensus, priority::PriorityPool};
 
@@ -35,7 +35,7 @@ impl Default for Hash {
 
 
 pub struct Core {
-    epoll: Poller,
+    poll: Poll,
     to_net: MsgProd<NetMsg>,
     ledger: Ledger,
 
@@ -46,16 +46,16 @@ pub struct Core {
 
 impl Core {
     pub fn new(
-        config: CoreConfig, 
+        config: &CoreConfig, 
         to_net: MsgProd<NetMsg>,
     ) -> Result<Self, Box<dyn error::Error>> {
         Ok(Self { 
             consensus: Consensus::new(),
             pool: TrxPool::new(config.pool_cap), 
             gens: TrxGenerators::new("bullet_ledger", config.bullet_count),
-            epoll: Poller::new()?,
+            poll: Poll::new()?,
             to_net, 
-            ledger: Ledger::new(config.db_path)?,
+            ledger: Ledger::new(config.db_path.clone())?,
         })
     }
 }
@@ -65,20 +65,22 @@ pub fn start_core(
     mut from_net: MsgCons<NetMsg>,
     to_net: MsgProd<NetMsg>,
 ) -> Result<JoinHandle<()>, Box<dyn error::Error>> {
-    let poll_timeout = PollTimeout::from(config.idle_polltimeout);
-    let mut events = vec![EpollEvent::empty(); config.event_len];
 
-    let mut core = Core::new(config, to_net)?;
-    core.epoll.listen_to(&from_net)?;
+    let mut core = Core::new(&config, to_net)?;
+    core.poll.registry().register(&mut from_net, NETWORKER, Interest::READABLE)?;
+
+    let mut events = Events::with_capacity(config.event_len);
+    let polltimeout = Duration::from_millis(config.idle_polltimeout);
 
     Ok(std::thread::spawn(move || {
         // Start polling
         loop {
-            let n = core.epoll.wait(&mut events, poll_timeout);
-            if n.is_err() { continue }
+            if core.poll.poll(&mut events, Some(polltimeout)).is_err() {
+                continue;
+            }
 
-            for ev in &events[..n.unwrap()] {
-                match ev.data() as RawFd {
+            for ev in events.iter() {
+                match ev.token() {
                     NETWORKER => { // Msg from Networker
                         if let Some(mut m) = from_net.pop() {
                             handle_from_net( &mut core, &mut m);
@@ -124,7 +126,8 @@ pub fn handle_from_net(
             core.pool.insert(trx);
         },
         NetMsgCode::External(PacketCode::NewBlock) => {
-            const BLOCK_SIZE:usize = 3;
+            const BLOCK_SIZE:usize = 3; // TODO -- what is this
+
             let mut keys = Vec::with_capacity(BLOCK_SIZE);
             for i in 0..BLOCK_SIZE {
                 if i + 32 > m.body.len() { break; }

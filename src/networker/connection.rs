@@ -1,18 +1,18 @@
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
-use std::{io::{self, Read, Write},time::Instant, net::TcpStream};
-use std::os::fd::{AsFd, AsRawFd, BorrowedFd};
+use std::{io::{self, Read, Write},time::Instant};
+use std::os::fd::AsRawFd;
 use chacha20poly1305::aead::{AeadMutInPlace, OsRng};
 use chacha20poly1305::{AeadCore, ChaCha20Poly1305, Key, KeyInit};
-use nix::sys::{epoll::EpollEvent, socket::{getsockopt, sockopt}};
+use mio::net::TcpStream;
+use mio::{Interest, Poll, Token};
 use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 use crate::crypto::{ random_b32, montgomery::{ecdh_shared_secret, hkdf_derive_key}};
-use crate::msging::Poller;
 use crate::networker::handlers::{code_switcher, Handler, HandlerRes, PacketCode};
 use crate::networker::header::{Header, HEADER_LEN,PREFIX_LEN};
-use crate::networker::utils::{epoll_flags, epoll_flags_write, next_deadline, Messengers, NetError, NetMsg, NetMsgCode, NetResult, WriteBuffer};
+use crate::networker::utils::{next_deadline, Messengers, NetError, NetMsg, NetMsgCode, NetResult, WriteBuffer};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ConnDirection {
@@ -35,7 +35,7 @@ pub enum WriteState {
 
 pub struct Connection {
     stream: TcpStream,
-    fd: i32,
+    pub token: Token,
     pub last_deadline: Instant,
 
     pub addr: SocketAddr,
@@ -60,12 +60,6 @@ pub struct Connection {
     write_pos: usize,
 }
 
-impl AsFd for Connection {
-    fn as_fd(&self) -> std::os::unix::prelude::BorrowedFd<'_> {
-        unsafe { BorrowedFd::borrow_raw(self.fd) } 
-    }
-}
-
 impl Drop for Connection {
     fn drop(&mut self) {
         self.key.zeroize();
@@ -82,9 +76,8 @@ impl Connection {
     ) -> NetResult<Self> {
         let mut conn = Self {
             // META
-            fd: stream.as_raw_fd(), 
-            stream, 
-            addr,
+            token: Token(stream.as_raw_fd() as usize), 
+            stream, addr,
             last_deadline: next_deadline(net_man.config.idle_timeout),
 
             // ENCRYPTION
@@ -114,7 +107,7 @@ impl Connection {
 
         if dir == ConnDirection::Outbound {
             if let Err(e) = conn.initiate_negotiation(net_man) {
-                net_man.epoll.delete(&conn.stream).ok();
+                net_man.poll.registry().deregister(&mut conn.stream).ok();
                 return Err(e);
             }
         }
@@ -129,7 +122,7 @@ impl Connection {
         net_man: &mut super::NetMan,
         messengers: &mut Messengers
     ) {
-        let _ = net_man.epoll.delete(&self);
+        let _ = net_man.poll.registry().deregister(&mut self.stream);
         let mut read_buf = Vec::with_capacity(0);
         std::mem::swap(&mut read_buf, &mut self.read_buf);
         net_man.put_buff(read_buf);
@@ -143,16 +136,6 @@ impl Connection {
             } else {
                 net_man.buffs.push(msg.body.release_buffer());
             }
-        }
-    }
-
-
-    /// CALLS getsockopt and return io::Result corresponding
-    pub fn check_socket_error(&mut self) -> io::Result<()> {
-        match getsockopt(&self.stream, sockopt::SocketError) {
-            Ok(0) => Ok(()),
-            Ok(err) => Err(io::Error::from_raw_os_error(err)),
-            Err(e) => Err(io::Error::new(io::ErrorKind::Other, e)),
         }
     }
 
@@ -304,7 +287,7 @@ impl Connection {
 
                                 // if writer is idle enable it
                                 if self.write_state == Some(WriteState::Idle) {
-                                    let _ = self.enable_writable(&mut net_man.epoll);
+                                    let _ = self.enable_writable(&mut net_man.poll);
                                 }
                             }
                         }
@@ -331,23 +314,23 @@ impl Connection {
     ///////////////////////////////////////////////////////////////////////////////
 
     /// Adds EPOLLOUT flag to streams epoll event
-    fn enable_writable(&mut self, epoll: &mut Poller) -> nix::Result<()> {
-        epoll.modify(&self.stream, &mut EpollEvent::new(
-            epoll_flags_write(), self.fd as u64,
-        ))
+    fn enable_writable(&mut self, poll: &mut Poll) -> io::Result<()> {
+        poll.registry().reregister(&mut self.stream, self.token, 
+            Interest::READABLE | Interest::WRITABLE
+        )
     }
 
     /// Removes EPOLLOUT flag to streams epoll event
-    fn disable_writable(&mut self, epoll: &mut Poller) -> nix::Result<()> {
-        epoll.modify(&self.stream, &mut EpollEvent::new(
-            epoll_flags(), self.fd as u64
-        ))
+    fn disable_writable(&mut self, poll: &mut Poll) -> io::Result<()> {
+        poll.registry().reregister(&mut self.stream, self.token, 
+            Interest::READABLE
+        )
     }
 
     /// Enqueues an outgoing message to be delivered when available
     pub fn enqueue_msg(&mut self, msg: Box<NetMsg>, net_man: &mut super::NetMan) -> Result<(),Box<NetMsg>> {
         if self.outbound.len() == 0 {
-            if self.enable_writable(&mut net_man.epoll).is_err() {
+            if self.enable_writable(&mut net_man.poll).is_err() {
                 return Err(msg);
             }
         }
@@ -392,7 +375,7 @@ impl Connection {
                        
                         // if our local supply isn't full fill it first.
                         // there is just less locally... so better use it...
-                        if msg.from_code > -1 {
+                        if msg.from_code.0 > 0 {
                             if let Some(consumer) = messengers.get_mut(&msg.from_code) {
                                 // Recycle msg
                                 consumer.recycle(msg);
@@ -406,7 +389,7 @@ impl Connection {
 
                     } else {
 
-                        let _ = self.disable_writable(&mut net_man.epoll);
+                        let _ = self.disable_writable(&mut net_man.poll);
                         self.write_state = Some(WriteState::Idle);
                         return Ok(false)
                     }
@@ -454,7 +437,7 @@ impl Connection {
                     self.write_state = Some(WriteState::Idle);
                     // if no more messages queued Or wait until negotiation has finsihed
                     if self.outbound.len() == 0 || !self.is_negotiated {
-                        let _ = self.disable_writable(&mut net_man.epoll);
+                        let _ = self.disable_writable(&mut net_man.poll);
                     }
                     break;
                 }
@@ -608,7 +591,7 @@ impl Connection {
             self.is_negotiated = true;
             
             // re-enable so we can process our queued outgoing message(s)
-            let _ = self.enable_writable(&mut net_man.epoll);
+            let _ = self.enable_writable(&mut net_man.poll);
 
             self.read_state = Some(ReadState::ReadingPrefix);
             self.write_state = Some(WriteState::Idle);

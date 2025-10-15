@@ -27,7 +27,7 @@ in_out_q_size = 32
 key_path = "assets/keys.bullet"
 
 # Database path.
-db_path = "assets/ledger.sqlit3"
+db_path = "assets/network.sqlit3"
 
 # The score at which a peer becomes banned.
 score_threshold = 200
@@ -53,3 +53,35 @@ bullet_count = 1
 
 # Database path.
 db_path = "assets/ledger.sqlit3"
+
+
+[server]
+# The address and port your server will bind to.
+bind_addr = "127.0.0.1:4141"
+
+# Database path.
+db_path = "assets/rpc.sqlit3"
+
+# Time (in seconds) before closing an idle connection.
+idle_timeout = 2 
+
+# Maximum number of active TCP connections allowed.
+max_connections = 512
+
+# The capacity of your event buffer (e.g., for epoll events).
+event_buffer_size = 512
+
+# Poll timeout (in milliseconds) for idle network polls.
+idle_polltimeout = 100
+
+# How many buffers of size max_buffer_size net_man holds.
+buffers_cap = 512
+
+# The maximum buffer size per connection (in bytes).
+max_buffer_size = 2048
+
+# The score at which a peer becomes banned.
+peer_threshold = 200
+
+bootstraps = [[127,0,0,1]]
+
