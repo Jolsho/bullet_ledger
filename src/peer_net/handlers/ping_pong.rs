@@ -1,13 +1,11 @@
 use mio::Token;
-
-use crate::networker::connection::PeerConnection;
-use crate::networker::utils::{NetError, NetMsgCode, NetResult};
-use crate::server::NetServer;
-use super::{HandlerRes, PacketCode};
 use std::{net::SocketAddr, time::Duration};
 
-use crate::msging::MsgProd;
-use crate::networker::utils::NetMsg;
+use super::{HandlerRes, PacketCode};
+use super::super::connection::PeerConnection;
+use crate::utils::{NetError, NetMsgCode, NetResult, NetMsg};
+
+use crate::{server::NetServer, msging::MsgProd};
 
 pub fn send_ping(
     sender: &mut MsgProd<NetMsg>, 

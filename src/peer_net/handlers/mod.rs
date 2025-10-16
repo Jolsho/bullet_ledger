@@ -1,11 +1,9 @@
 
-use crate::networker::connection::PeerConnection;
-use crate::networker::utils::NetMsgCode;
-use crate::server::NetServer;
 use crate::CORE;
+use crate::server::NetServer;
 
-use super::utils::{NetResult, NetError};
-use super::utils::NetMsg;
+use crate::utils::{NetResult, NetError, NetMsg, NetMsgCode};
+use super::connection::PeerConnection;
 
 pub mod ping_pong;
 

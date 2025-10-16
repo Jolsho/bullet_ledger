@@ -3,25 +3,32 @@ use mio::{event::Source, unix::SourceFd};
 use nix::{sys::eventfd::{EfdFlags, EventFd}, unistd};
 use ringbuf::{traits::{Consumer, Producer, Split}, HeapCons, HeapProd, HeapRb};
 
-pub struct MsgQ<T:Default> {
-    pub q: HeapRb<Box<T>>,
-    pub shute: HeapRb<Box<T>>,
+pub trait Msg {
+    fn new(cap:Option<usize>) -> Self;
 }
 
-impl<T:Default> MsgQ<T> {
-    pub fn new(cap: usize) -> io::Result<Self> {
-        Ok(Self { 
+pub struct MsgQ<T:Msg> {
+    pub q: HeapRb<Box<T>>,
+    pub shute: HeapRb<Box<T>>,
+    pub msg_buffer_cap: Option<usize>,
+}
+
+impl<T:Msg> MsgQ<T> {
+    pub fn new(cap: usize, default_msg_buffer_cap: Option<usize>) -> io::Result<(MsgProd<T>, MsgCons<T>)> {
+        let s = Self { 
             q: HeapRb::new(cap), 
             shute: HeapRb::new(cap/2), 
-        })
+            msg_buffer_cap: default_msg_buffer_cap,
+        };
+        s.split()
     }
 
-    pub fn split(self) -> io::Result<(MsgProd<T>, MsgCons<T>)> {
+    fn split(self) -> io::Result<(MsgProd<T>, MsgCons<T>)> {
         let (prod, cons) = self.q.split();
         let (recycler, collector) = self.shute.split();
         let event_fd: OwnedFd = EventFd::from_flags(EfdFlags::EFD_NONBLOCK | EfdFlags::EFD_CLOEXEC)?.into();
         let cons = MsgCons::new(cons, recycler, unistd::dup(&event_fd)?)?;
-        let prod = MsgProd::new(prod, collector, event_fd)?;
+        let prod = MsgProd::new(prod, collector, event_fd, self.msg_buffer_cap)?;
         Ok((prod, cons))
     }
 }
@@ -30,17 +37,19 @@ pub struct MsgProd<T> {
     producer: HeapProd<Box<T>>,
     collector: HeapCons<Box<T>>,
     eventfd: OwnedFd,
+    buffer_cap: Option<usize>,
     b: [u8;8],
 }
 
-impl<T: Default> MsgProd<T> {
+impl<T: Msg> MsgProd<T> {
     pub fn new(
         producer: HeapProd<Box<T>>, 
         collector: HeapCons<Box<T>>,
         eventfd: OwnedFd,
+        buffer_cap: Option<usize>
     ) -> io::Result<Self> {
         Ok(Self { 
-            producer, collector, eventfd, 
+            producer, collector, eventfd,  buffer_cap,
             b: 1u64.to_ne_bytes()
         })
     }
@@ -56,7 +65,7 @@ impl<T: Default> MsgProd<T> {
     pub fn collect(&mut self) -> Box<T> {
         match self.collector.try_pop() {
             Some(m) => m,
-            None => Box::new(T::default()),
+            None => Box::new(T::new(self.buffer_cap)),
         }
     }
 }
@@ -70,7 +79,7 @@ pub struct MsgCons<T> {
     b: [u8;8],
 }
 
-impl<T:Default> MsgCons<T> {
+impl<T:Msg> MsgCons<T> {
     pub fn new(
         consumer: HeapCons<Box<T>>, 
         recycler: HeapProd<Box<T>>, 
@@ -100,7 +109,7 @@ impl<T:Default> MsgCons<T> {
     }
 }
 
-impl<T:Default> Source for MsgCons<T> {
+impl<T:Msg> Source for MsgCons<T> {
     fn register(
             &mut self,
             registry: &mio::Registry,

@@ -1,13 +1,14 @@
 use std::ops::{Deref, DerefMut};
-use std::net::SocketAddr;
 use std::time::{Duration, Instant};
+use crate::peer_net::header::{HEADER_LEN, PREFIX_LEN};
+use std::net::SocketAddr;
 
 use mio::Token;
 
-use crate::networker::connection::PeerConnection;
+use crate::msging::Msg;
+use crate::peer_net::connection::PeerConnection;
 use crate::crypto::random_b2;
-use crate::networker::handlers::{Handler, PacketCode};
-use crate::networker::header::{HEADER_LEN, PREFIX_LEN};
+use crate::peer_net::handlers::{Handler, PacketCode};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum NetManCode {
@@ -44,17 +45,15 @@ pub struct NetMsg {
     pub handler: Option<Handler>,
 }
 
-pub const DEFAULT_BUFFER_SIZE:usize = 1024;
-
-impl Default for NetMsg {
-    fn default() -> Self { 
+impl Msg for NetMsg {
+    fn new(cap: Option<usize>) -> Self { 
         let mut s = Self { 
             id: u16::from_le_bytes(random_b2()),
             code: NetMsgCode::Internal(NetManCode::None),
             stream_token: Token(0), 
             from_code: Token(0),
             addr: None,
-            body: WriteBuffer::new(),
+            body: WriteBuffer::new(cap.unwrap()),
             handler: None,
             pub_key: None,
         };
@@ -87,10 +86,6 @@ impl NetMsg {
         self.body.extend_from_slice(buff);
     }
 }
-
-
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
 
 pub fn next_deadline(timeout: u64) -> Instant {
     Instant::now() + Duration::from_secs(timeout)
@@ -139,9 +134,9 @@ pub struct WriteBuffer {
 }
 
 impl WriteBuffer {
-    pub fn new() -> Self {
+    pub fn new(cap: usize) -> Self {
         let mut s = Self { 
-            buf: Vec::with_capacity(DEFAULT_BUFFER_SIZE), 
+            buf: Vec::with_capacity(cap), 
         };
         s.reset();
 

@@ -1,38 +1,40 @@
-[network]
+[peer]
+
 # The address and port your server will bind to.
 bind_addr = "127.0.0.1:4141"
 
-# Time (in seconds) before closing an idle connection.
-idle_timeout = 2 
+# Database path.
+db_path = "assets/peers.sqlit3"
+
+# Path to file with pub/priv key pair.
+key_path = "assets/keys_peer.bullet"
+
+bootstraps = [[127,0,0,1]]
 
 # Maximum number of active TCP connections allowed.
 max_connections = 512
 
-# The capacity of your event buffer (e.g., for epoll events).
-event_buffer_size = 512
-
-# Poll timeout (in milliseconds) for idle network polls.
-idle_polltimeout = 100
-
 # How many buffers of size max_buffer_size net_man holds.
-net_man_buffers_cap = 512
+buffers_cap = 512
 
 # The maximum buffer size per connection (in bytes).
 max_buffer_size = 2048
 
 # Capacity of inbound and outbound msg queue per connection.
-in_out_q_size = 32
+conn_q_cap = 32
 
-# Path to file with pub/priv key pair.
-key_path = "assets/keys.bullet"
+# Time (in seconds) before closing an idle connection.
+idle_timeout = 2 
 
-# Database path.
-db_path = "assets/network.sqlit3"
+# Poll timeout (in milliseconds) for idle network polls.
+idle_polltimeout = 100
+
+# The capacity of your event buffer (e.g., for epoll events).
+poll_event_cap = 512
 
 # The score at which a peer becomes banned.
-score_threshold = 200
+peer_threshold = 200
 
-bootstraps = [[127,0,0,1]]
 
 
 [core]
@@ -57,22 +59,18 @@ db_path = "assets/ledger.sqlit3"
 
 [server]
 # The address and port your server will bind to.
-bind_addr = "127.0.0.1:4141"
+bind_addr = "127.0.0.1:4040"
 
 # Database path.
 db_path = "assets/rpc.sqlit3"
 
-# Time (in seconds) before closing an idle connection.
-idle_timeout = 2 
+# Path to file with pub/priv key pair.
+key_path = "assets/keys_rpc.bullet"
+
+bootstraps = [[127,0,0,1]]
 
 # Maximum number of active TCP connections allowed.
 max_connections = 512
-
-# The capacity of your event buffer (e.g., for epoll events).
-event_buffer_size = 512
-
-# Poll timeout (in milliseconds) for idle network polls.
-idle_polltimeout = 100
 
 # How many buffers of size max_buffer_size net_man holds.
 buffers_cap = 512
@@ -80,8 +78,14 @@ buffers_cap = 512
 # The maximum buffer size per connection (in bytes).
 max_buffer_size = 2048
 
-# The score at which a peer becomes banned.
-peer_threshold = 200
+# Capacity of inbound and outbound msg queue per connection.
+conn_q_cap = 32
 
-bootstraps = [[127,0,0,1]]
+# The capacity of your event buffer (e.g., for epoll events).
+poll_event_cap = 512
 
+# Time (in seconds) before closing an idle connection.
+idle_timeout = 2 
+
+# Poll timeout (in milliseconds) for idle network polls.
+idle_polltimeout = 100

@@ -1,13 +1,14 @@
 use core::error;
 use std::time::Duration;
 use std::{thread::JoinHandle};
-use mio::{Events, Interest, Poll};
+use mio::{Events, Poll, Token};
 
 use crate::core::db::Ledger;
-use crate::networker::utils::NetMsgCode;
+use crate::server::{from_internals_from_vec, ToInternals};
+use crate::utils::{NetMsgCode,NetMsg};
 use crate::{config::CoreConfig, crypto::TrxGenerators, trxs::Trx};
 use crate::msging::{MsgCons, MsgProd};
-use crate::{networker::{utils::NetMsg, handlers::PacketCode}, NETWORKER};
+use crate::{peer_net::handlers::PacketCode, NETWORKER};
 use {consensus::Consensus, priority::PriorityPool};
 
 pub mod consensus;
@@ -35,8 +36,8 @@ impl Default for Hash {
 
 
 pub struct Core {
+    to_internals: ToInternals,
     poll: Poll,
-    to_net: MsgProd<NetMsg>,
     ledger: Ledger,
 
     pool: TrxPool,
@@ -47,27 +48,35 @@ pub struct Core {
 impl Core {
     pub fn new(
         config: &CoreConfig, 
-        to_net: MsgProd<NetMsg>,
+        mut tos: Vec<(MsgProd<NetMsg>, Token)>,
     ) -> Result<Self, Box<dyn error::Error>> {
+
+        let mut to_internals = ToInternals::with_capacity(tos.len());
+        while tos.len() > 0 {
+            let (chan, t) = tos.pop().unwrap();
+            to_internals.insert(t, chan);
+        }
+
         Ok(Self { 
             consensus: Consensus::new(),
             pool: TrxPool::new(config.pool_cap), 
             gens: TrxGenerators::new("bullet_ledger", config.bullet_count),
             poll: Poll::new()?,
-            to_net, 
             ledger: Ledger::new(config.db_path.clone())?,
+            to_internals,
         })
     }
 }
 
 pub fn start_core(
     config: CoreConfig,
-    mut from_net: MsgCons<NetMsg>,
-    to_net: MsgProd<NetMsg>,
+    tos: Vec<(MsgProd<NetMsg>, Token)>,
+    froms: Vec<(MsgCons<NetMsg>, Token)>,
 ) -> Result<JoinHandle<()>, Box<dyn error::Error>> {
 
-    let mut core = Core::new(&config, to_net)?;
-    core.poll.registry().register(&mut from_net, NETWORKER, Interest::READABLE)?;
+    let mut core = Core::new(&config, tos)?;
+
+    let mut from_internals = from_internals_from_vec(&mut core.poll, froms)?;
 
     let mut events = Events::with_capacity(config.event_len);
     let polltimeout = Duration::from_millis(config.idle_polltimeout);
@@ -80,11 +89,14 @@ pub fn start_core(
             }
 
             for ev in events.iter() {
-                match ev.token() {
+                let token = ev.token();
+                match token {
                     NETWORKER => { // Msg from Networker
-                        if let Some(mut m) = from_net.pop() {
-                            handle_from_net( &mut core, &mut m);
-                            from_net.recycle(m);
+                        if let Some(from) = from_internals.get_mut(&token) {
+                            if let Some(mut msg) = from.pop() {
+                                handle_from_net(&mut core, &mut msg);
+                                from.recycle(msg);
+                            }
                         }
                     }
                     _ => {}

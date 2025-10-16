@@ -4,32 +4,23 @@ use std::thread::JoinHandle;
 use mio::Token;
 
 use crate::config::PeerServerConfig;
-use crate::networker::connection::PeerConnection;
-use crate::networker::utils::{NetError, NetManCode, NetMsgCode};
-use crate::server::{FromInternals, NetServer, ToInternals};
-use crate::CORE;
+use crate::peer_net::connection::PeerConnection;
+use crate::utils::{NetError, NetManCode, NetMsg, NetMsgCode};
+use crate::server::{to_internals_from_vec, NetServer};
 use crate::msging::{MsgCons, MsgProd};
-
-use utils::NetMsg;
 
 pub mod handlers;
 pub mod connection;
 pub mod header;
-pub mod utils;
 pub mod peers;
 
 pub fn start_peer_networker(
-    config: PeerServerConfig, to_core: MsgProd<NetMsg>, mut froms: Vec<(MsgCons<NetMsg>, Token)>,
+    config: PeerServerConfig, 
+    tos: Vec<(MsgProd<NetMsg>, Token)>, 
+    froms: Vec<(MsgCons<NetMsg>, Token)>,
 ) -> Result<JoinHandle<io::Result<()>>, Box<dyn error::Error>> {
 
-    let mut to_internals = ToInternals::with_capacity(1);
-    to_internals.insert(CORE, to_core);
-
-    let mut from_internals = FromInternals::with_capacity(froms.len());
-    while froms.len() > 0 {
-        let (chan, t) = froms.pop().unwrap();
-        from_internals.insert(t, chan);
-    }
+    let to_internals = to_internals_from_vec(tos);
 
     let peers = peers::PeerMan::new(
         config.db_path.clone(), 
@@ -38,6 +29,7 @@ pub fn start_peer_networker(
     )?;
 
     let mut server = NetServer::<PeerConnection>::new(&config, to_internals)?;
+
     Ok(std::thread::spawn(move || {
 
         let allow_connection = |addr: &SocketAddr| {
@@ -48,7 +40,8 @@ pub fn start_peer_networker(
             let _ = peers.record_behaviour(addr, e);
         };
 
-        let handle_internal = |msg: Box<NetMsg>, _server: &mut NetServer<PeerConnection> | {
+        let handle_internal = |msg: Box<NetMsg>, _s: &mut NetServer<PeerConnection> | {
+
             if let NetMsgCode::Internal(code) = &msg.code {
                 match *code {
                     NetManCode::AddPeer | NetManCode::RemovePeer => {
@@ -73,6 +66,6 @@ pub fn start_peer_networker(
             Some(msg) //RECYCLE
         };
 
-        server.start( from_internals, handle_internal, allow_connection, handle_errored,)
+        server.start(froms, handle_internal, allow_connection, handle_errored,)
     }))
 }

@@ -1,10 +1,10 @@
 #[test]
 fn peers() {
-    use crate::networker::utils::NetError;
+    use crate::utils::NetError;
     use std::net::{SocketAddr, Ipv4Addr, IpAddr};
     use std::fs;
     use crate::config::load_config;
-    use crate::networker::peers::PeerMan;
+    use crate::peer_net::peers::PeerMan;
 
     let path = "assets/test_peers.sqlit3".to_string();
     let threshold = 100;

@@ -1,8 +1,8 @@
 use chacha20poly1305::{aead::{AeadMutInPlace, OsRng}, AeadCore, ChaCha20Poly1305, Key, KeyInit};
 
 use crate::crypto::random_b2; 
-use crate::networker::utils::{NetError, NetResult};
-use crate::networker::handlers::{code_from_u8, Handler, PacketCode};
+use crate::utils::{NetError, NetResult};
+use crate::peer_net::handlers::{code_from_u8, Handler, PacketCode};
 
 // Length + Nonce + Tag
 pub const PREFIX_LEN: usize = 8 + 12 + 16; 

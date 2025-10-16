@@ -10,9 +10,9 @@ use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 use crate::crypto::{ random_b32, montgomery::{ecdh_shared_secret, hkdf_derive_key}};
-use crate::networker::handlers::{code_switcher, Handler, HandlerRes, PacketCode};
-use crate::networker::header::{Header, HEADER_LEN,PREFIX_LEN};
-use crate::networker::utils::{next_deadline, NetError, NetMsg, NetMsgCode, NetResult, WriteBuffer};
+use crate::peer_net::handlers::{code_switcher, Handler, HandlerRes, PacketCode};
+use crate::peer_net::header::{Header, HEADER_LEN,PREFIX_LEN};
+use crate::utils::{next_deadline, NetError, NetMsg, NetMsgCode, NetResult, WriteBuffer};
 use crate::server::{NetServer, TcpConnection};
 
 #[derive(PartialEq, Eq, Debug, Clone)]

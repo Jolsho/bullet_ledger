@@ -1,7 +1,7 @@
 use std::{collections::VecDeque, io::{self, Read, Write}, net::SocketAddr, os::fd::AsRawFd, time::Instant, usize};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use crate::{networker::{utils::{NetError, NetManCode, NetMsg, NetResult, WriteBuffer}}, server::{NetServer, TcpConnection}, NETWORKER}; 
-use crate::RPC;
+use crate::{RPC, utils::{NetError, NetManCode, NetMsg, NetResult, WriteBuffer}};
+use crate::{server::{NetServer, TcpConnection}, NETWORKER};
 
 pub enum RpcCodes {
     None,
@@ -67,7 +67,7 @@ impl TcpConnection for RpcConn {
 
             write_state: Some(RpcWriteStates::Idle),
             write_pos: 0,
-            write_buffer: WriteBuffer::new(),
+            write_buffer: WriteBuffer::new(server.buffer_size),
             outbound: VecDeque::with_capacity(10),
         })
     }

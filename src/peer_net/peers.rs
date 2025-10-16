@@ -1,7 +1,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use rusqlite::{Connection, Error, Result};
 
-use crate::networker::utils::{NetError, NetResult};
+use crate::utils::{NetError, NetResult};
 
 pub struct PeerMan {
     db: Connection,
