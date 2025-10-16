@@ -8,10 +8,10 @@ fn peers() {
 
     let path = "assets/test_peers.sqlit3".to_string();
     let threshold = 100;
-    let config = load_config("config.toml").network;
+    let config = load_config("config.toml").peer;
 
     let p_man = PeerMan::new(path.clone(), 
-        threshold, config.bootstraps,
+        threshold, config.bootstraps.clone(),
     ).unwrap();
 
     let ip = Ipv4Addr::new(127,0,0,1);

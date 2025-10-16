@@ -1,10 +1,9 @@
 use mio::Token;
 
-use crate::networker::connection::Connection;
+use crate::networker::connection::PeerConnection;
 use crate::networker::utils::{NetError, NetMsgCode, NetResult};
-use crate::networker::NetMan;
+use crate::server::NetServer;
 use super::{HandlerRes, PacketCode};
-use core::error;
 use std::{net::SocketAddr, time::Duration};
 
 use crate::msging::MsgProd;
@@ -12,15 +11,14 @@ use crate::networker::utils::NetMsg;
 
 pub fn send_ping(
     sender: &mut MsgProd<NetMsg>, 
-    remote_addr: String, 
+    remote_addr: SocketAddr, 
     remote_pub_key: [u8; 32],
     from: Token,
     index: Option<usize>,
-) -> Result<(), Box<dyn error::Error>> {
+) {
 
-    let ip:SocketAddr = remote_addr.parse()?;
     let mut msg = sender.collect();
-    msg.addr = Some(ip);
+    msg.addr = Some(remote_addr);
     msg.pub_key = Some(remote_pub_key.clone());
     msg.code = NetMsgCode::External(PacketCode::Ping);
     msg.from_code = from;
@@ -35,12 +33,11 @@ pub fn send_ping(
         msg = m;
         std::thread::sleep(Duration::from_millis(5));
     }
-    Ok(())
 }
 
 pub fn handle_ping(
-    conn: &mut Connection, 
-    _net_man: &mut NetMan
+    conn: &mut PeerConnection, 
+    server: &mut NetServer<PeerConnection>
 ) -> NetResult<HandlerRes> {
     let res = b"Pong";
     let read = conn.read(res.len());
@@ -55,7 +52,8 @@ pub fn handle_ping(
             println!("R Ping: {idx}");
         }
 
-        let mut msg = conn.get_new_msg();
+        let mut msg = server.get_new_msg();
+        msg.fill_fd_and_id(conn);
         msg.id = conn.read_header.msg_id;
         msg.code = NetMsgCode::External(PacketCode::Ping);
         msg.body.extend_from_slice(res);
@@ -73,8 +71,8 @@ pub fn handle_ping(
 }
 
 pub fn handle_pong(
-    conn: &mut Connection, 
-    _net_man: &mut NetMan
+    conn: &mut PeerConnection, 
+    _server: &mut NetServer<PeerConnection>
 ) -> NetResult<HandlerRes> {
     let res = b"Pong";
     let read = conn.read(res.len());

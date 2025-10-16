@@ -32,6 +32,14 @@ impl Header {
         }
     }
 
+    pub fn reset(&mut self) {
+        self.response_handler = None;
+        self.code = PacketCode::None;
+        self.nonce.fill(0);
+        self.tag.fill(0);
+        self.is_marshalled = false;
+    }
+
     pub fn raw_unmarshal(&mut self, buff: &[u8]) 
         -> NetResult<()> 
     {

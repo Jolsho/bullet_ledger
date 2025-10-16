@@ -1,8 +1,6 @@
-use std::{collections::VecDeque, io::{self, Read, Write}, os::fd::AsRawFd, time::Instant, usize};
+use std::{collections::VecDeque, io::{self, Read, Write}, net::SocketAddr, os::fd::AsRawFd, time::Instant, usize};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use crate::{msging::MsgProd, networker::utils::{NetError, NetResult, WriteBuffer}}; 
-use crate::networker::utils::{NetManCode, NetMsg};
-use super::server::Server; 
+use crate::{networker::{utils::{NetError, NetManCode, NetMsg, NetResult, WriteBuffer}}, server::{NetServer, TcpConnection}, NETWORKER}; 
 use crate::RPC;
 
 pub enum RpcCodes {
@@ -24,9 +22,10 @@ impl RpcCodes {
 const HEADER_LEN: usize = 1 + 8;
 
 pub struct RpcConn {
-    pub stream: Option<TcpStream>,
+    stream: Option<TcpStream>,
     token: Token,
-    pub last_deadline: Instant,
+    last_deadline: Instant,
+    addr: Option<SocketAddr>,
 
     code: Option<RpcCodes>,
 
@@ -52,11 +51,12 @@ pub enum RpcWriteStates {
     Writing,
 }
 
-impl RpcConn {
-    pub fn new(server: &mut Server) -> Self {
-        Self { 
+impl TcpConnection for RpcConn {
+    fn new(server: &mut NetServer<Self>) -> Box<Self> {
+        Box::new(Self { 
             token: Token(0),
             stream: None, 
+            addr: None,
             last_deadline: Instant::now(),
 
             code: Some(RpcCodes::None),
@@ -68,16 +68,21 @@ impl RpcConn {
             write_state: Some(RpcWriteStates::Idle),
             write_pos: 0,
             write_buffer: WriteBuffer::new(),
-            outbound: VecDeque::with_capacity(10)
-        }
-
+            outbound: VecDeque::with_capacity(10),
+        })
     }
+    fn initiate_negotiation(&mut self, _server: &mut NetServer<Self>) -> NetResult<()> { Ok(()) }
+    fn get_addr(&self) -> SocketAddr { self.addr.unwrap().clone() }
+    fn get_stream(&mut self) -> &mut TcpStream { self.stream.as_mut().unwrap() }
+    fn get_last_deadline(&self) -> Instant { self.last_deadline.clone() }
+    fn set_last_deadline(&mut self, deadline: Instant) { self.last_deadline = deadline; }
 
-    pub fn reset(&mut self, server: &mut Server) {
+    fn reset(&mut self, server: &mut NetServer<Self>) {
         let _ = server.poll.registry()
             .deregister(self.stream.as_mut().unwrap());
 
         self.code = None;
+        self.addr = None;
         self.read_state = Some(RpcReadStates::ReadingHeader);
         self.read_pos = 0;
         let mut read_buf = Vec::with_capacity(0);
@@ -101,12 +106,28 @@ impl RpcConn {
         let _ = self.stream.take();
     }
 
-    pub fn initialize(&mut self, stream: TcpStream, server: &mut Server) {
+    fn initialize(&mut self, 
+        stream: TcpStream, 
+        addr: SocketAddr, 
+        _pub_key: Option<[u8;32]>, 
+        server: &mut NetServer<Self>,
+    ) {
         self.token = Token(stream.as_raw_fd() as usize);
+        self.addr = Some(addr);
         self.stream = Some(stream);
         self.write_buffer = WriteBuffer::from_vec(server.get_buff());
         self.read_buffer = server.get_buff();
         self.last_deadline = Instant::now();
+    }
+
+    fn enqueue_msg(&mut self, 
+        mut msg: Box<NetMsg>, 
+        server: &mut NetServer<Self>
+    ) -> Result<(), Box<NetMsg>> {
+        let mut body = server.get_buff();
+        std::mem::swap(&mut body, &mut msg.body);
+        self.outbound.push_back(WriteBuffer::from_vec(body));
+        Err(msg)
     }
 
     /// Adds EPOLLOUT flag to streams epoll event
@@ -123,7 +144,7 @@ impl RpcConn {
         )
     }
 
-    pub fn handle_read(&mut self, to_net: &mut MsgProd<NetMsg>) -> NetResult<bool> {
+    fn on_readable(&mut self, server: &mut NetServer<Self>) -> NetResult<bool> {
         let mut did_work = false;
         loop {
             match self.read_state.take() {
@@ -179,23 +200,16 @@ impl RpcConn {
                     match self.code.take() {
                         Some(RpcCodes::AddPeer) => {
                             did_work = true;
-                            let mut msg = to_net.collect();
-                            msg.fill_for_internal(
-                                RPC, NetManCode::AddPeer, &self.read_buffer
-                            );
-                            if let Err(_msg) = to_net.push(msg) {
-
-                            }
+                            let mut msg = server.collect_internal(&NETWORKER);
+                            msg.fill_for_internal( RPC, NetManCode::AddPeer, &self.read_buffer);
+                            server.enqueue_internal((NETWORKER, msg));
                         }
+
                         Some(RpcCodes::RemovePeer) => {
                             did_work = true;
-                            let mut msg = to_net.collect();
-                            msg.fill_for_internal(
-                                RPC, NetManCode::RemovePeer, &self.read_buffer
-                            );
-                            if let Err(_msg) = to_net.push(msg) {
-
-                            }
+                            let mut msg = server.collect_internal(&NETWORKER);
+                            msg.fill_for_internal( RPC, NetManCode::RemovePeer, &self.read_buffer);
+                            server.enqueue_internal((NETWORKER, msg));
                         }
                         _ => {}
                     }
@@ -210,9 +224,10 @@ impl RpcConn {
         Ok(did_work)
     }
 
-    pub fn handle_write(&mut self, server: &mut Server) -> NetResult<bool> {
+    fn on_writable(&mut self, server: &mut NetServer<Self>) -> NetResult<bool> {
         let mut did_work = false;
         loop {
+
             match self.write_state.take() {
                 Some(RpcWriteStates::Idle) => {
                     if let Some(mut b) = self.outbound.pop_front() {
@@ -222,18 +237,16 @@ impl RpcConn {
 
                         self.write_pos = 0;
 
-                        let _ = self.enable_writable(&mut server.poll);
                         self.write_state = Some(RpcWriteStates::Writing);
 
                     } else {
-
-                        let _ = self.disable_writable(&mut server.poll);
                         self.write_state = Some(RpcWriteStates::Idle);
                         break;
                     }
 
                 }
                 Some(RpcWriteStates::Writing) => {
+
                     match self.stream.as_mut().unwrap().write(&mut self.write_buffer[self.write_pos..]) {
                         Ok(0) => return Err(NetError::ConnectionAborted),
                         Ok(n) => {

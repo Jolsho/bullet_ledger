@@ -1,9 +1,11 @@
 
+use crate::networker::connection::PeerConnection;
 use crate::networker::utils::NetMsgCode;
+use crate::server::NetServer;
+use crate::CORE;
 
-use super::connection::Connection;
 use super::utils::{NetResult, NetError};
-use super::{utils::NetMsg, NetMan};
+use super::utils::NetMsg;
 
 pub mod ping_pong;
 
@@ -39,33 +41,31 @@ pub enum HandlerRes {
     None,
 }
 
-pub type Handler = fn(&mut Connection, &mut super::NetMan) -> NetResult<HandlerRes>;
+pub type Handler = fn(&mut PeerConnection, &mut NetServer<PeerConnection>) -> NetResult<HandlerRes>;
 
-pub fn code_switcher(conn: &mut Connection, net_man: &mut NetMan) -> NetResult<HandlerRes> {
+pub fn code_switcher(conn: &mut PeerConnection, server: &mut NetServer<PeerConnection>) -> NetResult<HandlerRes> {
     match conn.read_header.code {
-        PacketCode::Ping => ping_pong::handle_ping(conn, net_man),
+        PacketCode::Ping => ping_pong::handle_ping(conn, server),
 
         PacketCode::NegotiationSyn | 
-        PacketCode::NegotiationAck => conn.handle_negotiation(net_man),
+        PacketCode::NegotiationAck => conn.handle_negotiation(server),
 
         PacketCode::NewTrx |
-        PacketCode::NewBlock => forward_2_core(conn, net_man),
+        PacketCode::NewBlock => forward_2_core(conn, server),
 
         PacketCode::None => Err(NetError::Other(format!("PacketCode::None"))),
     }
 }
 
 pub fn forward_2_core(
-    conn: &mut Connection, 
-    net_man: &mut NetMan
+    conn: &mut PeerConnection, 
+    server: &mut NetServer<PeerConnection>
 ) -> NetResult<HandlerRes> {
-    let mut msg = net_man.to_core.collect();
+    let mut msg = server.collect_internal(&CORE);
     std::mem::swap(&mut *msg.body, &mut conn.read_buf);
     msg.code = NetMsgCode::External(conn.read_header.code);
 
-    if let Err(_msg) = net_man.to_core.push(msg) {
-        // TODO -- I dont know what to do here...
-    }
+    server.enqueue_internal((CORE, msg));
 
     Err(NetError::Other(format!("bad TRX")))
 }

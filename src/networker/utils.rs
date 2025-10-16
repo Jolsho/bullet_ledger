@@ -1,13 +1,12 @@
 use std::ops::{Deref, DerefMut};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 use mio::Token;
 
-use crate::{msging::MsgCons, crypto::random_b2};
+use crate::networker::connection::PeerConnection;
+use crate::crypto::random_b2;
 use crate::networker::handlers::{Handler, PacketCode};
-use crate::networker::connection::Connection; 
 use crate::networker::header::{HEADER_LEN, PREFIX_LEN};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
@@ -65,7 +64,7 @@ impl Default for NetMsg {
 }
 
 impl NetMsg {
-    pub fn fill_fd_and_id(&mut self, conn: &mut Connection) {
+    pub fn fill_fd_and_id(&mut self, conn: &mut PeerConnection) {
         self.id = u16::from_le_bytes(random_b2());
         self.stream_token = conn.token;
         self.from_code = Token(0);
@@ -93,27 +92,9 @@ impl NetMsg {
 ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////
 
-
-pub struct Mappings {
-    pub conns: HashMap<Token, Connection>,
-    pub addrs: HashMap<SocketAddr, Token>,
-}
-
-impl Mappings {
-    pub fn new(cap: usize) -> Self {
-        Self { 
-            conns: HashMap::with_capacity(cap), 
-            addrs: HashMap::with_capacity(cap)
-        }
-    }
-}
-
 pub fn next_deadline(timeout: u64) -> Instant {
     Instant::now() + Duration::from_secs(timeout)
 }
-
-pub type Messengers = HashMap<Token, MsgCons<NetMsg>>;
-
 
 ////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////

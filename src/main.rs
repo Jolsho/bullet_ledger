@@ -3,7 +3,8 @@ use mio::Token;
 use crate::config::load_config;
 use crate::core::start_core;
 use crate::msging::MsgQ;
-use crate::networker::{start_networker, utils::NetMsg};
+use crate::networker::start_peer_networker;
+use crate::networker::utils::NetMsg;
 use crate::rpc::start_rpc;
 
 mod trxs;
@@ -15,10 +16,11 @@ mod msging;
 mod shutdown;
 mod config;
 mod rpc;
+mod server;
 
-const NETWORKER: Token = Token(0);
-const CORE: Token = Token(1);
-const RPC: Token = Token(2);
+const NETWORKER: Token = Token(707070);
+const CORE: Token = Token(717171);
+const RPC: Token = Token(727272);
 
 fn main() {
     let config = load_config("config.toml");
@@ -52,8 +54,8 @@ fn main() {
 
 
     // START NETWORKER
-    let net_handle = start_networker(
-        config.network.clone(), to_core_net, 
+    let net_handle = start_peer_networker(
+        config.peer.clone(), to_core_net, 
         vec![
             (from_core_net, CORE), 
             (from_rpc_net, RPC)
@@ -62,6 +64,6 @@ fn main() {
 
 
     core_handle.join().unwrap();
-    net_handle.join().unwrap();
+    let _ = net_handle.join().unwrap();
     let _ = rpc_handle.join().unwrap();
 }

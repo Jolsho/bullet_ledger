@@ -8,7 +8,6 @@ pub struct PeerMan {
     threshold: usize,
 }
 
-
 impl PeerMan {
     pub fn new(db_path: String, threshold: usize, initial_ips: Vec<[u8;4]>) -> Result<Self> {
         let db = Connection::open(db_path)?;
@@ -19,7 +18,7 @@ impl PeerMan {
             );", 
             [],
         )?;
-        let s = Self { db , threshold};
+        let s = Self { db , threshold };
         for ip in initial_ips {
             s.add_peer(&Ipv4Addr::new(ip[0],ip[1],ip[2],ip[3])).unwrap();
         }
