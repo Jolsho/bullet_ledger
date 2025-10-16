@@ -5,10 +5,10 @@ use super::{HandlerRes, PacketCode};
 use super::super::connection::PeerConnection;
 use crate::utils::{NetError, NetMsgCode, NetResult, NetMsg};
 
-use crate::{server::NetServer, msging::MsgProd};
+use crate::{server::NetServer, spsc::Producer};
 
 pub fn send_ping(
-    sender: &mut MsgProd<NetMsg>, 
+    sender: &mut Producer<NetMsg>,
     remote_addr: SocketAddr, 
     remote_pub_key: [u8; 32],
     from: Token,
@@ -25,7 +25,7 @@ pub fn send_ping(
         msg.body.extend_from_slice(&idx.to_le_bytes());
     }
     msg.handler = Some(handle_pong);
-    while let Err(m) = sender.push(msg) {
+    while let Err(m) = sender.try_push(msg) {
         // this case is not possible...I think...
         // so for peace of mind I'm going to leave it.
         msg = m;

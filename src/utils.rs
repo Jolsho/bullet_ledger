@@ -1,11 +1,11 @@
 use std::ops::{Deref, DerefMut};
 use std::time::{Duration, Instant};
 use crate::peer_net::header::{HEADER_LEN, PREFIX_LEN};
+use crate::spsc::Msg;
 use std::net::SocketAddr;
 
 use mio::Token;
 
-use crate::msging::Msg;
 use crate::peer_net::connection::PeerConnection;
 use crate::crypto::random_b2;
 use crate::peer_net::handlers::{Handler, PacketCode};
@@ -32,7 +32,26 @@ impl NetMsgCode {
 }
 
 #[derive(PartialEq, Eq, Debug, Clone)]
-pub struct NetMsg {
+pub struct NetMsg(Box<NetMsgInner>);
+impl Deref for NetMsg {
+    type Target = Box<NetMsgInner>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+impl DerefMut for NetMsg {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+impl Msg for NetMsg {
+    fn new(default_cap: Option<usize>) -> Self {
+        NetMsg(Box::new(NetMsgInner::new(default_cap)))
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone)]
+pub struct NetMsgInner {
     pub id: u16,
     pub from_code: Token,
     pub stream_token: Token,
@@ -45,8 +64,8 @@ pub struct NetMsg {
     pub handler: Option<Handler>,
 }
 
-impl Msg for NetMsg {
-    fn new(cap: Option<usize>) -> Self { 
+impl NetMsgInner {
+    pub fn new(cap: Option<usize>) -> Self { 
         let mut s = Self { 
             id: u16::from_le_bytes(random_b2()),
             code: NetMsgCode::Internal(NetManCode::None),
@@ -60,9 +79,6 @@ impl Msg for NetMsg {
         s.reset();
         s
     }
-}
-
-impl NetMsg {
     pub fn fill_fd_and_id(&mut self, conn: &mut PeerConnection) {
         self.id = u16::from_le_bytes(random_b2());
         self.stream_token = conn.token;

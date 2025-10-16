@@ -2,21 +2,21 @@ use mio::Token;
 
 use crate::config::load_config;
 use crate::core::start_core;
-use crate::msging::MsgQ;
 use crate::peer_net::start_peer_networker;
 use crate::rpc::start_rpc;
+use crate::spsc::SpscQueue;
 
 mod trxs;
 mod tests;
 mod core;
 mod peer_net;
 mod crypto;
-mod msging;
 mod shutdown;
 mod config;
 mod rpc;
 mod server;
 mod utils;
+mod spsc;
 
 const NETWORKER: Token = Token(707070);
 const CORE: Token = Token(717171);
@@ -27,18 +27,18 @@ fn main() {
     let buffer_size = Some(config.peer.max_buffer_size.clone());
 
     // PEER_NET && CORE
-    let (to_core_net, from_net_core) = MsgQ::new(256, buffer_size).unwrap();
-    let (to_net_core, from_core_net) = MsgQ::new(256, buffer_size).unwrap();
+    let (to_core_net, from_net_core) = SpscQueue::new(256, buffer_size).unwrap();
+    let (to_net_core, from_core_net) = SpscQueue::new(256, buffer_size).unwrap();
 
 
     // PEER_NET && RPC
-    let (to_net_rpc, from_rpc_net) = MsgQ::new(128, buffer_size).unwrap();
-    let (to_rpc_net, from_net_rpc) = MsgQ::new(128, buffer_size).unwrap();
+    let (to_net_rpc, from_rpc_net) = SpscQueue::new(128, buffer_size).unwrap();
+    let (to_rpc_net, from_net_rpc) = SpscQueue::new(128, buffer_size).unwrap();
 
 
     // CORE && RPC
-    let (to_rpc_core, from_core_rpc) = MsgQ::new(128, buffer_size).unwrap();
-    let (to_core_rpc, from_rpc_core) = MsgQ::new(128, buffer_size).unwrap();
+    let (to_rpc_core, from_core_rpc) = SpscQueue::new(128, buffer_size).unwrap();
+    let (to_core_rpc, from_rpc_core) = SpscQueue::new(128, buffer_size).unwrap();
 
 
     // START CORE

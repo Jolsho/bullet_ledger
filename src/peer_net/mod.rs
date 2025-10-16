@@ -7,7 +7,7 @@ use crate::config::PeerServerConfig;
 use crate::peer_net::connection::PeerConnection;
 use crate::utils::{NetError, NetManCode, NetMsg, NetMsgCode};
 use crate::server::{to_internals_from_vec, NetServer};
-use crate::msging::{MsgCons, MsgProd};
+use crate::spsc::{Consumer, Producer};
 
 pub mod handlers;
 pub mod connection;
@@ -16,8 +16,8 @@ pub mod peers;
 
 pub fn start_peer_networker(
     config: PeerServerConfig, 
-    tos: Vec<(MsgProd<NetMsg>, Token)>, 
-    froms: Vec<(MsgCons<NetMsg>, Token)>,
+    tos: Vec<(Producer<NetMsg>, Token)>, 
+    froms: Vec<(Consumer<NetMsg>, Token)>,
 ) -> Result<JoinHandle<io::Result<()>>, Box<dyn error::Error>> {
 
     let to_internals = to_internals_from_vec(tos);
@@ -40,7 +40,7 @@ pub fn start_peer_networker(
             let _ = peers.record_behaviour(addr, e);
         };
 
-        let handle_internal = |msg: Box<NetMsg>, _s: &mut NetServer<PeerConnection> | {
+        let handle_internal = |msg: NetMsg, _s: &mut NetServer<PeerConnection> | {
 
             if let NetMsgCode::Internal(code) = &msg.code {
                 match *code {

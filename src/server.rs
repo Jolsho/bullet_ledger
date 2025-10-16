@@ -8,7 +8,7 @@ use std::{io, os::fd::AsRawFd};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 use crate::crypto::montgomery::load_keys;
-use crate::msging::{Msg, MsgCons, MsgProd};
+use crate::spsc::{Msg, Consumer, Producer};
 use crate::utils::{next_deadline, NetError, NetResult, NetMsg};
 use crate::shutdown;
 
@@ -22,7 +22,7 @@ pub trait TcpConnection: Sized + Send {
     fn on_writable(&mut self, server: &mut NetServer<Self>) -> NetResult<bool>;
     fn get_last_deadline(&self) -> Instant;
     fn set_last_deadline(&mut self, deadline: Instant);
-    fn enqueue_msg(&mut self, msg: Box<NetMsg>, server: &mut NetServer<Self>) -> Result<(), Box<NetMsg>>;
+    fn enqueue_msg(&mut self, msg: NetMsg, server: &mut NetServer<Self>) -> Result<(), NetMsg>;
     fn get_addr(&self) -> SocketAddr;
     fn get_stream(&mut self) -> &mut TcpStream;
     fn initiate_negotiation(&mut self, server: &mut NetServer<Self>) -> NetResult<()>;
@@ -44,9 +44,9 @@ pub trait NetServerConfig {
 ///////////     INTERNAL MSGING     //////////////
 ///////////////////////////////////////////////// 
 
-pub type ToInternals = HashMap<Token, MsgProd<NetMsg>>;
+pub type ToInternals = HashMap<Token, Producer<NetMsg>>;
 pub fn to_internals_from_vec(
-    mut tos: Vec<(MsgProd<NetMsg>, Token)>
+    mut tos: Vec<(Producer<NetMsg>, Token)>
 ) -> ToInternals {
     let mut to_internals = ToInternals::with_capacity(tos.len());
     while tos.len() > 0 {
@@ -55,10 +55,10 @@ pub fn to_internals_from_vec(
     }
     to_internals
 }
-pub type FromInternals = HashMap<Token, MsgCons<NetMsg>>;
+pub type FromInternals = HashMap<Token, Consumer<NetMsg>>;
 pub fn from_internals_from_vec(
     poll: &mut Poll,
-    mut froms: Vec<(MsgCons<NetMsg>, Token)>
+    mut froms: Vec<(Consumer<NetMsg>, Token)>
 ) -> io::Result<FromInternals> {
     let mut from_internals = FromInternals::with_capacity(froms.len());
     while froms.len() > 0 {
@@ -88,8 +88,8 @@ pub struct NetServer<C: TcpConnection> {
     buffs: Vec<Vec<u8>>,
 
     // INTERNAL MSGING 
-    net_msgs: Vec<Box<NetMsg>>,
-    internal_msgs: VecDeque<(Token, Box<NetMsg>)>,
+    net_msgs: Vec<NetMsg>,
+    internal_msgs: VecDeque<(Token, NetMsg)>,
     to_internals: ToInternals,
 
     // CONFIG
@@ -139,13 +139,13 @@ impl<C: TcpConnection> NetServer<C> {
     ////////////////////////////////////////////////////////////////////////
 
     pub fn start<A, B, D>(&mut self,
-        froms: Vec<(MsgCons<NetMsg>, Token)>,
+        froms: Vec<(Consumer<NetMsg>, Token)>,
         mut handle_from_internal: A,
         mut allow_connection: B,
         mut handle_errored: D,
     )-> io::Result<()> 
     where 
-        A: FnMut(Box<NetMsg>, &mut Self) -> Option<Box<NetMsg>>,
+        A: FnMut(NetMsg, &mut Self) -> Option<NetMsg>,
         B: FnMut(&SocketAddr) -> bool,
         D: FnMut(NetError, &SocketAddr, &mut Self),
     { 
@@ -269,7 +269,7 @@ impl<C: TcpConnection> NetServer<C> {
     pub fn put_buff(&mut self, buff: Vec<u8>) { self.buffs.push(buff); }
 
 
-    pub fn handle_outbound(&mut self, mut msg: Box<NetMsg>, maps: &mut ConnMapping<C>) -> Result<(), Box<NetMsg>> {
+    pub fn handle_outbound(&mut self, mut msg: NetMsg, maps: &mut ConnMapping<C>) -> Result<(), NetMsg> {
         let mut conn: Option<&mut Box<C>> = None;
         let mut sfd: Option<&Token> = None;
         let addr = msg.addr.take();
@@ -366,25 +366,25 @@ impl<C: TcpConnection> NetServer<C> {
     ////       INTERNAL MSGING      /////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////////////////
 
-    pub fn get_new_msg(&mut self) -> Box<NetMsg> {
+    pub fn get_new_msg(&mut self) -> NetMsg {
         let mut msg = self.net_msgs.pop(); 
         if msg.is_none() {
-            msg = Some(Box::new(NetMsg::new(Some(self.buffer_size))));
+            msg = Some(NetMsg::new(Some(self.buffer_size)));
         }
         let mut msg = msg.unwrap();
         msg.body.reset();
         msg
     }
-    pub fn put_msg(&mut self, msg: Box<NetMsg>) { self.net_msgs.push(msg); }
+    pub fn put_msg(&mut self, msg: NetMsg) { self.net_msgs.push(msg); }
 
     /// Enqueues a msg in self.internal_msgs which is then flushed
     /// every maximum of default idle_polltimeout.
-    pub fn enqueue_internal(&mut self, msg: (Token, Box<NetMsg>)) {
+    pub fn enqueue_internal(&mut self, msg: (Token, NetMsg)) {
         self.internal_msgs.push_back(msg);
     }
 
     /// Get a NetMsg from the specifiec internal MsgProd<NetMsg>
-    pub fn collect_internal(&mut self, token: &Token) -> Box<NetMsg> {
+    pub fn collect_internal(&mut self, token: &Token) -> NetMsg {
         if let Some(to) = self.to_internals.get_mut(token) {
             return to.collect();
         } else {
@@ -403,7 +403,7 @@ impl<C: TcpConnection> NetServer<C> {
             let (to, msg) = self.internal_msgs.pop_front().unwrap();
 
             if let Some(msg_prod) = self.to_internals.get_mut(&to) {
-                if let Err(msg) = msg_prod.push(msg) {
+                if let Err(msg) = msg_prod.try_push(msg) {
 
                     if start.is_none() { 
                         start = Some(msg.id);

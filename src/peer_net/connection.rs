@@ -39,7 +39,7 @@ pub struct PeerConnection {
     is_negotiated: bool,
     is_acking: bool,
 
-    outbound: VecDeque<Box<NetMsg>>,
+    outbound: VecDeque<NetMsg>,
     inbound_handlers: HashMap<u16, Handler>,
 
     pub read_header: Header,
@@ -323,7 +323,7 @@ impl TcpConnection for PeerConnection {
     }
 
     /// Enqueues an outgoing message to be delivered when available
-    fn enqueue_msg(&mut self, msg: Box<NetMsg>, server: &mut NetServer<Self>) -> Result<(),Box<NetMsg>> {
+    fn enqueue_msg(&mut self, msg: NetMsg, server: &mut NetServer<Self>) -> Result<(),NetMsg> {
         if self.outbound.len() == 0 {
             if self.enable_writable(&mut server.poll).is_err() {
                 return Err(msg);

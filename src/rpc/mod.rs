@@ -5,7 +5,7 @@ use std::{error, thread::JoinHandle };
 use mio::Token;
 
 use crate::config::ServerConfig; 
-use crate::msging::{MsgCons, MsgProd};
+use crate::spsc::{Consumer, Producer};
 use crate::utils::{NetError, NetMsg};
 use crate::rpc::connection::RpcConn;
 use crate::server::{to_internals_from_vec, NetServer};
@@ -14,8 +14,8 @@ use crate::{CORE, NETWORKER};
 pub mod connection;
 
 pub fn start_rpc(config: ServerConfig, 
-    tos: Vec<(MsgProd<NetMsg>, Token)>,
-    froms: Vec<(MsgCons<NetMsg>, Token)>,
+    tos: Vec<(Producer<NetMsg>, Token)>,
+    froms: Vec<(Consumer<NetMsg>, Token)>,
 ) -> Result<JoinHandle<io::Result<()>>, Box<dyn error::Error>> {
 
     let to_internals = to_internals_from_vec(tos);
@@ -26,7 +26,7 @@ pub fn start_rpc(config: ServerConfig,
 
         let handle_errored = |_e: NetError, _addr: &SocketAddr, _s: &mut NetServer<RpcConn> | {};
 
-        let handle_internal = |msg: Box<NetMsg>, server: &mut NetServer<RpcConn> | {
+        let handle_internal = |msg: NetMsg, server: &mut NetServer<RpcConn> | {
             let token = msg.from_code;
 
             if token == NETWORKER {

@@ -35,7 +35,7 @@ pub fn code_from_u8(dig: u8) -> PacketCode {
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum HandlerRes {
     Read((u16, Handler)),
-    Write(Box<NetMsg>),
+    Write(NetMsg),
     None,
 }
 

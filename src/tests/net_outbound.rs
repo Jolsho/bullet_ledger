@@ -5,7 +5,7 @@
 fn net_outbound() {
     use std::{time::Duration, fs};
     use crate::config::load_config;
-    use crate::msging::MsgQ;
+    use crate::spsc::SpscQueue;
     use crate::peer_net::handlers::ping_pong::send_ping;
     use crate::peer_net::{start_peer_networker};
     use crate::crypto::montgomery::load_keys;
@@ -17,8 +17,8 @@ fn net_outbound() {
     config.peer.db_path = "assets/net1.sqlit3".to_string();
 
     // -- setup1 (receiver) ----------------------------------------------------------------
-    let (to_c, _from_n) = MsgQ::new(32, Some(config.peer.max_buffer_size)).unwrap();
-    let (_to_n, from_c) = MsgQ::new(32, Some(config.peer.max_buffer_size)).unwrap();
+    let (to_c, _from_n) = SpscQueue::new(32, Some(config.peer.max_buffer_size)).unwrap();
+    let (_to_n, from_c) = SpscQueue::new(32, Some(config.peer.max_buffer_size)).unwrap();
 
     let cfg = config.peer.clone();
     let net_handle1 = start_peer_networker( cfg,
@@ -32,8 +32,8 @@ fn net_outbound() {
     config.peer.key_path = "assets/keys2.bullet".to_string();
     config.peer.db_path = "assets/net2.sqlit3".to_string();
 
-    let (to_c, _from_n) = MsgQ::new(32, Some(config.peer.max_buffer_size)).unwrap();
-    let (mut to_n, from_c) = MsgQ::new(32, Some(config.peer.max_buffer_size)).unwrap();
+    let (to_c, _from_n) = SpscQueue::new(32, Some(config.peer.max_buffer_size)).unwrap();
+    let (mut to_n, from_c) = SpscQueue::new(32, Some(config.peer.max_buffer_size)).unwrap();
 
     let cfg = config.peer.clone();
     let net_handle2 = start_peer_networker(cfg,

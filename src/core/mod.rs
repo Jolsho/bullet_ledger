@@ -7,7 +7,7 @@ use crate::core::db::Ledger;
 use crate::server::{from_internals_from_vec, ToInternals};
 use crate::utils::{NetMsgCode,NetMsg};
 use crate::{config::CoreConfig, crypto::TrxGenerators, trxs::Trx};
-use crate::msging::{MsgCons, MsgProd};
+use crate::spsc::{Consumer, Producer};
 use crate::{peer_net::handlers::PacketCode, NETWORKER};
 use {consensus::Consensus, priority::PriorityPool};
 
@@ -48,7 +48,7 @@ pub struct Core {
 impl Core {
     pub fn new(
         config: &CoreConfig, 
-        mut tos: Vec<(MsgProd<NetMsg>, Token)>,
+        mut tos: Vec<(Producer<NetMsg>, Token)>,
     ) -> Result<Self, Box<dyn error::Error>> {
 
         let mut to_internals = ToInternals::with_capacity(tos.len());
@@ -70,8 +70,8 @@ impl Core {
 
 pub fn start_core(
     config: CoreConfig,
-    tos: Vec<(MsgProd<NetMsg>, Token)>,
-    froms: Vec<(MsgCons<NetMsg>, Token)>,
+    tos: Vec<(Producer<NetMsg>, Token)>,
+    froms: Vec<(Consumer<NetMsg>, Token)>,
 ) -> Result<JoinHandle<()>, Box<dyn error::Error>> {
 
     let mut core = Core::new(&config, tos)?;
@@ -129,14 +129,16 @@ pub fn handle_from_net(
         NetMsgCode::External(PacketCode::NewTrx) => {
             let mut trx = core.pool.get_value();
             std::mem::swap(&mut trx.buffer, &mut *m.body);
+
             if trx.unmarshal_internal().is_err() || 
                 !trx.is_valid(&core.gens)
             {
                 core.pool.recycle_value(trx);
-                return;
+            } else {
+                core.pool.insert(trx);
             }
-            core.pool.insert(trx);
         },
+
         NetMsgCode::External(PacketCode::NewBlock) => {
             const BLOCK_SIZE:usize = 3; // TODO -- what is this
 

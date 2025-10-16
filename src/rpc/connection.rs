@@ -121,9 +121,9 @@ impl TcpConnection for RpcConn {
     }
 
     fn enqueue_msg(&mut self, 
-        mut msg: Box<NetMsg>, 
+        mut msg: NetMsg, 
         server: &mut NetServer<Self>
-    ) -> Result<(), Box<NetMsg>> {
+    ) -> Result<(), NetMsg> {
         let mut body = server.get_buff();
         std::mem::swap(&mut body, &mut msg.body);
         self.outbound.push_back(WriteBuffer::from_vec(body));

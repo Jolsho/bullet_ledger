@@ -1,7 +1,7 @@
 
 use std::ops::{Deref, DerefMut};
 
-use crate::msging::Msg;
+use crate::spsc::Msg;
 
 #[derive(Debug)]
 pub struct Num(u64);
@@ -37,29 +37,29 @@ impl DerefMut for Str {
 #[test]
 fn msging() {
     use mio::{Interest, Poll, Token, Events};
-    use crate::msging::MsgQ;
+    use crate::spsc::SpscQueue;
     use std::{thread::{self}, time::Duration};
 
     const U64:Token = Token(1);
     const STR:Token = Token(2);
 
-    let (mut num_prod, mut num_cons) =  MsgQ::<Num>::new(12, None).unwrap();
-    let (mut string_prod, mut string_cons) =  MsgQ::<Str>::new(12, None).unwrap();
+    let (num_prod, mut num_cons) =  SpscQueue::<Num>::new(12, None).unwrap();
+    let (string_prod, mut string_cons) =  SpscQueue::<Str>::new(12, None).unwrap();
 
     let mut poll = Poll::new().unwrap();
     poll.registry().register(&mut num_cons, U64, Interest::READABLE).unwrap();
     poll.registry().register(&mut string_cons, STR, Interest::READABLE).unwrap();
 
     let num_sender = thread::spawn(move || {
-        let mut num = Err(Box::new(Num::new(None)));
+        let mut num = Err(Num::new(None));
         for n in 0u64..10u64 {
             if n % 2 == 0 && num.is_ok() {
                 num = Err(num_prod.collect());
             } else if num.is_ok() {
-                num = Err(Box::new(Num::new(Some(n as usize))));
+                num = Err(Num::new(Some(n as usize)));
             }
             while num.is_err() {
-                num = num_prod.push(num.unwrap_err());
+                num = num_prod.try_push(num.unwrap_err());
                 thread::yield_now();
             }
             thread::sleep(Duration::from_millis(100));
@@ -67,7 +67,7 @@ fn msging() {
     });
 
     let str_sender = thread::spawn(move || {
-        let mut m = Err(Box::new(Str::new(None)));
+        let mut m = Err(Str::new(None));
         for n in 0u8..10u8 {
             if m.is_ok() {
                 let mut mm = string_prod.collect();
@@ -75,7 +75,7 @@ fn msging() {
                 m = Err(mm);
             } 
             while m.is_err() {
-                m = string_prod.push(m.unwrap_err());
+                m = string_prod.try_push(m.unwrap_err());
                 thread::yield_now();
             }
             thread::sleep(Duration::from_millis(100));
@@ -96,7 +96,7 @@ fn msging() {
                         while let Some(num) = num_cons.pop() {
                             println!("num(recycle @ n % 2):: {:?}", num);
                             num_count += 1;
-                            num_cons.recycle(num);
+                            let _ = num_cons.recycle(num);
                         }
                     },
                     STR => {
@@ -104,7 +104,7 @@ fn msging() {
                         while let Some(v) = string_cons.pop() {
                             println!("string(should recycle):: {:?}", v);
                             str_count += 1;
-                            string_cons.recycle(v);
+                            let _ = string_cons.recycle(v);
                         }
                     },
                     _ => unreachable!(),
