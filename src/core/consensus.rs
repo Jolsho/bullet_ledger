@@ -1,14 +1,178 @@
+use curve25519_dalek::ristretto::CompressedRistretto;
+use std::{cell::RefCell, collections::HashMap, rc::Rc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
-pub struct Consensus {}
+use crate::core::utils::Hash;
+
+#[derive(Clone)]
+pub struct VoteInterval {
+    pub epoch: u64,
+    pub hash: Hash,
+}
+pub type CheckpointPointer = Rc<RefCell<Checkpoint>>;
+
+pub struct Vote {
+    pub source: VoteInterval,
+    pub target: VoteInterval,
+}
+
+pub struct Checkpoint {
+    hash: Hash,
+    weight: u64,
+    parent: CheckpointPointer,
+    heaviest_child: CheckpointPointer,
+    children: Vec<CheckpointPointer>,
+}
+
+pub struct Consensus {
+    next_epoch: SystemTime,
+    epoch_interval: u64,
+    super_majority: u64,
+
+    last_justified: u64,
+    validators: HashMap<Hash, Vote>,
+    checkpoint_buckets: HashMap<u64, HashMap<Hash, CheckpointPointer>>,
+}
+
 impl Consensus {
-    pub fn new() -> Self {Self {  }}
+
+    pub fn new(epoch_interval: u64) -> Self {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("Time went backwards");
+
+        let next_epoch_secs = ((now.as_secs() / epoch_interval) + 1) * epoch_interval;
+        let next_epoch = UNIX_EPOCH + Duration::from_secs(next_epoch_secs);
+
+        Self { 
+            epoch_interval, 
+            next_epoch,
+            super_majority: 1_000_000,
+            last_justified: 0,
+            validators: HashMap::new(),
+            checkpoint_buckets: HashMap::new(),
+        }
+    }
+
+    pub fn poll(&mut self) {
+        if SystemTime::now() >= self.next_epoch {
+
+            // derive the next validator state
+            
+            self.next_epoch += Duration::from_secs(self.epoch_interval);
+        }
+    }
+
+    pub fn is_validator(&self, _validator: &CompressedRistretto) -> bool { 
+        // is there something about only one proposal per slot??
+
+        // Check that this person should be listened to...
+        // if they are actually the validator
+        // if they are apart of the current epoch list of proposers
+        true 
+    }
+
+    pub fn on_vote(&mut self, voter: Hash, vote: Vote) -> Option<Hash> {
+        if let Some(prev_vote) = self.validators.get_mut(&voter) {
+            if prev_vote.target.epoch > vote.target.epoch { // TODO left off here
+            }
+        }
+
+        let mut is_justified = false;
+        if let Some(bucket) = self.checkpoint_buckets.get_mut(&vote.target.epoch) {
+            if let Some(t) = bucket.get_mut(&vote.target.hash) {
+                let mut target = t.borrow_mut();
+                target.weight += 32;  
+                if target.weight < self.super_majority {
+                    let mut parent = target.parent.borrow_mut();
+                    if target.hash != parent.heaviest_child.borrow().hash {
+                        if target.weight > parent.heaviest_child.borrow().weight {
+                            parent.heaviest_child = t.clone();
+
+                        } else if target.weight == parent.heaviest_child.borrow().weight {
+                            if target.hash < parent.heaviest_child.borrow().hash {
+                                parent.heaviest_child = t.clone();
+                            }
+                        }
+                    }
+                    return None;
+                } else {
+                    is_justified = true;
+                }
+            }
+        }
+        if is_justified {
+            let mut current = vote.target.clone();
+            while self.last_justified < current.epoch {
+                if let Some((_, mut epoch_map)) = self.checkpoint_buckets.remove_entry(&current.epoch) {
+
+                    if let Some((_, checkpoint)) = epoch_map.remove_entry(&current.hash) {
+                        current.hash = checkpoint.borrow().parent.borrow().hash.clone();
+                        current.epoch -= 1;
+                    }
+
+                    epoch_map.clear();
+                }
+            }
+
+            return Some(vote.target.hash);
+        } else {
+            return None;
+        }
+   }
 }
 
 /*
-*       TODO::
-*           need to build out how consensus and fee reception can work.
-*           like how to validate, and reward validators
-*           Will see how this goes...hahaha
-*               this seems like its gonna be difficult
+*   TODO -- how to do fees and what not
+*   also who is currently proposing
+*       - how to derive and store that
 *
+*
+*   STRUCTS::
+*
+*       VALIDATOR_INTERVAL_MAP::
+*           - Validator(addr) -> [ root(TUPLE), target(TUPLE) ]
+*           - TUPLE = (#epoch, hash)
+*
+*       CHECKPOINT_BUCKETS::
+*           - #epoch -> hash -> *CHECKPOINT
+*           - for easy look-up
+*
+*       CHECKPOINT::
+*           - connected to form DAG(Directed Acyclic Graph)
+*           Hash
+*           Weight
+*           Parent(*CHECKPOINT)
+*
+*           Children([ *CHECKPOINT, ... ])
+*           Heaviest_Child(*CHECKPOINT)
+*
+*
+*
+*   ON_VOTE_RECEPTION::
+*       validate vote through validator map and update
+*
+*       let target = CHECKPOINT_BUCKETS[vote.target.epoch][vote.target.hash];
+*       target.Weight += 32;  
+*
+*       if target.Weight < 2/3 TOTAL STAKE {
+*           if target.Hash != target.Parent.Heaviest_Child.Hash {
+*               if target.Weight > target.Parent.Heaviest_Child.Weight {
+*                   target.Parent.Heaviest_Child = target
+*
+*               } else if target.Weight == target.Parent.Heaviest_Child.Weight {
+*                   if target.Hash < target.Parent.Heaviest_Child.Hash {
+*                       target.Parent.Heaviest_Child = target
+*                   }
+*               }
+*           }
+*       } else {
+*           PRUNE ALL STATE BEHIND IT BECAUSE ITS JUSTIFIED
+*           send this to execution layer to merge with canonized
+*       }
+*
+*   MAKE_VOTE::
+*       walk from last justified checkpoint (root of DAG)
+*       choose heaviest at each step
+*       go until no children...
+*       THAT IS YOU VOTE
 */

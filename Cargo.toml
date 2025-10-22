@@ -20,4 +20,5 @@ mio = { version = "1.0.4", features = ["net", "os-poll", "os-ext"] }
 
 toml = "0.9.8"
 serde = { version = "1", features = ["derive"] }
-
+rocksdb = "0.24.0"
+lru = "0.16.2"

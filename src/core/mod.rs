@@ -1,53 +1,43 @@
-use core::error;
-use std::time::Duration;
-use std::{thread::JoinHandle};
+use std::io;
+use std::{thread::JoinHandle, time::Duration};
+use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint};
 use mio::{Events, Poll, Token};
+use sha2::{Digest, Sha256};
+use core::error;
 
-use crate::core::db::Ledger;
+use crate::RPC;
 use crate::server::{from_internals_from_vec, ToInternals};
-use crate::utils::{NetMsgCode,NetMsg};
-use crate::{config::CoreConfig, crypto::TrxGenerators, trxs::Trx};
 use crate::spsc::{Consumer, Producer};
+use crate::utils::{should_shutdown, NetMsg, NetMsgCode};
+use crate::config::CoreConfig;
+use crate::crypto::{TrxGenerators, schnorr::SchnorrProof};
 use crate::{peer_net::handlers::PacketCode, NETWORKER};
-use {consensus::Consensus, priority::PriorityPool};
+
+use {utils::TrxPool, ledger::Ledger, consensus::Consensus};
 
 pub mod consensus;
 pub mod execution;
 pub mod priority;
-pub mod db;
-
-pub type TrxPool = PriorityPool<Box<Hash>, Box<Trx>>;
-
-#[derive(PartialEq, Eq, Hash, Clone, Copy, PartialOrd, Ord)]
-pub struct Hash(pub [u8;32]);
-impl Hash {
-    pub const ZERO: Hash = Hash([0u8; 32]);
-    pub fn copy_from_slice(&mut self, buff: &[u8]) {
-        self.0.copy_from_slice(buff);
-    }
-}
-impl Default for Hash {
-    fn default() -> Self { Hash::ZERO }
-}
-
-
-////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////
-
+pub mod utils;
+pub mod ledger;
 
 pub struct Core {
     to_internals: ToInternals,
-    poll: Poll,
+
     ledger: Ledger,
+
+    poll: Poll,
+    poll_timeout: Option<Duration>,
 
     pool: TrxPool,
     gens: TrxGenerators,
     consensus: Consensus,
+    config: CoreConfig,
 }
 
 impl Core {
     pub fn new(
-        config: &CoreConfig, 
+        config: CoreConfig, 
         mut tos: Vec<(Producer<NetMsg>, Token)>,
     ) -> Result<Self, Box<dyn error::Error>> {
 
@@ -57,14 +47,23 @@ impl Core {
             to_internals.insert(t, chan);
         }
 
+
         Ok(Self { 
-            consensus: Consensus::new(),
+            consensus: Consensus::new(config.epoch_interval),
             pool: TrxPool::new(config.pool_cap), 
             gens: TrxGenerators::new("bullet_ledger", config.bullet_count),
             poll: Poll::new()?,
-            ledger: Ledger::new(config.db_path.clone())?,
+            ledger: Ledger::new(&config.db_path, config.db_cache_size)?,
+            poll_timeout: Some(Duration::from_secs(config.idle_polltimeout)),
             to_internals,
+            config,
         })
+    }
+
+    pub fn poll(&mut self, events: &mut Events) -> io::Result<()> {
+        self.consensus.poll();
+        self.poll.poll(events, self.poll_timeout)?;
+        Ok(())
     }
 }
 
@@ -72,89 +71,88 @@ pub fn start_core(
     config: CoreConfig,
     tos: Vec<(Producer<NetMsg>, Token)>,
     froms: Vec<(Consumer<NetMsg>, Token)>,
-) -> Result<JoinHandle<()>, Box<dyn error::Error>> {
-
-    let mut core = Core::new(&config, tos)?;
-
-    let mut from_internals = from_internals_from_vec(&mut core.poll, froms)?;
-
-    let mut events = Events::with_capacity(config.event_len);
-    let polltimeout = Duration::from_millis(config.idle_polltimeout);
-
+) -> Result<JoinHandle<Result<(),()>>, Box<dyn error::Error>> {
     Ok(std::thread::spawn(move || {
+        let mut events = Events::with_capacity(config.event_len);
+        let mut core = Core::new(config, tos).map_err(|_| ())?;
+        let mut from_internals = from_internals_from_vec(&mut core.poll, froms).map_err(|_| ())?;
         // Start polling
         loop {
-            if core.poll.poll(&mut events, Some(polltimeout)).is_err() {
-                continue;
-            }
+            if should_shutdown() { break; }
+            if core.poll(&mut events).is_err() { continue; }
 
             for ev in events.iter() {
                 let token = ev.token();
-                match token {
-                    NETWORKER => { // Msg from Networker
-                        if let Some(from) = from_internals.get_mut(&token) {
-                            if let Some(mut msg) = from.pop() {
-                                handle_from_net(&mut core, &mut msg);
-                                from.recycle(msg);
-                            }
+                if let Some(from) = from_internals.get_mut(&token) {
+                    if let Some(mut msg) = from.pop() {
+                        match token {
+                            NETWORKER => from_net(&mut core, &mut msg),
+                            RPC => from_rpc(&mut core, &mut msg),
+                            _ => {}
                         }
+
+                        from.recycle(msg);
                     }
-                    _ => {}
                 }
             }
         }
+        Ok(())
     }))
 }
 
+pub fn from_rpc(core: &mut Core, m: &mut NetMsg) {}
 
-/*
-*   Engine? NOT pool? => 
-*       Engine entails validation if need be.
-*       Execution client...
-*           Validates Trxs as they come in...
-*           Processes Commands from Consensus
-*               like remove batch...
-*           Must update state in DB
-*
-*   Consensus => Own Message Types
-*       Needs to communicate with DB for block history...
-*           Maybe... probably not
-*
-*/
-pub fn handle_from_net(
-    core: &mut Core,
-    m: &mut NetMsg
-) {
+pub fn from_net(core: &mut Core, m: &mut NetMsg) {
     match m.code {
         NetMsgCode::External(PacketCode::NewTrx) => {
             let mut trx = core.pool.get_value();
-            std::mem::swap(&mut trx.buffer, &mut *m.body);
 
-            if trx.unmarshal_internal().is_err() || 
-                !trx.is_valid(&core.gens)
-            {
-                core.pool.recycle_value(trx);
-            } else {
+            if trx.unmarshal(&mut m.body).is_ok() && 
+            core.ledger.balances_exist(&trx) && // TODO -- if balance exists or other trx is in pool
+            trx.is_valid(&core.gens) {          // if other trx is in pool we append this one
+                                                // because its valid once that gets processed but not before
                 core.pool.insert(trx);
+            } else {
+                core.pool.recycle_value(trx);
             }
         },
 
         NetMsgCode::External(PacketCode::NewBlock) => {
-            const BLOCK_SIZE:usize = 3; // TODO -- what is this
+            let mut cursor = 32;
+            let mut validator_commit = [0u8; 32];
+            validator_commit.copy_from_slice(&m.body[..cursor]);
+            let validator = CompressedRistretto::from_slice(&validator_commit).unwrap();
 
-            let mut keys = Vec::with_capacity(BLOCK_SIZE);
-            for i in 0..BLOCK_SIZE {
-                if i + 32 > m.body.len() { break; }
+            if core.consensus.is_validator(&validator) {
+
+                let mut v_proof = SchnorrProof::default();
+                v_proof.from_bytes(&mut m.body[cursor..cursor+96]);
+                cursor += 96;
+
+                let context_hash: [u8;32] = Sha256::digest(&m.body[cursor..]).into();
+
+                if !v_proof.verify(&core.gens, &validator, &context_hash) { return; }
+
+                let mut fee_commit = RistrettoPoint::default();
                 let mut k = core.pool.get_key();
-                k.copy_from_slice(&m.body[i..i+32]);
-                keys.push(k);
-            }
 
-            core.pool.remove_batch(keys)
+                for _ in 0..core.config.trxs_per_block {
+                    k.copy_from_slice(&m.body[cursor..cursor+32]);
+                    cursor += 32;
+
+                    if let Some((trx, _)) = core.pool.get(&k) {
+                        let _ = core.ledger.update_value(&trx.sender_init, &trx.sender_final);
+                        let _ = core.ledger.update_value(&trx.receiver_init, &trx.receiver_final);
+                        fee_commit += trx.fee_commit.decompress().unwrap();
+                    }
+
+                    core.pool.remove_one(&k);
+                }
+
+                let _ = core.ledger.update_balance(&validator, &fee_commit.compress());
+            }
         },
+
         _ => {}
     }
 }
-
-
-

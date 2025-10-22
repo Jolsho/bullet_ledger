@@ -6,7 +6,6 @@ pub struct SchnorrProof {
     pub random: CompressedRistretto,
     pub s1: Scalar,
     pub s2: Scalar,
-    buff: [u8; 96],
 }
 
 impl SchnorrProof {
@@ -15,12 +14,11 @@ impl SchnorrProof {
             random: CompressedRistretto::default(), 
             s1: Scalar::ZERO, 
             s2: Scalar::ZERO,
-            buff: [0u8; 96],
         }
     }
 
     pub fn compute_challenge(&self, 
-        commit: CompressedRistretto, 
+        commit: &CompressedRistretto, 
         context_hash: &[u8; 32],
     ) -> Scalar {
         let mut hasher = Sha256::new();
@@ -42,29 +40,28 @@ impl SchnorrProof {
         let r2 = Scalar::from_bytes_mod_order(super::random_b32());
         self.random = gens.pedersen.commit(r1, r2).compress();
 
-        let c = self.compute_challenge(commit.compress(), context_hash);
+        let c = self.compute_challenge(&commit.compress(), context_hash);
 
         self.s1 = r1 + c * x;
         self.s2 = r2 + c * r;
     }
 
-    pub fn verify( 
-        &self,
+    pub fn verify(&self,
         gens: &super::TrxGenerators, 
-        commit: &RistrettoPoint,
+        commit: &CompressedRistretto,
         context_hash: &[u8; 32],
     ) -> bool {
-        let c = self.compute_challenge(commit.compress(), context_hash);
+        let c = self.compute_challenge(commit, context_hash);
         let random = self.random.decompress().unwrap_or(RistrettoPoint::default());
-        gens.pedersen.commit(self.s1, self.s2) == random + c * commit
+        gens.pedersen.commit(self.s1, self.s2) == random + c * commit.decompress().unwrap()
     }
 
-    pub fn as_mut_slice(&mut self) -> &mut [u8;96] {
-        self.buff[..32].copy_from_slice(self.random.as_bytes());
-        self.buff[32..64].copy_from_slice(self.s1.as_bytes());
-        self.buff[64..].copy_from_slice(self.s2.as_bytes());
-        &mut self.buff
+    pub fn copy_to_slice(&mut self, buff: &mut [u8]) {
+        buff[..32].copy_from_slice(self.random.as_bytes());
+        buff[32..64].copy_from_slice(self.s1.as_bytes());
+        buff[64..96].copy_from_slice(self.s2.as_bytes());
     }
+
     pub fn from_bytes(&mut self, buff: &mut [u8]) {
         self.random.0.copy_from_slice(&mut buff[..32]);
 

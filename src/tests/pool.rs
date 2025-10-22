@@ -1,6 +1,6 @@
 #[test]
 fn pool() {
-    use crate::core::{Hash, TrxPool};
+    use crate::core::utils::{TrxPool, Hash};
     let length = 5;
 
     let mut t_pool = TrxPool::new(length);
@@ -24,7 +24,10 @@ fn pool() {
     let trx = t_pool.pop().unwrap();
     assert_eq!(trx.fee_value, 4);
 
-    t_pool.remove_batch(inserted);
+    for key in inserted { 
+        t_pool.remove_one(&key); 
+        t_pool.recycle_key(key);
+    }
     assert_eq!(t_pool.len(), 1);
 
     let trx = t_pool.pop().unwrap();

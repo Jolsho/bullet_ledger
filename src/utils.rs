@@ -9,6 +9,24 @@ use mio::Token;
 use crate::peer_net::connection::PeerConnection;
 use crate::crypto::random_b2;
 use crate::peer_net::handlers::{Handler, PacketCode};
+use std::sync::atomic::{AtomicBool, Ordering};
+
+///////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
+
+pub static SHUTDOWN: AtomicBool = AtomicBool::new(false);
+
+pub fn should_shutdown() -> bool {
+    SHUTDOWN.load(Ordering::SeqCst)
+}
+
+#[allow(unused)]
+pub fn request_shutdown() {
+    SHUTDOWN.store(true, Ordering::SeqCst);
+}
+
+///////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum NetManCode {

@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 use crate::crypto::montgomery::load_keys;
 use crate::spsc::{Msg, Consumer, Producer};
 use crate::utils::{next_deadline, NetError, NetResult, NetMsg};
-use crate::shutdown;
 
 pub trait TcpConnection: Sized + Send {
     fn new(server: &mut NetServer<Self>) -> Box<Self>;
@@ -157,7 +156,7 @@ impl<C: TcpConnection> NetServer<C> {
         
         // Poll loop
         loop {
-            if shutdown::should_shutdown() { break; }
+            if crate::utils::should_shutdown() { break; }
 
             let timeout = self.handle_timeouts(&mut maps);
             if self.poll.poll(&mut events, Some(timeout)).is_err() { 

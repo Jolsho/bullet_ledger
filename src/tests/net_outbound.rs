@@ -9,7 +9,7 @@ fn net_outbound() {
     use crate::peer_net::handlers::ping_pong::send_ping;
     use crate::peer_net::{start_peer_networker};
     use crate::crypto::montgomery::load_keys;
-    use crate::{shutdown, CORE};
+    use crate::{utils, CORE};
 
     let mut config = load_config("config.toml");
     config.peer.bind_addr = "127.0.0.1:4143".to_string();
@@ -55,7 +55,7 @@ fn net_outbound() {
     // -----------------------------------------------------------------
     
     std::thread::sleep(Duration::from_secs(3));
-    shutdown::request_shutdown();
+    utils::request_shutdown();
     let _ = net_handle1.join().unwrap();
     let _ = net_handle2.join().unwrap();
 

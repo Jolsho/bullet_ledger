@@ -11,7 +11,6 @@ mod tests;
 mod core;
 mod peer_net;
 mod crypto;
-mod shutdown;
 mod config;
 mod rpc;
 mod server;

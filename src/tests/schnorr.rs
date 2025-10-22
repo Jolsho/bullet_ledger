@@ -10,7 +10,7 @@ fn schnorr() {
     
     let x = Scalar::from(42u64);
     let blinder = Scalar::from_bytes_mod_order(random_b32());
-    let commit = gens.pedersen.commit(x, blinder);
+    let commit = gens.pedersen.commit(x, blinder).compress();
 
     let mut hash = [0u8; 32];
     hash.copy_from_slice(Sha256::digest(b"fake_trx_data").as_slice());

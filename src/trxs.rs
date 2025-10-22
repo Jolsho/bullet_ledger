@@ -3,7 +3,7 @@ use merlin::Transcript;
 use bulletproofs::{ProofError, RangeProof};
 use sha2::{Digest, Sha256};
 
-use crate::core::{priority::DeriveStuff, Hash};
+use crate::core::{priority::DeriveStuff, utils::Hash};
 use crate::crypto::{random_b32, TrxGenerators, schnorr::SchnorrProof};
 
 const VALUE_SIZE: usize = 64;
@@ -84,11 +84,12 @@ pub struct Trx {
     pub sender_schnorr: SchnorrProof,
 
     pub receiver_init: CompressedRistretto,
-    pub receiver_final: CompressedRistretto,
+    pub receiver_final: CompressedRistretto, // TODO  this is not needed
+                                            // its delta_commit + receiver_init
+                                           // sender_final isnt needed either
     pub receiver_schnorr: SchnorrProof,
 
     pub hash: [u8; 32],
-    pub buffer: Vec<u8>,
 }
 
 impl Default for Trx {
@@ -107,11 +108,8 @@ impl DeriveStuff<Box<Hash>> for Box<Trx> {
 
 impl Trx {
     pub fn new(tag: &'static [u8]) -> Self {
-        let mut buffer = Vec::with_capacity(TOTAL_TRX_PROOF);
-        buffer.resize(TOTAL_TRX_PROOF, 0);
         Self { 
             tag,
-            buffer,
             hash: [0u8; 32],
             delta_commit: CompressedRistretto::default(),
             fee_commit: CompressedRistretto::default(),
@@ -148,35 +146,31 @@ impl Trx {
     /// Marshals data into internal buffer and Creates a schnorr proof.
     /// Proof is stored in struct and marshalled to internal.
     /// In prod you won't call schnorr_sender() & schnorr_receiver() sequentially
-    pub fn schnorr_sender(&mut self, gens: &TrxGenerators, s: &TrxSecrets) {
-        self.marshal_internal();
+    pub fn schnorr_sender(&mut self, gens: &TrxGenerators, s: &TrxSecrets, buffer: &mut Vec<u8>) {
+        self.marshal(buffer);
         self.compute_hash();
         self.sender_schnorr.generate(gens, s.x, s.r, &self.hash);
-        self.buffer[TRX_LENGTH..TRX_LENGTH+96].copy_from_slice(
-            self.sender_schnorr.as_mut_slice()
-        );
+        self.sender_schnorr.copy_to_slice(&mut buffer[TRX_LENGTH..TRX_LENGTH+96])
     }
 
     /// Marshals data into internal buffer and Creates a schnorr proof.
     /// Proof is stored in struct and marshalled to internal.
     /// In prod you won't call schnorr_sender() & schnorr_receiver() sequentially
-    pub fn schnorr_receiver(&mut self, gens: &TrxGenerators, s: &TrxSecrets) {
-        self.marshal_internal();
+    pub fn schnorr_receiver(&mut self, gens: &TrxGenerators, s: &TrxSecrets, buffer: &mut Vec<u8>) {
+        self.marshal(buffer);
         self.compute_hash();
         self.receiver_schnorr.generate(gens, s.x, s.r, &self.hash);
-        self.buffer[TRX_LENGTH+96..].copy_from_slice(
-            self.receiver_schnorr.as_mut_slice()
-        );
+        self.receiver_schnorr.copy_to_slice(&mut buffer[TRX_LENGTH+96..])
     }
 
     pub fn verify_schnorrs(&mut self, gens: &TrxGenerators) -> bool {
         self.compute_hash();
         return self.sender_schnorr.verify(gens,
-            &self.sender_init.decompress().unwrap(), 
+            &self.sender_init, 
             &self.hash
         ) &&
         self.receiver_schnorr.verify(gens,
-            &self.receiver_init.decompress().unwrap(), 
+            &self.receiver_init, 
             &self.hash
         )
     }
@@ -191,44 +185,48 @@ impl Trx {
         self.hash.copy_from_slice(hasher.finalize().as_slice());
     }
 
-    pub fn marshal_internal(&mut self) {
+    pub fn marshal(&mut self, buffer: &mut Vec<u8>) {
+        if buffer.len() < TOTAL_TRX_PROOF { 
+            buffer.resize(TOTAL_TRX_PROOF, 0); 
+        }
+
         let mut c = 32;
         // Sender
-        self.buffer[..c].copy_from_slice(self.sender_final.as_bytes());
-        if let Some(proof) = &self.sender_proof.take() {
-            self.buffer[c..c+PROOF_LENGTH].copy_from_slice(&proof.to_bytes());
+        buffer[..c].copy_from_slice(self.sender_final.as_bytes());
+        if let Some(proof) = self.sender_proof.take() {
+            buffer[c..c+PROOF_LENGTH].copy_from_slice(&proof.to_bytes());
         }
         c += PROOF_LENGTH;
 
         // Shared
-        self.buffer[c..c+32].copy_from_slice(self.sender_init.as_bytes());
-        self.buffer[c+32..c+64].copy_from_slice(self.delta_commit.as_bytes());
-        self.buffer[c+64..c+96].copy_from_slice(self.fee_commit.as_bytes());
-        self.buffer[c+96..c+104].copy_from_slice(&self.fee_value.to_le_bytes());
-        self.buffer[c+104..c+136].copy_from_slice(self.receiver_init.as_bytes());
+        buffer[c..c+32].copy_from_slice(self.sender_init.as_bytes());
+        buffer[c+32..c+64].copy_from_slice(self.delta_commit.as_bytes());
+        buffer[c+64..c+96].copy_from_slice(self.fee_commit.as_bytes());
+        buffer[c+96..c+104].copy_from_slice(&self.fee_value.to_le_bytes());
+        buffer[c+104..c+136].copy_from_slice(self.receiver_init.as_bytes());
 
         // Recevier
-        self.buffer[c+136..TRX_LENGTH].copy_from_slice(self.receiver_final.as_bytes());
+        buffer[c+136..TRX_LENGTH].copy_from_slice(self.receiver_final.as_bytes());
     }
 
-    pub fn unmarshal_internal(&mut self) -> Result<(), ProofError> {
+    pub fn unmarshal(&mut self, buffer: &mut[u8]) -> Result<(), ProofError> {
         let mut p = 32;
-        self.sender_final.0.copy_from_slice(&mut self.buffer[..p]);
-        self.sender_proof = Some(RangeProof::from_bytes(&self.buffer[p..p+PROOF_LENGTH])?);
+        self.sender_final.0.copy_from_slice(&mut buffer[..p]);
+        self.sender_proof = Some(RangeProof::from_bytes(&buffer[p..p+PROOF_LENGTH])?);
         p += PROOF_LENGTH;
 
-        self.sender_init.0.copy_from_slice(&self.buffer[p..p+32]);
-        self.delta_commit.0.copy_from_slice(&mut self.buffer[p+32..p+64]);
-        self.fee_commit.0.copy_from_slice(&self.buffer[p+64..p+96]);
+        self.sender_init.0.copy_from_slice(&buffer[p..p+32]);
+        self.delta_commit.0.copy_from_slice(&mut buffer[p+32..p+64]);
+        self.fee_commit.0.copy_from_slice(&buffer[p+64..p+96]);
         let mut fee = [0u8; 8];
-        fee.copy_from_slice(&self.buffer[p+96..p+104]);
+        fee.copy_from_slice(&buffer[p+96..p+104]);
         self.fee_value = u64::from_le_bytes(fee);
-        self.receiver_init.0.copy_from_slice(&self.buffer[p+104..p+136]);
+        self.receiver_init.0.copy_from_slice(&buffer[p+104..p+136]);
 
-        self.receiver_final.0.copy_from_slice(&mut self.buffer[p+136..TRX_LENGTH]);
+        self.receiver_final.0.copy_from_slice(&mut buffer[p+136..TRX_LENGTH]);
 
-        self.sender_schnorr.from_bytes(&mut self.buffer[TRX_LENGTH..TRX_LENGTH+96]);
-        self.receiver_schnorr.from_bytes(&mut self.buffer[TRX_LENGTH+96..]);
+        self.sender_schnorr.from_bytes(&mut buffer[TRX_LENGTH..TRX_LENGTH+96]);
+        self.receiver_schnorr.from_bytes(&mut buffer[TRX_LENGTH+96..]);
         self.compute_hash();
         Ok(())
     }
@@ -301,6 +299,8 @@ impl Trx {
                 Some(r_init), Some(r_final),
                 Some(s_proof)
             ) => {
+                if (Scalar::from(self.fee_value) * gens.pedersen.B) != fee { return false }
+
                 if s_init - delta - fee != s_final { return false }
                 if r_init + delta != r_final { return false }
 

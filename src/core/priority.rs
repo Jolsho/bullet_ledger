@@ -42,6 +42,10 @@ where
         self.heap.peek()
     }
 
+    pub fn get(&mut self, key: &K) -> Option<&mut (V, u64)> {
+        self.map.get_mut(key)
+    }
+
     pub fn pop(&mut self) -> Option<V> {
         while self.heap.len() > 0 {
             if let Some((_, k1)) = self.heap.pop() {
@@ -99,18 +103,10 @@ where
         }
     }
 
-    pub fn remove_batch(&mut self, mut keys: Vec<K>) {
-        while keys.len() > 0 {
-            self.remove_one(keys.pop().unwrap());
-        }
-        self.clean();
-    }
-
-    pub fn remove_one(&mut self, key: K) {
+    pub fn remove_one(&mut self, key: &K) {
         if let Some((k, (v, _))) = self.map.remove_entry(&key) {
             self.recycle_value(v);
             self.recycle_key(k);
-            self.recycle_key(key);
         }
     }
 

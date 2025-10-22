@@ -25,6 +25,9 @@ pub struct CoreConfig {
     pub pool_cap: usize,
     pub bullet_count: usize,
     pub db_path: String,
+    pub db_cache_size: usize,
+    pub trxs_per_block: usize,
+    pub epoch_interval: u64,
 }
 
 #[derive(Debug, Deserialize, Clone)]

@@ -1,7 +1,6 @@
-
-
 #[test]
-fn trxx() {
+fn trx() {
+    use crate::trxs::TOTAL_TRX_PROOF;
     use std::fs;
     use std::time::Instant;
     use crate::{trxs, crypto};
@@ -39,7 +38,7 @@ fn trxx() {
 
     // sender and receiver share the same delta commit
     let delta = trxs::hidden_value_commit(&gens, 2u64);
-    let fee = trxs::hidden_value_commit(&gens, 2u64);
+    let fee = trxs::visible_value_commit(&gens, 2u64);
 
     let mut trx = Trx::new(gens.tag);
 
@@ -55,8 +54,10 @@ fn trxx() {
     ).unwrap();
     assert_eq!(new_receiver.val, 2u64);
 
-    trx.schnorr_sender(&gens, &sender);
-    trx.schnorr_receiver(&gens, &receiver);
+    let mut buffer = Vec::with_capacity(TOTAL_TRX_PROOF);
+
+    trx.schnorr_sender(&gens, &sender, &mut buffer);
+    trx.schnorr_receiver(&gens, &receiver, &mut buffer);
 
     println!("Generation (time estimate): {:.3?}", start.elapsed());
 
@@ -69,7 +70,7 @@ fn trxx() {
     let start = Instant::now();
 
     // reconstruct trx
-    trx.unmarshal_internal().unwrap();
+    trx.unmarshal(&mut buffer).unwrap();
 
     // Validate it
     assert!(trx.is_valid(&gens));
