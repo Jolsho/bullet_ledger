@@ -8,6 +8,9 @@ pub struct PeerMan {
     threshold: usize,
 }
 
+// TODO this should be into core by the way 
+// this should be apart of the MPT
+
 impl PeerMan {
     pub fn new(db_path: String, threshold: usize, initial_ips: Vec<[u8;4]>) -> Result<Self> {
         let db = Connection::open(db_path)?;

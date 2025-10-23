@@ -50,11 +50,20 @@ event_len = 128
 # TRX pool capacity.
 pool_cap = 8
 
+# TRX count per block
+trxs_per_block = 500
+
 # How many bulletproofs to validate at once
 bullet_count = 1
 
 # Database path.
 db_path = "assets/ledger.sqlit3"
+
+# Database cache size.
+db_cache_size = 256
+
+epoch_interval = 240
+
 
 
 [server]

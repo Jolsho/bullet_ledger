@@ -1,6 +1,5 @@
 pub mod schnorr;
 pub mod montgomery;
-pub mod chacha;
 
 use rand::{rngs::OsRng, TryRngCore};
 use bulletproofs::{BulletproofGens, PedersenGens};

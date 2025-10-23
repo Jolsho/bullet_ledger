@@ -5,6 +5,7 @@ use mio::{Events, Poll, Token};
 use sha2::{Digest, Sha256};
 use core::error;
 
+use crate::trxs::Trx;
 use crate::RPC;
 use crate::server::{from_internals_from_vec, ToInternals};
 use crate::spsc::{Consumer, Producer};
@@ -13,7 +14,7 @@ use crate::config::CoreConfig;
 use crate::crypto::{TrxGenerators, schnorr::SchnorrProof};
 use crate::{peer_net::handlers::PacketCode, NETWORKER};
 
-use {utils::TrxPool, ledger::Ledger, consensus::Consensus};
+use {priority::TrxPool, ledger::Ledger, consensus::Consensus};
 
 pub mod consensus;
 pub mod execution;
@@ -105,15 +106,25 @@ pub fn from_rpc(core: &mut Core, m: &mut NetMsg) {}
 pub fn from_net(core: &mut Core, m: &mut NetMsg) {
     match m.code {
         NetMsgCode::External(PacketCode::NewTrx) => {
-            let mut trx = core.pool.get_value();
+            // get trx by type
+            match core.pool.get_value(m.body[0] as u8) {
+                Some(Trx::Ephemeral(mut trx)) => {
+                    if trx.unmarshal(&mut m.body[1..]).is_ok() && 
+                    core.ledger.value_exists(&trx.sender_init.0) &&                     
+                    core.ledger.value_exists(&trx.receiver_init.0) &&
+                    trx.is_valid(&core.gens).is_ok() {          
 
-            if trx.unmarshal(&mut m.body).is_ok() && 
-            core.ledger.balances_exist(&trx) && // TODO -- if balance exists or other trx is in pool
-            trx.is_valid(&core.gens) {          // if other trx is in pool we append this one
-                                                // because its valid once that gets processed but not before
-                core.pool.insert(trx);
-            } else {
-                core.pool.recycle_value(trx);
+                        // TODO -- if other trx is in pool we append this one
+                        // because its valid once that gets processed but not before
+
+                        core.pool.insert(Trx::Ephemeral(trx));
+                    } else {
+                        core.pool.recycle_value(Trx::Ephemeral(trx));
+                    }
+                }
+                Some(Trx::Hidden(mut trx)) => { }
+                Some(Trx::Regular(mut trx)) => { }
+                None => {}
             }
         },
 
@@ -141,15 +152,18 @@ pub fn from_net(core: &mut Core, m: &mut NetMsg) {
                     cursor += 32;
 
                     if let Some((trx, _)) = core.pool.get(&k) {
-                        let _ = core.ledger.update_value(&trx.sender_init, &trx.sender_final);
-                        let _ = core.ledger.update_value(&trx.receiver_init, &trx.receiver_final);
-                        fee_commit += trx.fee_commit.decompress().unwrap();
+                        trx.execute(
+                            &mut core.ledger, 
+                            &mut core.gens, 
+                            &mut fee_commit,
+                        );
                     }
 
                     core.pool.remove_one(&k);
                 }
 
-                let _ = core.ledger.update_balance(&validator, &fee_commit.compress());
+                if let Some(root_hash) = core.ledger.put(validator.as_bytes(), fee_commit.compress().as_bytes().to_vec()) {
+                }
             }
         },
 

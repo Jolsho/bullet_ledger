@@ -1,6 +1,10 @@
 use std::collections::{BinaryHeap, HashMap};
 use std::hash::Hash;
 use std::usize;
+use crate::core::utils::Hash as LocalHash;
+use crate::trxs::Trx;
+
+pub type TrxPool = PriorityPool<Box<LocalHash>, Trx>;
 
 pub trait DeriveStuff<K>
 where
@@ -8,27 +12,28 @@ where
 {
     fn fill_key(&self, key: &mut K);
     fn get_comperator(&self) -> u64;
+    fn get_value_id(&self) -> &u8;
+    fn new(id: u8) -> Self;
 }
 
 pub struct PriorityPool<K, V> {
-    map: HashMap<K, (V, u64)>, // value + priority
-    heap: BinaryHeap<(u64, K)>,
-    capacity: usize,
-
-    values:   Vec<V>,
-    keys:   Vec<K>,
+    map:        HashMap<K, (V, u64)>, // value + priority
+    heap:       BinaryHeap<(u64, K)>,
+    capacity:   usize,
+    values:     HashMap<u8, Vec<V>>,
+    keys:       Vec<K>,
 }
 
 impl<K, V> PriorityPool<K, V>
 where
     K: Clone + Eq + Hash + Ord + Default,
-    V: Default + DeriveStuff<K>,
+    V: DeriveStuff<K>,
 {
     pub fn new(capacity: usize) -> Self {
         Self { 
             map: HashMap::with_capacity(capacity), 
             heap: BinaryHeap::with_capacity(capacity),
-            values: Vec::with_capacity(capacity),
+            values: HashMap::with_capacity(capacity),
             keys: Vec::with_capacity(capacity),
             capacity,
         }
@@ -113,17 +118,32 @@ where
     ///////////////////////////////////////////////////
     ///////////////////////////////////////////////////
 
-    pub fn get_value(&mut self) -> V {
-        let mut v = self.values.pop();
+    pub fn get_value(&mut self, id: u8) -> Option<V> {
+        let vec = match self.values.get_mut(&id) {
+            Some(vec) => vec,
+            None => {
+                self.values.insert(id, Vec::with_capacity(100));
+                self.values.get_mut(&id).unwrap()
+            }
+        };
+        let mut v = vec.pop();
         if v.is_none() {
-            v = Some(V::default());
+            v = Some(V::new(id));
         }
-        v.unwrap()
+        v
     }
 
     pub fn recycle_value(&mut self, v: V) {
         if self.values.len() < self.values.capacity() {
-            self.values.push(v)
+            match self.values.get_mut(v.get_value_id()) {
+                Some(vec) => vec.push(v),
+                None => {
+                    let mut vec = Vec::with_capacity(100);
+                    let id = v.get_value_id().clone();
+                    vec.push(v);
+                    self.values.insert(id, vec);
+                }
+            }
         } else {
             drop(v);
         }
