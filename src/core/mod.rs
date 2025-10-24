@@ -19,7 +19,6 @@ use {priority::TrxPool, ledger::Ledger, consensus::Consensus};
 pub mod consensus;
 pub mod execution;
 pub mod priority;
-pub mod utils;
 pub mod ledger;
 
 pub struct Core {
@@ -109,9 +108,10 @@ pub fn from_net(core: &mut Core, m: &mut NetMsg) {
             // get trx by type
             match core.pool.get_value(m.body[0] as u8) {
                 Some(Trx::Ephemeral(mut trx)) => {
+
                     if trx.unmarshal(&mut m.body[1..]).is_ok() && 
-                    core.ledger.value_exists(&trx.sender_init.0) &&                     
-                    core.ledger.value_exists(&trx.receiver_init.0) &&
+                    core.ledger.value_exists(None, &trx.sender_init.0) &&                     
+                    core.ledger.value_exists(None, &trx.receiver_init.0) &&
                     trx.is_valid(&core.gens).is_ok() {          
 
                         // TODO -- if other trx is in pool we append this one

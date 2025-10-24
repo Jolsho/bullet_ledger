@@ -21,6 +21,8 @@ const NETWORKER: Token = Token(707070);
 const CORE: Token = Token(717171);
 const RPC: Token = Token(727272);
 
+// TODO -- try to get rid of sha2 reliance...replace with blake3
+
 fn main() {
     let config = load_config("config.toml");
     let buffer_size = Some(config.peer.max_buffer_size.clone());
@@ -82,7 +84,7 @@ fn main() {
     ).unwrap();
 
 
-    core_handle.join().unwrap();
+    let _ = core_handle.join().unwrap();
     let _ = net_handle.join().unwrap();
     let _ = rpc_handle.join().unwrap();
 }

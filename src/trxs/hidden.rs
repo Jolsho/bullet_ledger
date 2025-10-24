@@ -120,31 +120,31 @@ impl HiddenTrx {
             buffer.resize(TOTAL_TRX_PROOF, 0); 
         }
 
-        let mut c = 32;
         // Sender
         if let Some(proof) = self.sender_proof.take() {
-            buffer[c..c+PROOF_LENGTH].copy_from_slice(&proof.to_bytes());
+            buffer[..PROOF_LENGTH].copy_from_slice(&proof.to_bytes());
         }
-        c += PROOF_LENGTH;
+        let c = PROOF_LENGTH;
 
         // Shared
         buffer[c..c+32].copy_from_slice(self.sender_addr.as_bytes());
         buffer[c+32..c+64].copy_from_slice(self.delta_commit.as_bytes());
-        buffer[c+64..c+92].copy_from_slice(&self.fee_value.to_le_bytes());
-        buffer[c+92..c+124].copy_from_slice(self.receiver_addr.as_bytes());
+        buffer[c+64..c+72].copy_from_slice(&self.fee_value.to_le_bytes());
+        buffer[c+72..c+104].copy_from_slice(self.receiver_addr.as_bytes());
     }
 
     pub fn unmarshal(&mut self, buffer: &mut[u8]) -> Result<(), Box<dyn error::Error>> {
-        let mut p = 32;
-        self.sender_proof = Some(RangeProof::from_bytes(&buffer[p..p+PROOF_LENGTH])?);
-        p += PROOF_LENGTH;
+        self.sender_proof = Some(RangeProof::from_bytes(&buffer[..PROOF_LENGTH])?);
+        let p = PROOF_LENGTH;
 
         self.sender_addr = VerifyingKey::from_bytes(&buffer[p..p+32].try_into()?)?;
         self.delta_commit.0.copy_from_slice(&mut buffer[p+32..p+64]);
+
         let mut fee = [0u8; 8];
-        fee.copy_from_slice(&buffer[p+64..p+92]);
+        fee.copy_from_slice(&buffer[p+64..p+72]);
         self.fee_value = u64::from_le_bytes(fee);
-        self.receiver_addr = VerifyingKey::from_bytes(&buffer[p+104..p+136].try_into()?)?;
+
+        self.receiver_addr = VerifyingKey::from_bytes(&buffer[p+72..p+104].try_into()?)?;
 
         self.sender_sig = Signature::from_bytes(&buffer[TRX_LENGTH..TRX_LENGTH+64].try_into()?);
         self.receiver_sig = Signature::from_bytes(&buffer[TRX_LENGTH+64..].try_into()?);

@@ -1,5 +1,5 @@
 use std::{cell::RefCell, rc::Rc };
-use crate::core::{ledger::{branch::BranchNode, ext::ExtNode, leaf::Leaf, Ledger}, utils::Hash};
+use crate::core::{ledger::{branch::BranchNode, ext::ExtNode, leaf::Leaf, Ledger}};
 
 #[derive(Clone)]
 pub enum Node {
@@ -9,6 +9,7 @@ pub enum Node {
 }
 
 pub type NodePointer<T> = Rc<RefCell<T>>;
+pub type Hash = [u8;32];
 
 pub const BRANCH:u8 = 69;
 pub const EXT:u8 = 70;
@@ -50,16 +51,16 @@ impl Node {
 
     pub fn put(&mut self, ledger: &mut Ledger, nibbles: &[u8], 
         key: &[u8], val: Vec<u8>,
-    ) -> Option<Rc<RefCell<Hash>>> {
-        match &self {
+    ) -> Option<Hash> {
+        match self {
             Node::Branch(b) => b.borrow_mut().put(ledger, nibbles, key, val),
             Node::Extension(e) => e.borrow_mut().put(ledger, nibbles, key, val),
             Node::Leaf(_) => None,
         }
     }
 
-    pub fn remove(&mut self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Rc<RefCell<Hash>>> {
-        match &self {
+    pub fn remove(&mut self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Hash> {
+        match self {
             Node::Branch(b) => b.borrow_mut().remove(ledger, nibbles),
             Node::Extension(e) => e.borrow_mut().remove(ledger, nibbles),
             Node::Leaf(l) => l.borrow_mut().remove(ledger)

@@ -1,7 +1,7 @@
 use std::collections::{BinaryHeap, HashMap};
 use std::hash::Hash;
 use std::usize;
-use crate::core::utils::Hash as LocalHash;
+use crate::core::ledger::node::Hash as LocalHash;
 use crate::trxs::Trx;
 
 pub type TrxPool = PriorityPool<Box<LocalHash>, Trx>;

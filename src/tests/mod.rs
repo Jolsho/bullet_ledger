@@ -1,6 +1,8 @@
 use std::fs;
 
-mod ephemeral_trx;
+mod trx_ephemeral;
+mod trx_hidden;
+mod trx_regular;
 mod schnorr;
 mod pool;
 mod msging;
@@ -12,6 +14,8 @@ mod ledger;
 pub struct TestFile {
     pub path: String,
 }
+
+#[cfg(test)]
 impl TestFile {
     pub fn new(path: &'static str) -> Self {
         Self { path: path.to_string() }

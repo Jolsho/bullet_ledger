@@ -189,16 +189,16 @@ impl<C: TcpConnection> NetServer<C> {
                     while let Some(msg) = from.pop() {
                         if msg.code.is_internal() {
                             if let Some(msg) = handle_from_internal(msg, self) {
-                                from.recycle(msg);
+                                let _ = from.recycle(msg);
                             }
                         } else {
                             if let Err(msg) = self.handle_outbound(msg, &mut maps) {
-                                from.recycle(msg);
+                                let _ = from.recycle(msg);
                             } else {
                                 // conn will send msg back to server
                                 // so to prevent overloading server with msgs
                                 // pop one and recycle it to from
-                                from.recycle(self.get_new_msg());
+                                let _ = from.recycle(self.get_new_msg());
                             }
                         }
                     }

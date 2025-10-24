@@ -1,60 +1,50 @@
-use crate::core::{
-    ledger::{node::{NodePointer, LEAF}, Ledger},
-    utils::Hash,
-};
+use crate::core::ledger::{node::{Hash, NodePointer, LEAF}, Ledger};
 use std::{cell::RefCell, rc::Rc, usize};
 
-pub fn derive_value_hash(bytes: &[u8]) -> Rc<RefCell<Hash>> {
+pub fn derive_value_hash(bytes: &[u8]) -> Hash {
     let mut hasher = blake3::Hasher::new();
     hasher.update(bytes);
     let hash = hasher.finalize();
-    Rc::new(RefCell::new(Hash(*hash.as_bytes())))
+    *hash.as_bytes()
 }
 
 pub struct Leaf {
-    hash: Rc<RefCell<Hash>>,
+    hash: Hash,
     value: Vec<u8>,
 }
 
 impl Leaf {
     pub fn new() -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self { 
-            hash: Rc::new(RefCell::new(Hash::ZERO)), 
+            hash: [0u8;32], 
             value: Vec::with_capacity(0),
         }))
     }
 
-    pub fn get_hash(&self) -> Rc<RefCell<Hash>> {
-        self.hash.clone()
-    }
-    pub fn get_value(&self) -> Vec<u8> {
-        // THIS IS BIG CLONE?? TODO
-        self.value.clone()
-    }
+    pub fn get_hash(&self) -> &Hash { &self.hash }
+    pub fn get_value(&self) -> Vec<u8> { self.value.clone() }
+    pub fn set_value(&mut self, val: Vec<u8>) { self.value = val; }
 
-    pub fn set_value(&mut self, val: Vec<u8>) {
-        self.value = val;
-    }
-
-    pub fn derive_hash(&self) -> Rc<RefCell<Hash>> {
+    pub fn derive_hash(&mut self, key: &[u8]) -> Hash {
         let mut hasher = blake3::Hasher::new();
+        hasher.update(key);
         hasher.update(&self.value);
         let hash = hasher.finalize();
-        self.hash.borrow_mut().copy_from_slice(hash.as_bytes());
-        self.hash.clone()
+        self.hash.copy_from_slice(hash.as_bytes());
+        *hash.as_bytes()
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut buff = Vec::with_capacity(1 + 32 + 8 + self.value.len());
         buff.extend_from_slice(&[LEAF]);
-        buff.extend_from_slice(&self.hash.borrow().0);
+        buff.extend_from_slice(&self.hash);
         buff.extend_from_slice(&self.value.len().to_le_bytes());
         buff.extend_from_slice(&self.value);
         buff
     }
 
     pub fn from_bytes(bytes: &[u8]) -> NodePointer<Self> {
-        let mut hash = Hash::ZERO;
+        let mut hash = [0u8;32];
         hash.copy_from_slice(&bytes[..32]);
 
         let mut val_len = [0u8; 8];
@@ -65,17 +55,15 @@ impl Leaf {
         value.extend_from_slice(&bytes[40..]);
 
         Rc::new(RefCell::new(Self {
-            hash: Rc::new(RefCell::new(hash)),
+            hash: hash,
             value,
         }))
     }
 
-    pub fn remove(&mut self, ledger: &mut Ledger) -> Option<Rc<RefCell<Hash>>> {
-        if ledger.db.delete(&self.hash.borrow().0).is_err() {
-            return None;
-        }
-        ledger.cache.demote(&self.hash.borrow());
-        self.hash.borrow_mut().0.fill(0);
-        Some(self.hash.clone())
+    pub fn remove(&mut self, ledger: &mut Ledger) -> Option<Hash> {
+        ledger.db.delete(&self.hash).unwrap();
+        ledger.cache.demote(&self.hash);
+        self.hash.fill(0);
+        Some(self.hash)
     }
 }
