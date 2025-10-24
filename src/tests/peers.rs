@@ -10,7 +10,7 @@ fn peers() {
     let threshold = 100;
     let config = load_config("config.toml").peer;
 
-    let p_man = PeerMan::new(path.clone(), 
+    let mut p_man = PeerMan::new(path.clone(), 
         threshold, config.bootstraps.clone(),
     ).unwrap();
 
@@ -27,7 +27,7 @@ fn peers() {
     p_man.is_banned(&addr).unwrap_err();
 
 
-    p_man.remove_peer(&ip).unwrap();
+    p_man.remove_peer(&ip);
     assert_eq!(
         p_man.is_banned(&addr).unwrap_err(), 
         NetError::Unauthorized

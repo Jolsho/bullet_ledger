@@ -1,5 +1,4 @@
 use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint, Scalar};
-use sha2::{Digest, Sha256};
 
 #[derive(Clone)]
 pub struct SchnorrProof {
@@ -21,13 +20,12 @@ impl SchnorrProof {
         commit: &CompressedRistretto, 
         context_hash: &[u8; 32],
     ) -> Scalar {
-        let mut hasher = Sha256::new();
-        hasher.update(&commit.as_bytes());
-        hasher.update(&self.random.as_bytes());
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(commit.as_bytes());
+        hasher.update(self.random.as_bytes());
         hasher.update(context_hash);
-        let mut hash = [0u8;32];
-        hash.copy_from_slice(hasher.finalize().as_slice());
-        Scalar::from_bytes_mod_order(hash)
+        let hash = hasher.finalize();
+        Scalar::from_bytes_mod_order(*hash.as_bytes())
     }
 
     pub fn generate(&mut self, 

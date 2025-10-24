@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::net::{Ipv4Addr, SocketAddr};
+use std::rc::Rc;
 use std::{error, io};
 use std::thread::JoinHandle;
 use mio::Token;
@@ -32,12 +34,14 @@ pub fn start_peer_networker(
 
     Ok(std::thread::spawn(move || {
 
+        let peers = Rc::new(RefCell::new(peers));
+
         let allow_connection = |addr: &SocketAddr| {
-            peers.is_banned(addr).is_ok()
+            peers.borrow_mut().is_banned(addr).is_ok()
         };
 
         let handle_errored = |e: NetError, addr: &SocketAddr, _s: &mut NetServer<PeerConnection> | {
-            let _ = peers.record_behaviour(addr, e);
+            let _ = peers.borrow_mut().record_behaviour(addr, e);
         };
 
         let handle_internal = |msg: NetMsg, _s: &mut NetServer<PeerConnection> | {
@@ -53,9 +57,9 @@ pub fn start_peer_networker(
                             let ip = Ipv4Addr::from_bits(u32::from_le_bytes(raw_ip));
                             
                             if *code == NetManCode::AddPeer {
-                                let _ = peers.add_peer(&ip);
+                                let _ = peers.borrow_mut().add_peer(&ip);
                             } else {
-                                let _ = peers.remove_peer(&ip);
+                                let _ = peers.borrow_mut().remove_peer(&ip);
                             }
                             cursor += 4
                         }

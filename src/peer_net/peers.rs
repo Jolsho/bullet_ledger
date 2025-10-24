@@ -1,98 +1,95 @@
-use std::net::{Ipv4Addr, SocketAddr};
-use rusqlite::{Connection, Error, Result};
+use std::{collections::HashMap, fs, io::{self, Read, Seek, Write}, net::{Ipv4Addr, SocketAddr}, os::unix::fs::MetadataExt};
 
 use crate::utils::{NetError, NetResult};
 
 pub struct PeerMan {
-    db: Connection,
-    threshold: usize,
+    file: fs::File,
+    peers: HashMap<[u8;4], u16>,
+    threshold: u16,
 }
 
-// TODO this should be into core by the way 
-// this should be apart of the MPT
+impl Drop for PeerMan {
+    fn drop(&mut self) {
+        let _ = self.file.seek(io::SeekFrom::Start(0));
+        let _ = self.file.set_len((self.peers.len() * 6) as u64 + 8);
+
+        let _ = self.file.write_all(&self.peers.len().to_le_bytes());
+
+        for (ip, score) in self.peers.iter() {
+            let _ = self.file.write_all(ip);
+            let _ = self.file.write_all(&score.to_le_bytes());
+        }
+    }
+}
 
 impl PeerMan {
-    pub fn new(db_path: String, threshold: usize, initial_ips: Vec<[u8;4]>) -> Result<Self> {
-        let db = Connection::open(db_path)?;
-        db.execute(
-            "CREATE TABLE IF NOT EXISTS peers (
-                ip TEXT UNIQUE PRIMARY KEY,
-                score INT
-            );", 
-            [],
-        )?;
-        let s = Self { db , threshold };
-        for ip in initial_ips {
-            s.add_peer(&Ipv4Addr::new(ip[0],ip[1],ip[2],ip[3])).unwrap();
+    pub fn new(db_path: String, threshold: usize, initial_ips: Vec<[u8;4]>) -> io::Result<Self > {
+        let mut file = fs::OpenOptions::new()
+            .write(true).read(true)
+            .create(true).open(&db_path)?;
+
+        let mut peer_count = [0u8; 8];
+        if file.metadata().unwrap().size() < 8 {
+            file.set_len(8)?;
         }
+        let _ = file.read_exact(&mut peer_count)?;
+        
+        let peer_count = usize::from_le_bytes(peer_count);
+
+        let mut peers = HashMap::with_capacity(100 + peer_count + initial_ips.len());
+
+        for i in 0..peer_count {
+            let mut ip = [0u8; 4];
+            let mut score = [0u8; 2];
+            let cursor = i * 6;
+            file.seek_relative(cursor as i64)?;
+            file.read_exact(&mut ip)?;
+            file.read_exact(&mut score)?;
+            peers.insert(ip, u16::from_le_bytes(score));
+        }
+
+        for ip in initial_ips {
+            if !peers.contains_key(&ip) {
+                peers.insert(ip, 0);
+            }
+        }
+
+        let s = Self { file, peers, 
+            threshold: threshold as u16,
+        };
         Ok(s)
     }
 
-    pub fn add_peer(&self, ip: &Ipv4Addr) -> NetResult<()> {
-        let mut q = self.db.prepare_cached(
-            "INSERT INTO peers (ip, score) VALUES(?1, ?2);"
-        ).map_err(|e| NetError::PeerDbQ(e.to_string()))?;
-
-        if q.execute((ip.to_string(), 0))
-            .map_err(|e| NetError::PeerDbE(e.to_string())
-        )? == 0 {
-            return Err(NetError::PeerDbE("peer not added".into()));
+    pub fn add_peer(&mut self, ip: &Ipv4Addr) {
+        let ip = ip.octets();
+        if !self.peers.contains_key(&ip) {
+            self.peers.insert(ip, 0);
         }
-
-        Ok(())
     }
 
-    pub fn remove_peer(&self, ip: &Ipv4Addr) -> NetResult<()> {
-        let mut q = self.db.prepare_cached(
-            "DELETE FROM peers WHERE ip = ?1;"
-        ).map_err(|e| NetError::PeerDbQ(e.to_string()))?;
-
-        if q.execute((ip.to_string(),))
-            .map_err(|e| NetError::PeerDbE(e.to_string())
-        )? == 0 {
-            return Err(NetError::PeerDbE("peer not found".into()));
-        }
-
-        Ok(())
+    pub fn remove_peer(&mut self, ip: &Ipv4Addr) {
+        self.peers.remove(&ip.octets());
     }
 
-    pub fn is_banned(&self, addr: &SocketAddr) -> NetResult<()> {
-        let mut q = self.db.prepare_cached(
-            "SELECT score FROM peers WHERE ip = ?1;"
-        ).map_err(|e| NetError::PeerDbQ(e.to_string()))?;
-        if !addr.is_ipv4() {
-            return Err(NetError::Unauthorized);
-        }
-        let ip = addr.ip().to_canonical().to_string();
+    pub fn is_banned(&mut self, addr: &SocketAddr) -> NetResult<()> {
 
-        let score: usize = q.query_row(
-            (ip,), |row| row.get(0)
-        ).map_err(|e| {
-                if e == Error::QueryReturnedNoRows {
-                    return NetError::Unauthorized;
+        if let SocketAddr::V4(ip) = addr {
+            if let Some(score) = self.peers.get(&ip.ip().octets()) {
+                if *score < self.threshold {
+                    return Ok(());
                 }
-                return NetError::PeerDbE(e.to_string())
-            })?;
-
-        if score < self.threshold {
-            return Ok(());
+            }
         }
         Err(NetError::Unauthorized)
     }
 
-    pub fn record_behaviour(&self, addr: &SocketAddr, error: NetError) -> NetResult<()> {
-        let mut q = self.db.prepare_cached(
-            "UPDATE peers SET score = score + ?1 WHERE ip = ?2;"
-        ).map_err(|e| NetError::PeerDbQ(e.to_string()))?;
-
-        let ip = addr.ip().to_canonical().to_string();
-
-        if q.execute((error.to_score(), ip))
-            .map_err(|e| NetError::PeerDbE(e.to_string())
-        )? == 0 {
-            return Err(NetError::Unauthorized);
+    pub fn record_behaviour(&mut self, addr: &SocketAddr, error: NetError) -> NetResult<()> {
+        if let SocketAddr::V4(ip) = addr {
+            if let Some(score) = self.peers.get_mut(&ip.ip().octets()) {
+                *score += error.to_score() as u16;
+                return Ok(());
+            }
         }
-
-        Ok(())
+        return Err(NetError::Unauthorized);
     }
 }

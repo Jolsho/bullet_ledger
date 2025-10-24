@@ -21,7 +21,6 @@ impl Leaf {
         }))
     }
 
-    pub fn get_hash(&self) -> &Hash { &self.hash }
     pub fn get_value(&self) -> Vec<u8> { self.value.clone() }
     pub fn set_value(&mut self, val: Vec<u8>) { self.value = val; }
 

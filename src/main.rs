@@ -21,7 +21,6 @@ const NETWORKER: Token = Token(707070);
 const CORE: Token = Token(717171);
 const RPC: Token = Token(727272);
 
-// TODO -- try to get rid of sha2 reliance...replace with blake3
 
 fn main() {
     let config = load_config("config.toml");

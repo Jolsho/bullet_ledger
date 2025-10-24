@@ -15,7 +15,6 @@ impl ExtNode {
         }))
     }
     pub fn path_len(&self) -> usize { self.path.len() }
-    pub fn get_nibble(&self) -> u8 { self.path[0] }
     pub fn get_hash(&self) -> &Hash { &self.hash }
     pub fn set_path(&mut self, path: &[u8]) { 
         self.path.clear();

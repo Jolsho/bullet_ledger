@@ -16,7 +16,7 @@ fn ephemeral() {
     println!("SCHNORRS:      {} bytes", 96 * 2);
     println!("TOTAL TRX:     {} bytes", TOTAL_TRX_PROOF);
 
-    let test_file = TestFile::new("ledger");
+    let test_file = TestFile::new("ledger_ephemeral");
 
     let mut ledger = Ledger::new(&test_file.path, 20).unwrap();
     let gens = crypto::TrxGenerators::new("custom_zkp", 1);

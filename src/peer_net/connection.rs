@@ -6,7 +6,6 @@ use chacha20poly1305::aead::{AeadMutInPlace, OsRng};
 use chacha20poly1305::{AeadCore, ChaCha20Poly1305, Key, KeyInit};
 use mio::net::TcpStream;
 use mio::{Interest, Poll, Token};
-use sha2::{Digest, Sha256};
 use zeroize::Zeroize;
 
 use crate::crypto::{ random_b32, montgomery::{ecdh_shared_secret, hkdf_derive_key}};
@@ -496,10 +495,10 @@ impl PeerConnection {
 
             // derive final salt
             let mut local_salt = random_b32();
-            let mut hasher = Sha256::default();
+            let mut hasher = blake3::Hasher::new();
             hasher.update(&remote_salt);
             hasher.update(&local_salt);
-            let mut final_salt = hasher.finalize();
+            let mut final_salt = *hasher.finalize().as_bytes();
             remote_salt.zeroize();
 
             // derive shared secret
@@ -561,7 +560,7 @@ impl PeerConnection {
             self.read_pos += 32;
 
             // derive hashed_salt
-            let mut hasher = Sha256::default();
+            let mut hasher = blake3::Hasher::new();
             hasher.update(&local_salt);
             hasher.update(&remote_salt);
             let final_salt = hasher.finalize();
@@ -602,7 +601,7 @@ impl PeerConnection {
                     &self.read_header.tag.into(),
                 ).map_err( |e| NetError::Decryption(e.to_string()))?;
 
-            if local_salt != *final_salt {
+            if local_salt != *final_salt.as_bytes() {
                 return Err(NetError::Unauthorized);
             }
 

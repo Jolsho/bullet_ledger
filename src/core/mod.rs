@@ -2,7 +2,6 @@ use std::io;
 use std::{thread::JoinHandle, time::Duration};
 use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint};
 use mio::{Events, Poll, Token};
-use sha2::{Digest, Sha256};
 use core::error;
 
 use crate::trxs::Trx;
@@ -140,7 +139,9 @@ pub fn from_net(core: &mut Core, m: &mut NetMsg) {
                 v_proof.from_bytes(&mut m.body[cursor..cursor+96]);
                 cursor += 96;
 
-                let context_hash: [u8;32] = Sha256::digest(&m.body[cursor..]).into();
+                let mut hasher = blake3::Hasher::new();
+                hasher.update(&m.body[cursor..]);
+                let context_hash: [u8;32] = hasher.finalize().into();
 
                 if !v_proof.verify(&core.gens, &validator, &context_hash) { return; }
 

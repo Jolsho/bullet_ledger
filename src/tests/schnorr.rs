@@ -1,7 +1,6 @@
 #[test]
 fn schnorr() {
     use curve25519_dalek::Scalar;
-    use sha2::{Sha256, Digest};
     use crate::crypto::{random_b32, TrxGenerators};
     use crate::crypto::schnorr::SchnorrProof;
 
@@ -12,9 +11,10 @@ fn schnorr() {
     let blinder = Scalar::from_bytes_mod_order(random_b32());
     let commit = gens.pedersen.commit(x, blinder).compress();
 
-    let mut hash = [0u8; 32];
-    hash.copy_from_slice(Sha256::digest(b"fake_trx_data").as_slice());
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"fake_trx_data");
+    let hash = hasher.finalize();
     
-    proof.generate(&gens, x, blinder, &hash);
-    assert!(proof.verify(&gens, &commit, &hash));
+    proof.generate(&gens, x, blinder, hash.as_bytes());
+    assert!(proof.verify(&gens, &commit, hash.as_bytes()));
 }
