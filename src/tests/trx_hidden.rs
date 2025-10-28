@@ -88,11 +88,11 @@ fn hidden() {
 
     // get initial balances
     let sender_init = CompressedRistretto::from_slice(
-        &ledger.get(sender_pub.as_bytes()).unwrap()
+        &ledger.get_value(sender_pub.as_bytes()).unwrap()
     ).unwrap();
 
     let receiver_init = CompressedRistretto::from_slice(
-        &ledger.get(receiver_pub.as_bytes()).unwrap()
+        &ledger.get_value(receiver_pub.as_bytes()).unwrap()
     ).unwrap();
 
     // Validate it

@@ -1,16 +1,15 @@
-use std::io;
 use std::{thread::JoinHandle, time::Duration};
-use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint};
 use mio::{Events, Poll, Token};
 use core::error;
 
+use crate::core::ledger::leaf::derive_value_hash;
 use crate::trxs::Trx;
 use crate::RPC;
 use crate::server::{from_internals_from_vec, ToInternals};
 use crate::spsc::{Consumer, Producer};
 use crate::utils::{should_shutdown, NetMsg, NetMsgCode};
 use crate::config::CoreConfig;
-use crate::crypto::{TrxGenerators, schnorr::SchnorrProof};
+use crate::crypto::TrxGenerators;
 use crate::{peer_net::handlers::PacketCode, NETWORKER};
 
 use {priority::TrxPool, ledger::Ledger, consensus::Consensus};
@@ -46,7 +45,6 @@ impl Core {
             to_internals.insert(t, chan);
         }
 
-
         Ok(Self { 
             consensus: Consensus::new(config.epoch_interval),
             pool: TrxPool::new(config.pool_cap), 
@@ -57,12 +55,6 @@ impl Core {
             to_internals,
             config,
         })
-    }
-
-    pub fn poll(&mut self, events: &mut Events) -> io::Result<()> {
-        self.consensus.poll();
-        self.poll.poll(events, self.poll_timeout)?;
-        Ok(())
     }
 }
 
@@ -78,7 +70,8 @@ pub fn start_core(
         // Start polling
         loop {
             if should_shutdown() { break; }
-            if core.poll(&mut events).is_err() { continue; }
+            core.consensus.poll();
+            if core.poll.poll(&mut events, core.poll_timeout).is_err() { continue; }
 
             for ev in events.iter() {
                 let token = ev.token();
@@ -90,7 +83,7 @@ pub fn start_core(
                             _ => {}
                         }
 
-                        from.recycle(msg);
+                        let _ = from.recycle(msg);
                     }
                 }
             }
@@ -109,8 +102,8 @@ pub fn from_net(core: &mut Core, m: &mut NetMsg) {
                 Some(Trx::Ephemeral(mut trx)) => {
 
                     if trx.unmarshal(&mut m.body[1..]).is_ok() && 
-                    core.ledger.value_exists(None, &trx.sender_init.0) &&                     
-                    core.ledger.value_exists(None, &trx.receiver_init.0) &&
+                    core.ledger.value_exists(&derive_value_hash(&trx.sender_init.0)) && 
+                    core.ledger.value_exists(&derive_value_hash(&trx.receiver_init.0)) &&
                     trx.is_valid(&core.gens).is_ok() {          
 
                         // TODO -- if other trx is in pool we append this one
@@ -128,44 +121,6 @@ pub fn from_net(core: &mut Core, m: &mut NetMsg) {
         },
 
         NetMsgCode::External(PacketCode::NewBlock) => {
-            let mut cursor = 32;
-            let mut validator_commit = [0u8; 32];
-            validator_commit.copy_from_slice(&m.body[..cursor]);
-            let validator = CompressedRistretto::from_slice(&validator_commit).unwrap();
-
-            if core.consensus.is_validator(&validator) {
-
-                let mut v_proof = SchnorrProof::default();
-                v_proof.from_bytes(&mut m.body[cursor..cursor+96]);
-                cursor += 96;
-
-                let mut hasher = blake3::Hasher::new();
-                hasher.update(&m.body[cursor..]);
-                let context_hash: [u8;32] = hasher.finalize().into();
-
-                if !v_proof.verify(&core.gens, &validator, &context_hash) { return; }
-
-                let mut fee_commit = RistrettoPoint::default();
-                let mut k = core.pool.get_key();
-
-                for _ in 0..core.config.trxs_per_block {
-                    k.copy_from_slice(&m.body[cursor..cursor+32]);
-                    cursor += 32;
-
-                    if let Some((trx, _)) = core.pool.get(&k) {
-                        trx.execute(
-                            &mut core.ledger, 
-                            &mut core.gens, 
-                            &mut fee_commit,
-                        );
-                    }
-
-                    core.pool.remove_one(&k);
-                }
-
-                if let Some(root_hash) = core.ledger.put(validator.as_bytes(), fee_commit.compress().as_bytes().to_vec()) {
-                }
-            }
         },
 
         _ => {}

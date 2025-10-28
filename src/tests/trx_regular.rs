@@ -65,10 +65,10 @@ fn regular() {
     trx.unmarshal(&mut buffer).unwrap();
 
     // get initial balances
-    let sender_init_raw = ledger.get(sender_pub.as_bytes()).unwrap();
+    let sender_init_raw = ledger.get_value(sender_pub.as_bytes()).unwrap();
     let sender_init = u64::from_le_bytes(sender_init_raw.try_into().unwrap());
 
-    let receiver_init_raw = ledger.get(receiver_pub.as_bytes()).unwrap();
+    let receiver_init_raw = ledger.get_value(receiver_pub.as_bytes()).unwrap();
     let receiver_init = u64::from_le_bytes(receiver_init_raw.try_into().unwrap());
 
     // Validate it

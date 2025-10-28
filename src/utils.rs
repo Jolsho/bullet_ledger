@@ -139,9 +139,6 @@ pub enum NetError {
     Decryption(String),
     SocketFailed,
     Other(String),
-
-    PeerDbQ(String),
-    PeerDbE(String),
 }
 
 impl NetError {

@@ -8,13 +8,13 @@ pub struct VoteInterval {
     pub epoch: u64,
     pub hash: Hash,
 }
-pub type CheckpointPointer = Rc<RefCell<Checkpoint>>;
 
 pub struct Vote {
     pub source: VoteInterval,
     pub target: VoteInterval,
 }
 
+pub type CheckpointPointer = Rc<RefCell<Checkpoint>>;
 pub struct Checkpoint {
     hash: Hash,
     weight: u64,
@@ -46,7 +46,7 @@ impl Consensus {
         Self { 
             epoch_interval, 
             next_epoch,
-            super_majority: 1_000_000,
+            super_majority: 1_000_000, // TODO -- how to derive super_majority
             last_justified: 0,
             validators: HashMap::new(),
             checkpoint_buckets: HashMap::new(),
@@ -73,7 +73,8 @@ impl Consensus {
 
     pub fn on_vote(&mut self, voter: Hash, vote: Vote) -> Option<Hash> {
         if let Some(prev_vote) = self.validators.get_mut(&voter) {
-            if prev_vote.target.epoch > vote.target.epoch { // TODO left off here
+            if prev_vote.target.epoch > vote.target.epoch { 
+                // TODO left off here
             }
         }
 
@@ -81,17 +82,31 @@ impl Consensus {
         if let Some(bucket) = self.checkpoint_buckets.get_mut(&vote.target.epoch) {
             if let Some(t) = bucket.get_mut(&vote.target.hash) {
                 let mut target = t.borrow_mut();
-                target.weight += 32;  
+
+                // Cast Vote
+                target.weight += 32;  // TODO -- what about different weights?
+                
+                // if not super_majority &&
                 if target.weight < self.super_majority {
                     let mut parent = target.parent.borrow_mut();
+
+                    // if target is not currently heaviest child
                     if target.hash != parent.heaviest_child.borrow().hash {
+
+                        // if target is now heaviest child
                         if target.weight > parent.heaviest_child.borrow().weight {
+                            // update parent to point to target
                             parent.heaviest_child = t.clone();
 
-                        } else if target.weight == parent.heaviest_child.borrow().weight {
-                            if target.hash < parent.heaviest_child.borrow().hash {
-                                parent.heaviest_child = t.clone();
-                            }
+
+                        // else if target is most recent to reach heaviest weight
+                        // and target hash < heaviest hash
+                        } else if target.weight == parent.heaviest_child.borrow().weight &&
+                            target.hash < parent.heaviest_child.borrow().hash 
+                        {
+                            // update parent to point to target
+                            parent.heaviest_child = t.clone();
+                            
                         }
                     }
                     return None;
@@ -101,19 +116,25 @@ impl Consensus {
             }
         }
         if is_justified {
+
+            // if current is justified collapse all epochs from last justified to current
             let mut current = vote.target.clone();
-            while self.last_justified < current.epoch {
+            let mut previous = self.last_justified;
+
+            while previous < current.epoch {
+
                 if let Some((_, mut epoch_map)) = self.checkpoint_buckets.remove_entry(&current.epoch) {
 
-                    if let Some((_, checkpoint)) = epoch_map.remove_entry(&current.hash) {
-                        current.hash = checkpoint.borrow().parent.borrow().hash.clone();
-                        current.epoch -= 1;
-                    }
+            // TODO -- send this to execution layer to merge with canonized chain.
+            // engine needs to execute the justified blocks
 
-                    epoch_map.clear();
+                    if let Some((_, checkpoint)) = epoch_map.remove_entry(&current.hash) {
+                        current.hash.copy_from_slice(&checkpoint.borrow().parent.borrow().hash);
+                        current.epoch -= 1;
+                        previous += 1; // NOT SURE ABOUT THIS...GOT DISTRACTED
+                    }
                 }
             }
-
             return Some(vote.target.hash);
         } else {
             return None;
@@ -125,50 +146,6 @@ impl Consensus {
 *   TODO -- how to do fees and what not
 *   also who is currently proposing
 *       - how to derive and store that
-*
-*
-*   STRUCTS::
-*
-*       VALIDATOR_INTERVAL_MAP::
-*           - Validator(addr) -> [ root(TUPLE), target(TUPLE) ]
-*           - TUPLE = (#epoch, hash)
-*
-*       CHECKPOINT_BUCKETS::
-*           - #epoch -> hash -> *CHECKPOINT
-*           - for easy look-up
-*
-*       CHECKPOINT::
-*           - connected to form DAG(Directed Acyclic Graph)
-*           Hash
-*           Weight
-*           Parent(*CHECKPOINT)
-*
-*           Children([ *CHECKPOINT, ... ])
-*           Heaviest_Child(*CHECKPOINT)
-*
-*
-*
-*   ON_VOTE_RECEPTION::
-*       validate vote through validator map and update
-*
-*       let target = CHECKPOINT_BUCKETS[vote.target.epoch][vote.target.hash];
-*       target.Weight += 32;  
-*
-*       if target.Weight < 2/3 TOTAL STAKE {
-*           if target.Hash != target.Parent.Heaviest_Child.Hash {
-*               if target.Weight > target.Parent.Heaviest_Child.Weight {
-*                   target.Parent.Heaviest_Child = target
-*
-*               } else if target.Weight == target.Parent.Heaviest_Child.Weight {
-*                   if target.Hash < target.Parent.Heaviest_Child.Hash {
-*                       target.Parent.Heaviest_Child = target
-*                   }
-*               }
-*           }
-*       } else {
-*           PRUNE ALL STATE BEHIND IT BECAUSE ITS JUSTIFIED
-*           send this to execution layer to merge with canonized
-*       }
 *
 *   MAKE_VOTE::
 *       walk from last justified checkpoint (root of DAG)
