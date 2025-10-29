@@ -1,5 +1,5 @@
 use std::{cell::RefCell, rc::Rc, usize};
-use crate::core::ledger::{node::{Hash, IsNode, NodeID, BRANCH}, Ledger};
+use crate::core::ledger::{node::{Hash, IsNode, Node, NodeID, BRANCH}, Ledger};
 
 
 pub struct BranchNode { 
@@ -89,7 +89,7 @@ impl BranchNode {
         buff.extend_from_slice(&self.hash);
 
         let zero_buffer = [0u8;32];
-        for (i, child_o) in self.children.iter().enumerate() {
+        for child_o in self.children.iter() {
             if let Some(child) = child_o {
                 buff.extend_from_slice(&child.0);
             } else {
@@ -174,29 +174,113 @@ impl BranchNode {
         return Some(self.derive_hash());
     }
 
-    pub fn remove(&mut self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Hash> {
-        // TODO -- if parent is extension and self.count == 1... compact parent further
-        // ALSO if self.count == 1 and that child is an extension grow that extension
+    pub fn get_last_child(&self) -> (u8, &Option<(Hash, NodeID)>) {
+        for (i, c) in self.children.iter().enumerate() {
+            if c.is_some() {
+                return (i as u8, c)
+            }
+        }
+        return (20, &None);
+    }
+
+    pub fn remove( 
+        &mut self, 
+        ledger: &mut Ledger, 
+        nibbles: &[u8]
+    ) -> Option<(Hash, Option<Vec<u8>>)> {
 
         if let Some((_, next_id)) = self.get_next(&nibbles[0]) {
             if let Some(mut next_node) = ledger.load_node(next_id) {
-                if let Some(hash) = next_node.remove(ledger, &nibbles[1..]) {
+                if let Some((hash, _)) = next_node.remove(ledger, &nibbles[1..]) {
 
                     if hash == Self::ZERO_HASH {
                         self.delete_child(&nibbles[0]);
                     } else {
                         self.insert(&nibbles[0], &hash, &next_node.get_id());
                     }
-                    
-                    let mut new_hash = Self::ZERO_HASH;
+
+                    let mut hash_to_parent = Self::ZERO_HASH;
+
+                    if self.count == 1 {
+                        let parent_id = u64::from_le_bytes(*self.get_id()) / 16;
+                        let parent_node = ledger.load_node(&parent_id.to_le_bytes());
+                        if parent_node.is_none() {
+                            return Some((self.derive_hash(), None));
+                        }
+                        let parent_node = parent_node.unwrap();
+
+                        let (nib, child) = self.get_last_child();
+                        let child_node = ledger.load_node(&child.unwrap().1).unwrap();
+                        let mut path_to_parent = Vec::new();
+
+                        if let Node::Extension(_) = parent_node {
+                            ledger.delete_node(self.get_id());
+                            // extend parent by last child nibble
+                            path_to_parent.push(nib);
+
+                            if let Node::Extension(c) = child_node {
+                                let mut child_ext = c.borrow_mut();
+                                ledger.delete_node(child_ext.get_id());
+
+                                // add ext path to parent 
+                                let _ = child_ext.cut_remaining(0).into_iter()
+                                    .map(|nib| path_to_parent.push(nib));
+
+                                // load in grnd_child
+                                let (grnd_child_hash, grnd_child_id) = child_ext.get_child();
+                                let grnd_child = ledger.load_node(grnd_child_id).unwrap();
+
+                                // change id of grndchild to match self
+                                ledger.delete_node(grnd_child_id);
+                                grnd_child.change_id(self.get_id(), ledger);
+                                ledger.cache_node(u64::from_le_bytes(grnd_child.get_id()), grnd_child);
+
+                                // connect parent to grnd_child
+                                hash_to_parent = *grnd_child_hash;
+
+                            } else {
+                                ledger.delete_node(&child_node.get_id());
+
+                                // change id of child to match self
+                                child_node.change_id(self.get_id(), ledger);
+
+                                // connect parent to child
+                                hash_to_parent = child_node.derive_hash();
+
+                                ledger.cache_node(u64::from_le_bytes(child_node.get_id()), child_node);
+                            }
+
+                            return Some((hash_to_parent, Some(path_to_parent)));
+
+                        } else if let Node::Extension(c) = child_node {
+                            ledger.delete_node(self.get_id());
+                            {
+                                let mut child_ext = c.borrow_mut();
+                                child_ext.prepend_path(nib);
+
+                                // change id of child to match self
+                                ledger.delete_node(child_ext.get_id());
+                                child_ext.change_id(self.get_id(), ledger);
+
+                                // connect parent to child
+                                hash_to_parent = child_ext.derive_hash();
+                            }
+
+                            let child_id = u64::from_le_bytes(*c.borrow().get_id());
+                            ledger.cache_node(child_id, Node::Extension(c));
+
+                            return Some((hash_to_parent, None));
+                        }
+                    } 
 
                     if self.count > 0 {
-                        new_hash = self.derive_hash();
+                        hash_to_parent = self.derive_hash();
                     } else {
                         ledger.delete_node(self.get_id());
                     }
 
-                    return Some(new_hash);
+                    return Some((hash_to_parent, None));
+
                 } else {
                     println!("ERROR::BRANCH::REMOVE::RECV_NONE,  ID: {:10},  KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
                 }
@@ -204,7 +288,8 @@ impl BranchNode {
                 println!("ERROR::BRANCH::REMOVE::FAIL_LOAD,  ID: {:10},  KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
             }
         } else {
-            println!("ERROR::BRANCH::REMOVE::NO_ID, KEY: {}", hex::encode(nibbles));
+            println!("ERROR::BRANCH::REMOVE::NO_ID,                       KEY: {}", hex::encode(nibbles));
+            println!("count {}", self.count);
         }
         None
     }

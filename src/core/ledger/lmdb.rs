@@ -34,10 +34,11 @@ impl DB {
         }
         let handle = unsafe {
 
+            let map_size: usize = 25 * 1024 * 1024 * 1024; // 100 GB
             // TODO -- eventually need to check to see if needs to be larger
             // like if there is already a database
 
-            let map_size: usize = 25 * 1024 * 1024 * 1024; // 100 GB
+
             let c_path = CString::new(path).expect("CString::new failed");
             lmdb_open(c_path.as_ptr(), map_size)
         };
@@ -140,24 +141,26 @@ impl DB {
     }
 }
 
+unsafe extern "C" {
+    pub static SUCCESS: i32;
+    pub static NOTFOUND: i32;
+    pub static ALREADY_EXISTS: i32;
+
+    pub static TXN_FULL: i32;
+    pub static MAP_FULL: i32;
+    pub static DBS_FULL: i32;
+    pub static READERS_FULL: i32;
+
+    pub static PAGE_NOTFOUND: i32;
+    pub static CORRUPTED: i32;
+    pub static PANIC: i32;
+    pub static VERSION_MISMATCH: i32;
+
+    pub static INVALID: i32;
+    pub static MAP_RESIZED: i32;
+}
 
 
-const SUCCESS: i32 = 0;
-const NOTFOUND: i32 = -30798;
-const ALREADY_EXISTS: i32 = -30799;
-
-const TXN_FULL: i32 = -30790;
-const MAP_FULL: i32 = -30789;
-const DBS_FULL: i32 = -30788;
-const READERS_FULL: i32 = -30787;
-
-const PAGE_NOTFOUND: i32 = -30786;
-const CORRUPTED: i32 = -30785;
-const PANIC: i32 = -30784;
-const VERSION_MISMATCH: i32 = -30783;
-
-const INVALID: i32 = -30782;
-const MAP_RESIZED: i32 = -30781;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LmdbError {
@@ -180,21 +183,23 @@ pub enum LmdbError {
 impl LmdbError {
     /// Convert an LMDB return code into the enum
     pub fn from_rc(rc: i32) -> Self {
-        match rc {
-            c if c == SUCCESS => LmdbError::Success,
-            c if c == NOTFOUND => LmdbError::NotFound,
-            c if c == ALREADY_EXISTS => LmdbError::AlreadyExists,
-            c if c == TXN_FULL => LmdbError::TxnFull,
-            c if c == MAP_FULL => LmdbError::MapFull,
-            c if c == DBS_FULL => LmdbError::DbsFull,
-            c if c == READERS_FULL => LmdbError::ReadersFull,
-            c if c == PAGE_NOTFOUND => LmdbError::PageNotFound,
-            c if c == CORRUPTED => LmdbError::Corrupted,
-            c if c == PANIC => LmdbError::Panic,
-            c if c == VERSION_MISMATCH => LmdbError::VersionMismatch,
-            c if c == INVALID => LmdbError::Invalid,
-            c if c == MAP_RESIZED => LmdbError::MapResized,
-            other => LmdbError::Unknown(other),
+        unsafe {
+            match rc {
+                c if c == SUCCESS => LmdbError::Success,
+                c if c == NOTFOUND => LmdbError::NotFound,
+                c if c == ALREADY_EXISTS => LmdbError::AlreadyExists,
+                c if c == TXN_FULL => LmdbError::TxnFull,
+                c if c == MAP_FULL => LmdbError::MapFull,
+                c if c == DBS_FULL => LmdbError::DbsFull,
+                c if c == READERS_FULL => LmdbError::ReadersFull,
+                c if c == PAGE_NOTFOUND => LmdbError::PageNotFound,
+                c if c == CORRUPTED => LmdbError::Corrupted,
+                c if c == PANIC => LmdbError::Panic,
+                c if c == VERSION_MISMATCH => LmdbError::VersionMismatch,
+                c if c == INVALID => LmdbError::Invalid,
+                c if c == MAP_RESIZED => LmdbError::MapResized,
+                other => LmdbError::Unknown(other),
+            }
         }
     }
 }

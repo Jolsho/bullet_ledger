@@ -160,7 +160,7 @@ impl Ledger {
             let nibs = get_nibbles(key);
             self.db.start_trx();
 
-            if let Some(new_root_hash) = root.remove(self, &nibs) {
+            if let Some((new_root_hash, _)) = root.remove(self, &nibs) {
                 root_hash = Some(new_root_hash);
             }
             self.root = Some(root);

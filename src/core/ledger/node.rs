@@ -22,7 +22,6 @@ pub const EXT:u8 = 70;
 pub const LEAF:u8 = 71;
 
 impl Node {
-
     pub fn from_bytes(id: NodeID, bytes: &[u8]) -> Result<Self,()> {
         Ok(match bytes[0] as u8 {
             BRANCH => Node::Branch(BranchNode::from_bytes(id, &bytes[1..])),
@@ -108,7 +107,7 @@ impl Node {
         }
     }
 
-    pub fn remove(&mut self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Hash> {
+    pub fn remove(&mut self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<(Hash,Option<Vec<u8>>)> {
         match self {
             Node::Branch(b) => b.borrow_mut().remove(ledger, nibbles),
             Node::Extension(e) => e.borrow_mut().remove(ledger, nibbles),

@@ -38,9 +38,22 @@ impl ExtNode {
         self.path.clear();
         self.path.extend(path.iter().copied());
     }
+
+    pub fn append_path(&mut self, path: &[u8]) {
+        for nib in path {
+            self.path.push_back(*nib);
+        }
+    }
+
+    pub fn prepend_path(&mut self, nib: u8) {
+        self.path.push_front(nib);
+    }
+
+    /// ENSURE SELF IS DELETED FROM CACHE BEFORE CALLING
     pub fn change_id(&mut self, id: &NodeID, ledger: &mut Ledger) {
         let num = u64::from_le_bytes(*id);
         self.id.copy_from_slice(id);
+
         if u64::from_le_bytes(self.child.1) != num * 16 {
             // load child_node and delete it from cache/db
             let node = ledger.load_node(&self.child.1).unwrap();
@@ -54,6 +67,7 @@ impl ExtNode {
             ledger.cache_node(num * 16, node);
         }
     }
+
     pub fn get_child(&self) -> &(Hash, NodeID) {
         &self.child
     }
@@ -296,16 +310,28 @@ impl ExtNode {
     }
 
     const ZERO_HASH: [u8; 32] = [0u8; 32];
-    pub fn remove(&mut self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Hash> {
+    pub fn remove(
+        &mut self, 
+        ledger: &mut Ledger, 
+        nibbles: &[u8]
+    ) -> Option<(Hash, Option<Vec<u8>>)> {
+
         if let Some(next_id) = self.get_next(&nibbles) {
             if let Some(mut next_node) = ledger.load_node(next_id) {
-                if let Some(hash) = next_node.remove(ledger, &nibbles[self.path_len()..]) {
+                if let Some((hash, mut path_ext)) = next_node.remove(ledger, &nibbles[self.path_len()..]) {
                     if hash != Self::ZERO_HASH {
+
                         self.child.0.copy_from_slice(&hash);
-                        return Some(self.derive_hash());
+
+                        if let Some(new_path) = path_ext.take() {
+                            self.append_path(&new_path);
+                        }
+
+                        return Some((self.derive_hash(), None));
                     } else {
+
                         ledger.delete_node(self.get_id());
-                        return Some(hash);
+                        return Some((hash, path_ext));
                     }
                 } else {
                     println!("ERROR::EXT::REMOVE::RECV_NONE,     ID: {:10},  KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));

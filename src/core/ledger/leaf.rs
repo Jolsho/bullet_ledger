@@ -65,9 +65,9 @@ impl Leaf {
         }))
     }
 
-    pub fn remove(&mut self, ledger: &mut Ledger) -> Option<Hash> {
+    pub fn remove(&mut self, ledger: &mut Ledger) -> Option<(Hash, Option<Vec<u8>>)> {
         ledger.delete_node(self.get_id());
         self.hash.fill(0);
-        Some(self.hash)
+        Some((self.hash, None))
     }
 }

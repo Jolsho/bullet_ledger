@@ -2,7 +2,7 @@
 fn main() {
     cc::Build::new()
         .cpp(true)
-        .file("ffi/lmdb_wrapper.cpp")
+        .file("lmdb/lmdb_wrapper.cpp")
         .flag_if_supported("-std=c++17")
         .compile("lmdb_wrapper");
 
