@@ -2,51 +2,40 @@ use std::{cell::RefCell, collections::VecDeque, rc::Rc, usize};
 
 use crate::core::ledger::{
     Ledger,
-    node::{EXT, Hash, IsNode, NodeID, NodePointer},
+    node::{EXT, Hash, NodeID, NodePointer},
 };
 
 pub struct ExtNode {
     id: NodeID,
     hash: Hash,
-    path: VecDeque<u8>,
+    pub path: VecDeque<u8>,
     child: (Hash, NodeID),
 }
 
-impl IsNode for ExtNode {
-    fn get_id(&self) -> &NodeID {
-        &self.id
-    }
-    fn get_hash(&self) -> &Hash {
-        &self.hash
-    }
-}
 
 impl ExtNode {
     pub fn new(id: Option<NodeID>) -> Rc<RefCell<Self>> {
+
+        let mut child_id = NodeID::default();
+        if let Some(i) = id {
+            let num = u64::from_le_bytes(i);
+            child_id.copy_from_slice(&(num * 16).to_le_bytes());
+        }
+
         Rc::new(RefCell::new(Self {
             id: id.unwrap_or(NodeID::default()),
             hash: Hash::default(),
             path: VecDeque::new(),
-            child: (Hash::default(), NodeID::default()),
+            child: (Hash::default(), child_id),
         }))
     }
-    pub fn path_len(&self) -> usize {
-        self.path.len()
-    }
+
+    pub fn get_id(&self) -> &NodeID { &self.id }
+    pub fn get_hash(&self) -> &Hash { &self.hash }
 
     pub fn set_path(&mut self, path: &[u8]) {
         self.path.clear();
-        self.path.extend(path.iter().copied());
-    }
-
-    pub fn append_path(&mut self, path: &[u8]) {
-        for nib in path {
-            self.path.push_back(*nib);
-        }
-    }
-
-    pub fn prepend_path(&mut self, nib: u8) {
-        self.path.push_front(nib);
+        path.iter().for_each(|&nib| self.path.push_back(nib));
     }
 
     /// ENSURE SELF IS DELETED FROM CACHE BEFORE CALLING
@@ -68,37 +57,18 @@ impl ExtNode {
         }
     }
 
-    pub fn get_child(&self) -> &(Hash, NodeID) {
-        &self.child
-    }
-    pub fn set_child(&mut self, hash: &Hash, id: &NodeID) {
-        self.child.0.copy_from_slice(hash);
-        self.child.1.copy_from_slice(id);
-    }
+    pub fn get_child(&self) -> &(Hash, NodeID) { &self.child }
+    pub fn set_child(&mut self, hash: &Hash) { self.child.0.copy_from_slice(hash); }
 
-    pub fn cut_prefix(&mut self, n: usize) -> Vec<u8> {
-        let prefix_iter = self.path.drain(..n);
-        Vec::from_iter(prefix_iter)
-    }
-    pub fn cut_remaining(&mut self, n: usize) -> Vec<u8> {
-        let suffix_iter = self.path.drain(n..);
-        Vec::from_iter(suffix_iter)
-    }
-    pub fn path_pop_front(&mut self) -> Option<u8> {
-        self.path.pop_front()
-    }
-
-    /// returns ok if self.path is included in nibs.
-    /// if not it returns how much of self.path is in nibs.
     pub fn in_path(&self, nibs: &[u8]) -> Result<(), usize> {
-        let mut count = 0usize;
-        for (i, nib) in self.path.iter().enumerate() {
-            if i > nibs.len() - 1 || *nib != nibs[i] {
-                return Err(count);
-            }
-            count += 1;
+        let matched = self.path.iter().zip(nibs)
+            .take_while(|(a, b)| a == b)
+            .count();
+        if matched == self.path.len() {
+            Ok(())
+        } else {
+            Err(matched)
         }
-        return Ok(());
     }
 
     pub fn get_next(&self, nibs: &[u8]) -> Option<&NodeID> {
@@ -111,7 +81,6 @@ impl ExtNode {
     pub fn derive_hash(&mut self) -> Hash {
         let mut hasher = blake3::Hasher::new();
         hasher.update(&self.child.0);
-        hasher.update(&self.child.1);
         let hash = hasher.finalize();
         self.hash.copy_from_slice(hash.as_bytes());
         *hash.as_bytes()
@@ -144,6 +113,7 @@ impl ExtNode {
         let len = usize::from_le_bytes(path_len);
         let mut path = VecDeque::with_capacity(len);
         path.extend(&bytes[72..72+len]);
+
         Rc::new(RefCell::new(Self {
             id,
             hash,
@@ -152,17 +122,29 @@ impl ExtNode {
         }))
     }
 
+    pub fn search(&self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Hash> {
+        if let Some(next_id) = self.get_next(&nibbles) {
+            if let Some(next_node) = ledger.load_node(next_id) {
+                return next_node.search(ledger, &nibbles[self.path.len()..]);
+            }
+            println!("ERROR::EXT::SEARCH::FAILED_LOAD,  ID: {} KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
+        }
+
+        println!("ERROR::EXT::SEARCH::NO_ID, KEY: {}", hex::encode(nibbles));
+        return None;
+    }
+
     pub fn put(
         &mut self,
         ledger: &mut Ledger,
         nibbles: &[u8],
-        key: &[u8],
+        key: &[u8; 32],
         val_hash: &Hash,
     ) -> Option<Hash> {
         if let Some(next_id) = self.get_next(&nibbles) {
             if let Some(mut next_node) = ledger.load_node(next_id) {
-                if let Some(hash) = next_node.put(ledger, &nibbles[self.path_len()..], key, val_hash) {
-                    self.set_child(&hash, &next_node.get_id());
+                if let Some(hash) = next_node.put(ledger, &nibbles[self.path.len()..], key, val_hash) {
+                    self.set_child(&hash);
                     return Some(self.derive_hash());
                 }
             }
@@ -174,10 +156,7 @@ impl ExtNode {
             // if there is more than one nibble left after removing shared prefix...
             // insert new extension that will point to new leaf from branch
             // else remove/update old self, create new leaf, and point to it directly from branch
-            let res = self.in_path(&nibbles);
-            if res.is_ok() { return None; }
-            let shared_path_count = res.unwrap_err();
-
+            let shared_path_count = self.in_path(&nibbles).unwrap_err();
             if shared_path_count == 0 {
                 // delete old id self if exists
                 // hold onto reference to handle later though
@@ -200,46 +179,27 @@ impl ExtNode {
             let (_prefix, nibbles) = nibbles.split_at(shared_path_count);
 
             let new_branch_child_id = (branch_id * 16) + nibbles[0] as u64;
+            let l = ledger.new_cached_leaf(new_branch_child_id);
+            let mut leaf = l.borrow_mut();
+            leaf.set_value_hash(val_hash);
+            leaf.set_path(&nibbles[1..]);
 
-            if nibbles.len() > 1 {
-                // this extension will connect branch to leaf
-                // therefore it adopts the first_grand_child_id from leaf
-                // and derives a new id for the leaf
-
-                let e = ledger.new_cached_ext(new_branch_child_id);
-                let mut ext = e.borrow_mut();
-
-                let l = ledger.new_cached_leaf(new_branch_child_id * 16);
-                let mut leaf = l.borrow_mut();
-                leaf.set_value_hash(val_hash);
-
-                ext.set_path(&nibbles[1..]);
-                ext.set_child(&leaf.derive_hash(key), leaf.get_id());
-
-                branch.insert(&nibbles[0], &ext.derive_hash(), ext.get_id());
-            } else {
-                let l = ledger.new_cached_leaf(new_branch_child_id);
-                let mut leaf = l.borrow_mut();
-                leaf.set_value_hash(val_hash);
-
-                branch.insert(&nibbles[0], &leaf.derive_hash(key), leaf.get_id());
-            }
+            branch.insert(&nibbles[0], &leaf.derive_hash(key));
 
             // if self.path shares nothing with new key
             // remove old self id
             // connect new_branch to self_copy using popped nibble from self
             // return new_branch to parent
             if shared_path_count == 0 {
-                let nib = self.path_pop_front().unwrap();
+                let nib = self.path.pop_front().unwrap();
 
                 // handle edge case where pathlen becomes 0.
                 let new_child_id: u64;
-                if self.path_len() == 0 {
+                if self.path.len() == 0 {
 
                     new_child_id = (branch_id * 16) + nib as u64;
-                    let new_id = new_child_id.to_le_bytes();
-                    child.change_id(&new_id, ledger);
-                    branch.insert(&nib, &child.derive_hash(), &new_id);
+                    child.change_id(&new_child_id.to_le_bytes(), ledger);
+                    branch.insert(&nib, &child.derive_hash());
 
                 } else {
 
@@ -252,14 +212,14 @@ impl ExtNode {
                     let new_child_id_bytes = new_child_id.to_le_bytes();
                     child.change_id(&new_child_id_bytes, ledger);
 
-                    new_self_mut.set_child(&child.get_hash(), &new_child_id_bytes);
-                    new_self_mut.set_path(&self.cut_remaining(0));
-                    branch.insert(&nib, &new_self_mut.derive_hash(), new_self_mut.get_id());
+                    new_self_mut.set_child(&child.get_hash());
+                    new_self_mut.set_path(&Vec::from_iter(self.path.drain(..)));
+                    branch.insert(&nib, &new_self_mut.derive_hash());
                 }
 
                 ledger.cache_node(new_child_id, child);
 
-                // previous_branch will point to new_branch instead of self
+                // parent will point to new_branch instead of self
                 return Some(branch.derive_hash());
             }
 
@@ -267,7 +227,7 @@ impl ExtNode {
             // new extension will connect new_branch to self.child
             // else point branch to self.child directly.
 
-            let remaining = self.cut_remaining(shared_path_count);
+            let remaining = Vec::from_iter(self.path.drain(shared_path_count .. ));
             let (&nib, remaining_path) = remaining.split_first().unwrap();
 
             let new_child_id: u64;
@@ -285,10 +245,10 @@ impl ExtNode {
                 child.change_id(&new_id, ledger);
 
                 // set new child id
-                new_ext.set_child(&child.get_hash(), &new_id);
+                new_ext.set_child(&child.get_hash());
 
                 // new branch points to new extension
-                branch.insert(&nib, &new_ext.derive_hash(), new_ext.get_id());
+                branch.insert(&nib, &new_ext.derive_hash());
             } else {
                 // derive and set new child id
                 new_child_id = (branch_id * 16) + nib as u64;
@@ -297,14 +257,14 @@ impl ExtNode {
                 child.change_id(&new_id, ledger);
 
                 // point to child
-                branch.insert(&nib, &child.get_hash(), &new_id);
+                branch.insert(&nib, &child.get_hash());
             }
 
             // have to recache old_child
             ledger.cache_node(new_child_id, child);
 
             // set self to point to branch return self
-            self.set_child(&branch.derive_hash(), branch.get_id());
+            self.set_child(&branch.derive_hash());
             return Some(self.derive_hash());
         }
     }
@@ -318,14 +278,22 @@ impl ExtNode {
 
         if let Some(next_id) = self.get_next(&nibbles) {
             if let Some(mut next_node) = ledger.load_node(next_id) {
-                if let Some((hash, mut path_ext)) = next_node.remove(ledger, &nibbles[self.path_len()..]) {
+                if let Some((hash, mut path_ext)) = next_node.remove(ledger, &nibbles[self.path.len()..]) {
+
+                    if let Some(new_path) = path_ext.take() {
+                        println!("path:: {}, appended:: {}", self.path.len(), new_path.len());
+                        println!("nibs:: {}", hex::encode(nibbles));
+                        new_path.into_iter().for_each(|nib| {
+                            println!("nib1:: {}", hex::encode([nib]));
+                            let tmp = self.path.pop_back().unwrap();
+                            println!("nib2:: {}", hex::encode([tmp]));
+                            self.path.push_back(tmp);
+                            self.path.push_back(nib)
+                        });
+                    }
+
                     if hash != Self::ZERO_HASH {
-
                         self.child.0.copy_from_slice(&hash);
-
-                        if let Some(new_path) = path_ext.take() {
-                            self.append_path(&new_path);
-                        }
 
                         return Some((self.derive_hash(), None));
                     } else {

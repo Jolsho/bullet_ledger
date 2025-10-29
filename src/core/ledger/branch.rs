@@ -1,5 +1,5 @@
 use std::{cell::RefCell, rc::Rc, usize};
-use crate::core::ledger::{node::{Hash, IsNode, Node, NodeID, BRANCH}, Ledger};
+use crate::core::ledger::{node::{Hash, Node, NodeID, BRANCH}, Ledger};
 
 
 pub struct BranchNode { 
@@ -7,10 +7,6 @@ pub struct BranchNode {
     hash: Hash,
     children: [Option<(Hash, NodeID)>; 16],
     count: u8,
-}
-impl IsNode for BranchNode {
-    fn get_id(&self) -> &NodeID { &self.id }
-    fn get_hash(&self) -> &Hash { &self.hash }
 }
 
 impl BranchNode {
@@ -22,6 +18,8 @@ impl BranchNode {
             children: std::array::from_fn(|_| None),
         }))
     }
+    pub fn get_id(&self) -> &NodeID { &self.id }
+    pub fn get_hash(&self) -> &Hash { &self.hash }
     pub fn change_id(&mut self, id: &NodeID, ledger: &mut Ledger) {
         let num = u64::from_le_bytes(*id);
         self.id.copy_from_slice(id);
@@ -111,12 +109,13 @@ impl BranchNode {
         *hash.as_bytes()
     }
 
-    pub fn insert(&mut self, nib: &u8, hash: &Hash, id: &NodeID) {
+    pub fn insert(&mut self, nib: &u8, hash: &Hash) {
         if let Some(child) = &mut self.children[*nib as usize] {
             child.0.copy_from_slice(hash);
-            child.1.copy_from_slice(id);
         } else {
-            self.children[*nib as usize] = Some((hash.clone(), id.clone()));
+            let self_id = u64::from_le_bytes(self.id);
+            let new_id = ((self_id * 16) + *nib as u64).to_le_bytes();
+            self.children[*nib as usize] = Some((hash.clone(), new_id));
             self.count += 1;
         }
     }
@@ -128,46 +127,38 @@ impl BranchNode {
         }
     }
 
+    pub fn search(&self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Hash> {
+        if let Some((_, next_id)) = self.get_next(&nibbles[0]) {
+            if let Some(next_node) = ledger.load_node(next_id) {
+                return next_node.search(ledger, &nibbles[1..]);
+            }
+            println!("ERROR::BRANCH::SEARCH::FAILED_LOAD,  ID: {} KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
+        }
+        println!("ERROR::BRANCH::SEARCH::NO_ID, KEY: {}", hex::encode(nibbles));
+        return None;
+    }
+
     pub fn put(&mut self, 
         ledger: &mut Ledger, 
         nibbles: &[u8],
-        key: &[u8], 
+        key: &[u8; 32], 
         val_hash: &Hash, 
     ) -> Option<Hash> {
         if let Some((_, next_id)) = self.get_next(&nibbles[0]) {
             if let Some(mut next_node) = ledger.load_node(next_id) {
                 if let Some(new_hash) = next_node.put(ledger, &nibbles[1..], key, val_hash) {
-                    self.insert(&nibbles[0], &new_hash, &next_node.get_id());
+                    self.insert(&nibbles[0], &new_hash);
                 }
             }
         } else {
+
+            // leaf is child
             let child_id = (u64::from_le_bytes(self.id) * 16) + nibbles[0] as u64;
-
-            if nibbles.len() > 1 {
-                // extension adopts child id
-                let e = ledger.new_cached_ext(child_id);
-                let mut ext = e.borrow_mut();
-                ext.set_path(&nibbles[1..]);
-
-                // leaf is grandchild
-                let l = ledger.new_cached_leaf(child_id * 16);
-                let mut leaf = l.borrow_mut();
-                leaf.set_value_hash(val_hash);
-
-                // set leaf as child
-                ext.set_child(&leaf.derive_hash(key), &leaf.get_id());
-
-                // insert extension
-                self.insert(&nibbles[0], &ext.derive_hash(), ext.get_id());
-            } else {
-
-                // set leaf as direct child
-                let l = ledger.new_cached_leaf(child_id);
-                let mut leaf = l.borrow_mut();
-                leaf.set_value_hash(val_hash);
-
-                self.insert(&nibbles[0], &leaf.derive_hash(key), leaf.get_id());
-            }
+            let l = ledger.new_cached_leaf(child_id);
+            let mut leaf = l.borrow_mut();
+            leaf.set_path(&nibbles[1..]);
+            leaf.set_value_hash(val_hash);
+            self.insert(&nibbles[0], &leaf.derive_hash(key));
         }
 
         // derive new self
@@ -196,7 +187,7 @@ impl BranchNode {
                     if hash == Self::ZERO_HASH {
                         self.delete_child(&nibbles[0]);
                     } else {
-                        self.insert(&nibbles[0], &hash, &next_node.get_id());
+                        self.insert(&nibbles[0], &hash);
                     }
 
                     let mut hash_to_parent = Self::ZERO_HASH;
@@ -223,20 +214,21 @@ impl BranchNode {
                                 ledger.delete_node(child_ext.get_id());
 
                                 // add ext path to parent 
-                                let _ = child_ext.cut_remaining(0).into_iter()
+                                let _ = child_ext.path.drain(..)
                                     .map(|nib| path_to_parent.push(nib));
 
                                 // load in grnd_child
-                                let (grnd_child_hash, grnd_child_id) = child_ext.get_child();
+                                let (_, grnd_child_id) = child_ext.get_child();
                                 let grnd_child = ledger.load_node(grnd_child_id).unwrap();
 
                                 // change id of grndchild to match self
                                 ledger.delete_node(grnd_child_id);
                                 grnd_child.change_id(self.get_id(), ledger);
-                                ledger.cache_node(u64::from_le_bytes(grnd_child.get_id()), grnd_child);
 
                                 // connect parent to grnd_child
-                                hash_to_parent = *grnd_child_hash;
+                                hash_to_parent = grnd_child.derive_hash();
+
+                                ledger.cache_node(u64::from_le_bytes(grnd_child.get_id()), grnd_child);
 
                             } else {
                                 ledger.delete_node(&child_node.get_id());
@@ -254,20 +246,36 @@ impl BranchNode {
 
                         } else if let Node::Extension(c) = child_node {
                             ledger.delete_node(self.get_id());
-                            {
-                                let mut child_ext = c.borrow_mut();
-                                child_ext.prepend_path(nib);
+                            let mut child_ext = c.borrow_mut();
+                            child_ext.path.push_front(nib);
 
-                                // change id of child to match self
-                                ledger.delete_node(child_ext.get_id());
-                                child_ext.change_id(self.get_id(), ledger);
+                            // change id of child to match self
+                            ledger.delete_node(child_ext.get_id());
+                            child_ext.change_id(self.get_id(), ledger);
 
-                                // connect parent to child
-                                hash_to_parent = child_ext.derive_hash();
-                            }
+                            // connect parent to child
+                            hash_to_parent = child_ext.derive_hash();
 
-                            let child_id = u64::from_le_bytes(*c.borrow().get_id());
-                            ledger.cache_node(child_id, Node::Extension(c));
+                            let child_id = u64::from_le_bytes(*child_ext.get_id());
+                            ledger.cache_node(child_id, Node::Extension(c.clone()));
+
+                            return Some((hash_to_parent, None));
+
+                        } else if let Node::Leaf(l) = child_node {
+
+                            ledger.delete_node(self.get_id());
+                            let mut child_ext = l.borrow_mut();
+                            child_ext.path.push_front(nib);
+
+                            // change id of child to match self
+                            ledger.delete_node(child_ext.get_id());
+                            child_ext.set_id(self.get_id());
+
+                            // connect parent to child
+                            hash_to_parent = *child_ext.get_hash();
+
+                            let child_id = u64::from_le_bytes(*child_ext.get_id());
+                            ledger.cache_node(child_id, Node::Leaf(l.clone()));
 
                             return Some((hash_to_parent, None));
                         }

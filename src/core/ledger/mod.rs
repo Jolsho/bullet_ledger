@@ -54,7 +54,7 @@ impl Ledger {
             if let Ok(node) = Node::from_bytes(id.clone(), &raw_node) {
                 if let Some((old_key, old_node)) = self.cache.push(num_id, node.clone()) {
                     if old_key != num_id {
-                        println!("expired {old_key}");
+                        //println!("expired {old_key}");
                         self.db.put(&old_key.to_le_bytes(), old_node.to_bytes()).unwrap();
                     }
                 }
@@ -101,7 +101,7 @@ impl Ledger {
         res
     }
 
-    pub fn get_value(&mut self, key: &[u8]) -> Option<Vec<u8>> {
+    pub fn get_value(&mut self, key: &[u8; 32]) -> Option<Vec<u8>> {
         let mut res = None;
         if let Some(root) = self.root.take() {
             let nibs = get_nibbles(key);
@@ -121,7 +121,7 @@ impl Ledger {
         res
     }
 
-    pub fn put(&mut self, key: &[u8], value: Vec<u8>) -> Option<Hash> {
+    pub fn put(&mut self, key: &[u8; 32], value: Vec<u8>) -> Option<Hash> {
         let hash = derive_value_hash(&value);
         let mut root_hash = None;
 
@@ -138,7 +138,6 @@ impl Ledger {
                     println!("put: {}", hex::encode(&value));
                     // save value
                     self.db.put(&hash, value).unwrap();
-
                 }
 
                 if root_hash.is_some() {

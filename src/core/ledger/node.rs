@@ -12,11 +12,6 @@ pub type NodePointer<T> = Rc<RefCell<T>>;
 pub type NodeID = [u8;8];
 pub type Hash = [u8;32];
 
-pub trait IsNode {
-    fn get_id(&self) -> &NodeID;
-    fn get_hash(&self) -> &Hash;
-}
-
 pub const BRANCH:u8 = 69;
 pub const EXT:u8 = 70;
 pub const LEAF:u8 = 71;
@@ -71,39 +66,21 @@ impl Node {
     }
 
     pub fn search(&self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Hash> {
-        match &self {
-            Node::Branch(b) => {
-                let branch = b.borrow_mut();
-                if let Some((_, next_id)) = branch.get_next(&nibbles[0]) {
-                    if let Some(next_node) = ledger.load_node(next_id) {
-                        return next_node.search(ledger, &nibbles[1..]);
-                    }
-                    println!("ERROR::BRANCH::SEARCH::FAILED_LOAD,  ID: {} KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
-                }
-                //println!("ERROR::BRANCH::SEARCH::NO_ID, KEY: {}", hex::encode(nibbles));
-            }
-            Node::Extension(e) => {
-                let ext = e.borrow_mut();
-                if let Some(next_id) = ext.get_next(&nibbles) {
-                    if let Some(next_node) = ledger.load_node(next_id) {
-                        return next_node.search(ledger, &nibbles[ext.path_len()..]);
-                    }
-                    println!("ERROR::EXT::SEARCH::FAILED_LOAD,  ID: {} KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
-                }
-                //println!("ERROR::EXT::SEARCH::NO_ID, KEY: {}", hex::encode(nibbles));
-            }
-            Node::Leaf(leaf) => return Some(leaf.borrow().get_value_hash().clone())
+        //print!("1,");
+        return match &self {
+            Node::Branch(b) => b.borrow_mut().search(ledger, nibbles),
+            Node::Extension(e) => e.borrow_mut().search(ledger, nibbles),
+            Node::Leaf(l) => l.borrow_mut().search(nibbles),
         }
-        return None;
     }
 
     pub fn put(&mut self, ledger: &mut Ledger, nibbles: &[u8], 
-        key: &[u8], val_hash: &Hash,
+        key: &[u8; 32], val_hash: &Hash,
     ) -> Option<Hash> {
         match self {
             Node::Branch(b) => b.borrow_mut().put(ledger, nibbles, key, val_hash),
             Node::Extension(e) => e.borrow_mut().put(ledger, nibbles, key, val_hash),
-            Node::Leaf(_) => None,
+            Node::Leaf(l) => l.borrow_mut().put(ledger, nibbles, key, val_hash),
         }
     }
 
