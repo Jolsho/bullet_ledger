@@ -1,9 +1,6 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc, usize};
 
-use crate::core::ledger::{
-    Ledger,
-    node::{EXT, Hash, NodeID, NodePointer},
-};
+use super::{ Ledger, Hash,  node::{NodeID, NodePointer, EXT} };
 
 pub struct ExtNode {
     id: NodeID,

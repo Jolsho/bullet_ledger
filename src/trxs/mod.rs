@@ -1,6 +1,9 @@
 use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint, Scalar};
 
-use crate::{core::{ledger::Ledger, priority::DeriveStuff, ledger::node::Hash}, crypto::{random_b32, TrxGenerators}, trxs::{ephemeral::EphemeralTrx, hidden::HiddenTrx, regular::RegularTrx}};
+use crate::core::{ledger::{Ledger,Hash}, priority::DeriveStuff}; 
+use crate::crypto::{random_b32, TrxGenerators};
+use crate::trxs::{ephemeral::EphemeralTrx, hidden::HiddenTrx, regular::RegularTrx};
+
 
 pub mod ephemeral;
 pub mod regular;

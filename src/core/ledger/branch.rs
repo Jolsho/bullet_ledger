@@ -1,8 +1,8 @@
 use std::{cell::RefCell, rc::Rc, usize};
-use crate::core::ledger::{node::{Hash, Node, NodeID, BRANCH}, Ledger};
+use super::{Hash, Ledger, node::{Node, NodeID, BRANCH}};
 
 
-pub struct BranchNode { 
+pub(crate) struct BranchNode { 
     id: NodeID,
     hash: Hash,
     children: [Option<(Hash, NodeID)>; 16],
@@ -10,7 +10,7 @@ pub struct BranchNode {
 }
 
 impl BranchNode {
-    pub fn new(id: Option<NodeID>) -> Rc<RefCell<Self>> {
+    pub(crate) fn new(id: Option<NodeID>) -> Rc<RefCell<Self>> {
         Rc::new(RefCell::new(Self { 
             count: 0,
             id: id.unwrap_or(NodeID::default()),
@@ -18,9 +18,9 @@ impl BranchNode {
             children: std::array::from_fn(|_| None),
         }))
     }
-    pub fn get_id(&self) -> &NodeID { &self.id }
-    pub fn get_hash(&self) -> &Hash { &self.hash }
-    pub fn change_id(&mut self, id: &NodeID, ledger: &mut Ledger) {
+    pub(crate) fn get_id(&self) -> &NodeID { &self.id }
+    pub(crate) fn get_hash(&self) -> &Hash { &self.hash }
+    pub(crate) fn change_id(&mut self, id: &NodeID, ledger: &mut Ledger) {
         let num = u64::from_le_bytes(*id);
         self.id.copy_from_slice(id);
 

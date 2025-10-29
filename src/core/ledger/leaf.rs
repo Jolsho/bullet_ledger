@@ -1,12 +1,6 @@
-use crate::core::ledger::{node::{Hash, NodeID, NodePointer, LEAF}, Ledger};
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-pub fn derive_value_hash(bytes: &[u8]) -> Hash {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(bytes);
-    let hash = hasher.finalize();
-    *hash.as_bytes()
-}
+use super::{Hash, node::{NodeID, NodePointer, LEAF}, Ledger};
 
 pub struct Leaf {
     id: NodeID,

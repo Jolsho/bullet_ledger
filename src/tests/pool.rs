@@ -1,7 +1,7 @@
 #[test]
 fn pool() {
     use crate::trxs::{Trx, EPHEMERAL};
-    use crate::core::{priority::TrxPool, ledger::node::Hash};
+    use crate::core::{priority::TrxPool, ledger::Hash};
     let length = 5;
 
     let mut t_pool = TrxPool::new(length);

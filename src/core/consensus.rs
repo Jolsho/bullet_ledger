@@ -1,7 +1,8 @@
 use curve25519_dalek::ristretto::CompressedRistretto;
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::{Duration, SystemTime, UNIX_EPOCH}};
 
-use crate::core::ledger::node::Hash;
+use crate::core::Hash;
+
 
 #[derive(Clone)]
 pub struct VoteInterval {

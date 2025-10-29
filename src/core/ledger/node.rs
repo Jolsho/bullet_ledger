@@ -1,5 +1,5 @@
 use std::{cell::RefCell, rc::Rc };
-use crate::core::{ledger::{branch::BranchNode, ext::ExtNode, leaf::Leaf, Ledger}};
+use super::{ Hash, branch::BranchNode, ext::ExtNode, leaf::Leaf, Ledger};
 
 #[derive(Clone)]
 pub enum Node {
@@ -10,7 +10,6 @@ pub enum Node {
 
 pub type NodePointer<T> = Rc<RefCell<T>>;
 pub type NodeID = [u8;8];
-pub type Hash = [u8;32];
 
 pub const BRANCH:u8 = 69;
 pub const EXT:u8 = 70;

@@ -2,7 +2,7 @@ use std::{thread::JoinHandle, time::Duration};
 use mio::{Events, Poll, Token};
 use core::error;
 
-use crate::core::ledger::leaf::derive_value_hash;
+use crate::core::ledger::derive_value_hash;
 use crate::trxs::Trx;
 use crate::RPC;
 use crate::server::{from_internals_from_vec, ToInternals};
@@ -18,6 +18,8 @@ pub mod consensus;
 pub mod execution;
 pub mod priority;
 pub mod ledger;
+
+type Hash = [u8; 32];
 
 pub struct Core {
     to_internals: ToInternals,
