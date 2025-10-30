@@ -1,4 +1,6 @@
 use std::{cell::RefCell, rc::Rc, usize};
+use crate::core::ledger::derive_leaf_hash;
+
 use super::{Hash, Ledger, node::{Node, NodeID, BRANCH}};
 
 
@@ -56,25 +58,28 @@ impl BranchNode {
 
         let p = u64::from_le_bytes(b.borrow().id.clone());
 
-        for i in 0..17usize {
-            let start = 32 * i;
-            let end =  32 * (i + 1);
-            if i == 0 {
-                b.borrow_mut().hash.copy_from_slice(&bytes[start..end]);
+        {
+            let mut branch = b.borrow_mut();
+            for i in 0..17usize {
+                let start = 32 * i;
+                let end =  32 * (i + 1);
+                if i == 0 {
+                    branch.hash.copy_from_slice(&bytes[start..end]);
 
-            } else {
-
-                if bytes[start..end] != Self::ZERO_HASH {
-                    let mut hash = [0u8;32];
-                    hash.copy_from_slice(&bytes[start..end]);
-
-                    let child_id = (p * 16) + (i - 1) as u64;
-
-                    b.borrow_mut().children[i-1] = Some((hash, child_id.to_le_bytes()));
-                    b.borrow_mut().count += 1;
                 } else {
 
-                    b.borrow_mut().children[i-1] = None;
+                    if bytes[start..end] != Self::ZERO_HASH {
+                        let mut hash = [0u8;32];
+                        hash.copy_from_slice(&bytes[start..end]);
+
+                        let child_id = (p * 16) + (i - 1) as u64;
+
+                        branch.children[i-1] = Some((hash, child_id.to_le_bytes()));
+                        branch .count += 1;
+                    } else {
+
+                        branch.children[i-1] = None;
+                    }
                 }
             }
         }
@@ -132,10 +137,48 @@ impl BranchNode {
             if let Some(next_node) = ledger.load_node(next_id) {
                 return next_node.search(ledger, &nibbles[1..]);
             }
-            println!("ERROR::BRANCH::SEARCH::FAILED_LOAD,  ID: {} KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
+            //println!("ERROR::BRANCH::SEARCH::FAILED_LOAD,  ID: {} KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
         }
-        println!("ERROR::BRANCH::SEARCH::NO_ID, KEY: {}", hex::encode(nibbles));
+        //println!("ERROR::BRANCH::SEARCH::NO_ID, KEY: {}", hex::encode(nibbles));
         return None;
+    }
+
+    pub fn virtual_put(&mut self, 
+        ledger: &mut Ledger, 
+        nibbles: &[u8],
+        key: &[u8; 32], 
+        val_hash: &Hash, 
+    ) -> Option<Hash> {
+        let new_hash: Hash;
+        if let Some((_, next_id)) = self.get_next(&nibbles[0]) {
+            if let Some(mut next_node) = ledger.load_node(next_id) {
+                if let Some(hash) = next_node.put(ledger, &nibbles[1..], key, val_hash, true) {
+                    new_hash = hash;
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        } else {
+            new_hash = derive_leaf_hash(key, val_hash);
+        }
+
+        let nib = nibbles[0] as usize;
+        // save current child hash
+        let child = self.children[nib].take();
+        let hash = self.get_hash().clone();
+
+        // simulate insertion
+        self.children[nib] = Some((new_hash, [0u8;8]));
+        let virtual_hash = self.derive_hash();
+
+        // reset self
+        self.children[nib] = child;
+        self.hash.copy_from_slice(&hash);
+
+        // return virtual hash
+        return Some(virtual_hash);
     }
 
     pub fn put(&mut self, 
@@ -146,7 +189,7 @@ impl BranchNode {
     ) -> Option<Hash> {
         if let Some((_, next_id)) = self.get_next(&nibbles[0]) {
             if let Some(mut next_node) = ledger.load_node(next_id) {
-                if let Some(new_hash) = next_node.put(ledger, &nibbles[1..], key, val_hash) {
+                if let Some(new_hash) = next_node.put(ledger, &nibbles[1..], key, val_hash, false) {
                     self.insert(&nibbles[0], &new_hash);
                 }
             }
@@ -158,7 +201,9 @@ impl BranchNode {
             let mut leaf = l.borrow_mut();
             leaf.set_path(&nibbles[1..]);
             leaf.set_value_hash(val_hash);
-            self.insert(&nibbles[0], &leaf.derive_hash(key));
+            let new_hash = leaf.derive_hash(key);
+            self.insert(&nibbles[0], &new_hash);
+
         }
 
         // derive new self

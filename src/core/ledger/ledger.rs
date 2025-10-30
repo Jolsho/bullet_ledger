@@ -1,6 +1,8 @@
 use std::{cell::RefCell, error, rc::Rc};
 use lru::LruCache;
 
+use crate::core::ledger::derive_leaf_hash;
+
 use super::{Ledger, branch::BranchNode, derive_value_hash, ext::ExtNode, leaf::Leaf, lmdb::DB, Hash, node::{Node, NodeID}};
 
 pub(super) fn get_nibbles(key: &[u8]) -> Vec<u8> {
@@ -41,7 +43,7 @@ impl Ledger {
     }
 
     pub fn key_value_exists(&mut self, key: &[u8; 32], value_hash: &Hash) -> bool {
-        let hash = derive_value_hash(&[*key, *value_hash].concat());
+        let hash = derive_leaf_hash(key, value_hash);
         self.db.start_trx();
         let res = self.db.exists(&hash);
         self.db.end_trx();
@@ -57,7 +59,6 @@ impl Ledger {
 
             if let Some(val_hash) = root.search(self, &nibs) {
                 if let Ok(value) = self.db.get(&val_hash) {
-                    println!("got: {}", hex::encode(&value));
                     res = Some(value);
                 }
             }
@@ -69,6 +70,13 @@ impl Ledger {
     }
 
     pub fn put(&mut self, key: &[u8; 32], value: Vec<u8>) -> Option<Hash> {
+        self.combined_put(key, value, false)
+    }
+    pub fn virtual_put(&mut self, key: &[u8; 32], value: Vec<u8>) -> Option<Hash> {
+        self.combined_put(key, value, true)
+    }
+    pub(crate) fn combined_put(&mut self, key: &[u8; 32], value: Vec<u8>, is_virtual: bool) -> Option<Hash> {
+
         let hash = derive_value_hash(&value);
         let mut root_hash = None;
 
@@ -79,17 +87,20 @@ impl Ledger {
 
                 self.db.start_trx();
 
-                if let Some(new_root_hash) = root.put(self, &nibs, key, &hash) {
+                if let Some(new_root_hash) = root.put(self, &nibs, key, &hash, is_virtual) {
                     root_hash = Some(new_root_hash);
 
-                    println!("put: {}", hex::encode(&value));
-                    // save value
-                    self.db.put(&hash, value).unwrap();
+                    if !is_virtual {
+                        // save value
+                        self.db.put(&hash, value).unwrap();
+                    }
                 }
 
-                if root_hash.is_some() {
-                    // save new root node
-                    self.db.put(&root.get_id(), root.to_bytes()).unwrap();
+                if !is_virtual {
+                    if root_hash.is_some() {
+                        // save new root node
+                        self.db.put(&root.get_id(), root.to_bytes()).unwrap();
+                    }
                 }
 
                 self.db.end_trx();

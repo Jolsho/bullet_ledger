@@ -1,5 +1,7 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
+use crate::core::ledger::{branch::BranchNode, derive_leaf_hash, derive_value_hash};
+
 use super::{Hash, node::{NodeID, NodePointer, LEAF}, Ledger};
 
 pub struct Leaf {
@@ -21,6 +23,9 @@ impl Leaf {
     pub fn get_id(&self) -> &NodeID { &self.id }
     pub fn set_id(&mut self, id: &NodeID) { self.id.copy_from_slice(id); }
     pub fn get_hash(&self) -> &Hash { &self.hash }
+    pub fn set_hash(&mut self, hash: &Hash) { 
+        self.hash.copy_from_slice(hash);
+    }
     pub fn set_path(&mut self, path: &[u8]) {
         self.path.clear();
         path.iter().for_each(|&nib| self.path.push_back(nib));
@@ -91,18 +96,52 @@ impl Leaf {
             None
         }
     }
+
+    pub fn virtual_put(&mut self, 
+        mut nibbles: &[u8], 
+        key: &[u8; 32], 
+        val_hash: &Hash,
+    ) -> Option<Hash> {
+        let res = self.in_path(&nibbles);
+        if res.is_ok() { 
+            return Some(derive_leaf_hash(key, val_hash)); 
+        }
+
+        let shared_path_end = res.unwrap_err();
+
+        if shared_path_end > 0 {
+            nibbles = &nibbles[shared_path_end..];
+        }
+
+        let b = BranchNode::new(None);
+        let mut branch = b.borrow_mut();
+
+        // derive a new self
+        let self_nib = self.path[shared_path_end];
+
+        branch.insert(&self_nib, self.get_hash());
+        let leaf_hash = derive_leaf_hash(key, val_hash);
+        branch.insert(&nibbles[0], &leaf_hash);
+
+        let mut res = branch.derive_hash();
+        if shared_path_end > 0 {
+            res = derive_value_hash(&res);
+        }
+        Some(res)
+    }
+
     pub fn put(&mut self, 
         ledger: &mut Ledger, 
         mut nibbles: &[u8], 
         key: &[u8; 32], 
-        val_hash: &Hash
+        val_hash: &Hash,
     ) -> Option<Hash> {
         let res = self.in_path(&nibbles);
         if res.is_ok() {
             self.set_value_hash(val_hash);
             return Some(self.derive_hash(key));
         }
-        let shared_path_count = res.unwrap_err();
+        let shared_path_end = res.unwrap_err();
 
         let self_id = u64::from_le_bytes(self.id);
 
@@ -110,22 +149,21 @@ impl Leaf {
 
         let mut branch_id = self_id;
 
-        let mut e_op = None;
-        if shared_path_count > 0 {
+        let mut ext_o = None;
+        if shared_path_end > 0 {
             branch_id = self_id * 16;
 
             let e = ledger.new_cached_ext(self_id);
             let mut ext = e.borrow_mut();
 
-            let mut shared_path = Vec::with_capacity(shared_path_count);
-            while shared_path.len() < shared_path_count {
+            let mut shared_path = Vec::with_capacity(shared_path_end);
+            while shared_path.len() < shared_path_end {
                 shared_path.push(self.path.pop_front().unwrap());
             }
             ext.set_path(&shared_path);
 
-            nibbles = &nibbles[shared_path_count..];
-
-            e_op = Some(e.clone());
+            nibbles = &nibbles[shared_path_end..];
+            ext_o = Some(e.clone());
         }
 
         let b = ledger.new_cached_branch(branch_id);
@@ -138,7 +176,8 @@ impl Leaf {
         let mut new_self = self_leaf.borrow_mut();
         std::mem::swap(&mut new_self.path, &mut self.path);
         new_self.set_value_hash(self.get_value_hash());
-        branch.insert(&self_nib, &new_self.derive_hash(key));
+        new_self.set_hash(self.get_hash());
+        branch.insert(&self_nib, new_self.get_hash());
 
         // derive a new leaf
         let new_leaf_id = (branch_id * 16) + nibbles[0] as u64;
@@ -146,16 +185,15 @@ impl Leaf {
         let mut leaf = l.borrow_mut();
         leaf.set_path(&nibbles[1..]);
         leaf.set_value_hash(val_hash);
-        branch.insert(&nibbles[0], &leaf.derive_hash(key));
+        let leaf_hash = leaf.derive_hash(key);
+        branch.insert(&nibbles[0], &leaf_hash);
 
-        if shared_path_count > 0 {
-            let ext = e_op.unwrap();
-            ext.borrow_mut().set_child(&branch.derive_hash());
-            Some(ext.borrow_mut().derive_hash())
-
-        } else {
-            Some(branch.derive_hash())
+        let mut res = branch.derive_hash();
+        if let Some(ext) = ext_o {
+            ext.borrow_mut().set_child(&res);
+            res = ext.borrow_mut().derive_hash();
         }
+        Some(res)
     }
 
     pub fn remove(&mut self, ledger: &mut Ledger) -> Option<(Hash, Option<Vec<u8>>)> {

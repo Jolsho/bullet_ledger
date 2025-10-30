@@ -73,15 +73,28 @@ impl Node {
         }
     }
 
-    pub fn put(&mut self, ledger: &mut Ledger, nibbles: &[u8], 
-        key: &[u8; 32], val_hash: &Hash,
+    pub fn put(&mut self, 
+        ledger: &mut Ledger, 
+        nibbles: &[u8], 
+        key: &[u8; 32], 
+        val_hash: &Hash,
+        is_virtual: bool,
     ) -> Option<Hash> {
-        match self {
-            Node::Branch(b) => b.borrow_mut().put(ledger, nibbles, key, val_hash),
-            Node::Extension(e) => e.borrow_mut().put(ledger, nibbles, key, val_hash),
-            Node::Leaf(l) => l.borrow_mut().put(ledger, nibbles, key, val_hash),
+        if !is_virtual {
+            match self {
+                Node::Branch(b) => b.borrow_mut().put(ledger, nibbles, key, val_hash),
+                Node::Extension(e) => e.borrow_mut().put(ledger, nibbles, key, val_hash),
+                Node::Leaf(l) => l.borrow_mut().put(ledger, nibbles, key, val_hash),
+            }
+        } else {
+            match self {
+                Node::Branch(b) => b.borrow_mut().virtual_put(ledger, nibbles, key, val_hash),
+                Node::Extension(e) => e.borrow_mut().virtual_put(ledger, nibbles, key, val_hash),
+                Node::Leaf(l) => l.borrow_mut().virtual_put(nibbles, key, val_hash),
+            }
         }
     }
+
 
     pub fn remove(&mut self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<(Hash,Option<Vec<u8>>)> {
         match self {

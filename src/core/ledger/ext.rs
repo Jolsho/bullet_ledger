@@ -1,5 +1,7 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc, usize};
 
+use crate::core::ledger::{branch::BranchNode, derive_leaf_hash, derive_value_hash};
+
 use super::{ Ledger, Hash,  node::{NodeID, NodePointer, EXT} };
 
 pub struct ExtNode {
@@ -124,11 +126,76 @@ impl ExtNode {
             if let Some(next_node) = ledger.load_node(next_id) {
                 return next_node.search(ledger, &nibbles[self.path.len()..]);
             }
-            println!("ERROR::EXT::SEARCH::FAILED_LOAD,  ID: {} KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
+            //println!("ERROR::EXT::SEARCH::FAILED_LOAD,  ID: {} KEY: {}", u64::from_le_bytes(*next_id), hex::encode(nibbles));
         }
 
-        println!("ERROR::EXT::SEARCH::NO_ID, KEY: {}", hex::encode(nibbles));
+        //println!("ERROR::EXT::SEARCH::NO_ID, KEY: {}", hex::encode(nibbles));
         return None;
+    }
+    pub fn virtual_put(
+        &mut self,
+        ledger: &mut Ledger,
+        nibbles: &[u8],
+        key: &[u8; 32],
+        val_hash: &Hash,
+    ) -> Option<Hash> {
+        if let Some(next_id) = self.get_next(&nibbles) {
+            if let Some(mut next_node) = ledger.load_node(next_id) {
+                if let Some(hash) = next_node.put(ledger, &nibbles[self.path.len()..], key, val_hash, true) {
+                    return Some(derive_value_hash(&hash));
+                }
+            }
+            return None;
+        } else {
+
+            // if there is more than one nibble left after removing shared prefix...
+            // insert new extension that will point to new leaf from branch
+            // else remove/update old self, create new leaf, and point to it directly from branch
+            let shared_path_end = self.in_path(&nibbles).unwrap_err();
+
+            // load branch
+            let b = BranchNode::new(None);
+            let mut branch = b.borrow_mut();
+
+            let (_prefix, nibbles) = nibbles.split_at(shared_path_end);
+
+            let leaf_hash = derive_leaf_hash(key, val_hash);
+
+            branch.insert(&nibbles[0], &leaf_hash);
+
+            // if self.path shares nothing with new key
+            // remove old self id
+            // connect new_branch to self_copy using popped nibble from self
+            // return new_branch to parent
+            if shared_path_end == 0 {
+                let nib = self.path.front().unwrap();
+
+                // handle edge case where pathlen becomes 0.
+                if self.path.len() == 1 {
+                    branch.insert(nib, &self.child.0);
+                } else {
+                    branch.insert(nib, &derive_value_hash(&self.child.0));
+                }
+
+                // parent will point to new_branch instead of self
+                return Some(branch.derive_hash());
+            }
+
+            // if there is path remaining use it to create new extension
+            // new extension will connect new_branch to self.child
+            // else point branch to self.child directly.
+
+            let nib = &self.path[shared_path_end];
+            if self.path.len() > shared_path_end {
+                // new branch points to new extension
+                branch.insert(nib, &derive_value_hash(&self.child.0));
+            } else {
+                // point to child
+                branch.insert(nib, &self.child.0);
+            }
+            // derive final virtual state
+            return Some(derive_value_hash(&branch.derive_hash()));
+        }
     }
 
     pub fn put(
@@ -140,7 +207,7 @@ impl ExtNode {
     ) -> Option<Hash> {
         if let Some(next_id) = self.get_next(&nibbles) {
             if let Some(mut next_node) = ledger.load_node(next_id) {
-                if let Some(hash) = next_node.put(ledger, &nibbles[self.path.len()..], key, val_hash) {
+                if let Some(hash) = next_node.put(ledger, &nibbles[self.path.len()..], key, val_hash, false) {
                     self.set_child(&hash);
                     return Some(self.derive_hash());
                 }
@@ -153,8 +220,8 @@ impl ExtNode {
             // if there is more than one nibble left after removing shared prefix...
             // insert new extension that will point to new leaf from branch
             // else remove/update old self, create new leaf, and point to it directly from branch
-            let shared_path_count = self.in_path(&nibbles).unwrap_err();
-            if shared_path_count == 0 {
+            let shared_path_end = self.in_path(&nibbles).unwrap_err();
+            if shared_path_end == 0 {
                 // delete old id self if exists
                 // hold onto reference to handle later though
                 ledger.delete_node(self.get_id());
@@ -173,7 +240,7 @@ impl ExtNode {
             let b = ledger.new_cached_branch(branch_id);
             let mut branch = b.borrow_mut();
 
-            let (_prefix, nibbles) = nibbles.split_at(shared_path_count);
+            let (_prefix, nibbles) = nibbles.split_at(shared_path_end);
 
             let new_branch_child_id = (branch_id * 16) + nibbles[0] as u64;
             let l = ledger.new_cached_leaf(new_branch_child_id);
@@ -187,7 +254,7 @@ impl ExtNode {
             // remove old self id
             // connect new_branch to self_copy using popped nibble from self
             // return new_branch to parent
-            if shared_path_count == 0 {
+            if shared_path_end == 0 {
                 let nib = self.path.pop_front().unwrap();
 
                 // handle edge case where pathlen becomes 0.
@@ -196,7 +263,7 @@ impl ExtNode {
 
                     new_child_id = (branch_id * 16) + nib as u64;
                     child.change_id(&new_child_id.to_le_bytes(), ledger);
-                    branch.insert(&nib, &child.derive_hash());
+                    branch.insert(&nib, &self.child.0);
 
                 } else {
 
@@ -209,7 +276,7 @@ impl ExtNode {
                     let new_child_id_bytes = new_child_id.to_le_bytes();
                     child.change_id(&new_child_id_bytes, ledger);
 
-                    new_self_mut.set_child(&child.get_hash());
+                    new_self_mut.set_child(&self.child.0);
                     new_self_mut.set_path(&Vec::from_iter(self.path.drain(..)));
                     branch.insert(&nib, &new_self_mut.derive_hash());
                 }
@@ -224,7 +291,7 @@ impl ExtNode {
             // new extension will connect new_branch to self.child
             // else point branch to self.child directly.
 
-            let remaining = Vec::from_iter(self.path.drain(shared_path_count .. ));
+            let remaining = Vec::from_iter(self.path.drain(shared_path_end .. ));
             let (&nib, remaining_path) = remaining.split_first().unwrap();
 
             let new_child_id: u64;
@@ -278,12 +345,8 @@ impl ExtNode {
                 if let Some((hash, mut path_ext)) = next_node.remove(ledger, &nibbles[self.path.len()..]) {
 
                     if let Some(new_path) = path_ext.take() {
-                        println!("path:: {}, appended:: {}", self.path.len(), new_path.len());
-                        println!("nibs:: {}", hex::encode(nibbles));
                         new_path.into_iter().for_each(|nib| {
-                            println!("nib1:: {}", hex::encode([nib]));
                             let tmp = self.path.pop_back().unwrap();
-                            println!("nib2:: {}", hex::encode([tmp]));
                             self.path.push_back(tmp);
                             self.path.push_back(nib)
                         });

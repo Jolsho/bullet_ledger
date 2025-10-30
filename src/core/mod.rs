@@ -104,8 +104,8 @@ pub fn from_net(core: &mut Core, m: &mut NetMsg) {
                 Some(Trx::Ephemeral(mut trx)) => {
 
                     if trx.unmarshal(&mut m.body[1..]).is_ok() && 
-                    core.ledger.value_exists(&derive_value_hash(&trx.sender_init.0)) && 
-                    core.ledger.value_exists(&derive_value_hash(&trx.receiver_init.0)) &&
+                    core.ledger.value_exists(&trx.sender_init.0) && 
+                    core.ledger.value_exists(&trx.receiver_init.0) &&
                     trx.is_valid(&core.gens).is_ok() {          
 
                         // TODO -- if other trx is in pool we append this one
