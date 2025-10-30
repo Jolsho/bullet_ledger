@@ -64,12 +64,11 @@ impl Node {
         }
     }
 
-    pub fn search(&self, ledger: &mut Ledger, nibbles: &[u8]) -> Option<Hash> {
-        //print!("1,");
+    pub fn search(&self, ledger: &mut Ledger, key: &[u8]) -> Option<Hash> {
         return match &self {
-            Node::Branch(b) => b.borrow_mut().search(ledger, nibbles),
-            Node::Extension(e) => e.borrow_mut().search(ledger, nibbles),
-            Node::Leaf(l) => l.borrow_mut().search(nibbles),
+            Node::Branch(b) => b.borrow_mut().search(ledger, key),
+            Node::Extension(e) => e.borrow_mut().search(ledger, key),
+            Node::Leaf(l) => l.borrow_mut().search(key),
         }
     }
 

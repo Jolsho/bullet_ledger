@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc, usize};
 
-use crate::core::ledger::{branch::BranchNode, derive_leaf_hash, derive_value_hash};
+use crate::core::ledger::{branch::{BranchNode, ORDER}, derive_leaf_hash, derive_value_hash};
 
 use super::{ Ledger, Hash,  node::{NodeID, NodePointer, EXT} };
 
@@ -18,7 +18,7 @@ impl ExtNode {
         let mut child_id = NodeID::default();
         if let Some(i) = id {
             let num = u64::from_le_bytes(i);
-            child_id.copy_from_slice(&(num * 16).to_le_bytes());
+            child_id.copy_from_slice(&(num * ORDER).to_le_bytes());
         }
 
         Rc::new(RefCell::new(Self {
@@ -42,17 +42,17 @@ impl ExtNode {
         let num = u64::from_le_bytes(*id);
         self.id.copy_from_slice(id);
 
-        if u64::from_le_bytes(self.child.1) != num * 16 {
+        if u64::from_le_bytes(self.child.1) != num * ORDER {
             // load child_node and delete it from cache/db
             let node = ledger.load_node(&self.child.1).unwrap();
             ledger.delete_node(&self.child.1);
 
             // change its children recursively
-            self.child.1 = (num * 16).to_le_bytes();
+            self.child.1 = (num * ORDER).to_le_bytes();
             node.change_id(&self.child.1, ledger);
 
             // re-cache updated child once its children have been updated
-            ledger.cache_node(num * 16, node);
+            ledger.cache_node(num * ORDER, node);
         }
     }
 
@@ -105,7 +105,7 @@ impl ExtNode {
         child_hash.copy_from_slice(&bytes[32..64]);
 
         let p = u64::from_le_bytes(id.clone());
-        let child_id = (p * 16).to_le_bytes();
+        let child_id = (p * ORDER).to_le_bytes();
 
         let mut path_len = [0u8; 8];
         path_len.copy_from_slice(&bytes[64..72]);
@@ -215,7 +215,7 @@ impl ExtNode {
             return None;
         } else {
             let self_id = u64::from_le_bytes(self.id);
-            let mut branch_id = self_id * 16;
+            let mut branch_id = self_id * ORDER;
 
             // if there is more than one nibble left after removing shared prefix...
             // insert new extension that will point to new leaf from branch
@@ -242,7 +242,7 @@ impl ExtNode {
 
             let (_prefix, nibbles) = nibbles.split_at(shared_path_end);
 
-            let new_branch_child_id = (branch_id * 16) + nibbles[0] as u64;
+            let new_branch_child_id = (branch_id * ORDER) + nibbles[0] as u64;
             let l = ledger.new_cached_leaf(new_branch_child_id);
             let mut leaf = l.borrow_mut();
             leaf.set_value_hash(val_hash);
@@ -261,18 +261,18 @@ impl ExtNode {
                 let new_child_id: u64;
                 if self.path.len() == 0 {
 
-                    new_child_id = (branch_id * 16) + nib as u64;
+                    new_child_id = (branch_id * ORDER) + nib as u64;
                     child.change_id(&new_child_id.to_le_bytes(), ledger);
                     branch.insert(&nib, &self.child.0);
 
                 } else {
 
-                    let new_id = (branch_id * 16) + nib as u64;
+                    let new_id = (branch_id * ORDER) + nib as u64;
                     let new_self = ledger.new_cached_ext(new_id);
                     let mut new_self_mut = new_self.borrow_mut();
 
                     // give old child an updated id
-                    new_child_id = new_id * 16;
+                    new_child_id = new_id * ORDER;
                     let new_child_id_bytes = new_child_id.to_le_bytes();
                     child.change_id(&new_child_id_bytes, ledger);
 
@@ -296,7 +296,7 @@ impl ExtNode {
 
             let new_child_id: u64;
             if remaining_path.len() > 0 {
-                let new_ext_id = (branch_id * 16) + nib as u64;
+                let new_ext_id = (branch_id * ORDER) + nib as u64;
 
                 // create new extension to point to self.child
                 let new_ext_full = ledger.new_cached_ext(new_ext_id);
@@ -304,7 +304,7 @@ impl ExtNode {
                 new_ext.set_path(&remaining_path);
 
                 // derive new child id
-                new_child_id = new_ext_id * 16;
+                new_child_id = new_ext_id * ORDER;
                 let new_id = new_child_id.to_le_bytes();
                 child.change_id(&new_id, ledger);
 
@@ -315,7 +315,7 @@ impl ExtNode {
                 branch.insert(&nib, &new_ext.derive_hash());
             } else {
                 // derive and set new child id
-                new_child_id = (branch_id * 16) + nib as u64;
+                new_child_id = (branch_id * ORDER) + nib as u64;
 
                 let new_id = new_child_id.to_le_bytes();
                 child.change_id(&new_id, ledger);

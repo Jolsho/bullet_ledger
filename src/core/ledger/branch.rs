@@ -3,12 +3,13 @@ use crate::core::ledger::derive_leaf_hash;
 
 use super::{Hash, Ledger, node::{Node, NodeID, BRANCH}};
 
+pub const ORDER: u64 = 256;
 
 pub(crate) struct BranchNode { 
     id: NodeID,
     hash: Hash,
-    children: [Option<(Hash, NodeID)>; 16],
-    count: u8,
+    children: [Option<(Hash, NodeID)>; ORDER as usize],
+    count: u16,
 }
 
 impl BranchNode {
@@ -28,7 +29,7 @@ impl BranchNode {
 
         for (i, child) in self.children.iter_mut().enumerate() {
             if let Some((_, child_id)) = child {
-                let should_be = num * 16 + i as u64;
+                let should_be = num * ORDER + i as u64;
                 if u64::from_le_bytes(*child_id) != should_be {
                     // load child_node and delete it from cache/db
                     let node = ledger.load_node(child_id).unwrap();
@@ -60,7 +61,7 @@ impl BranchNode {
 
         {
             let mut branch = b.borrow_mut();
-            for i in 0..17usize {
+            for i in 0..(ORDER+1)as usize {
                 let start = 32 * i;
                 let end =  32 * (i + 1);
                 if i == 0 {
@@ -72,7 +73,7 @@ impl BranchNode {
                         let mut hash = [0u8;32];
                         hash.copy_from_slice(&bytes[start..end]);
 
-                        let child_id = (p * 16) + (i - 1) as u64;
+                        let child_id = (p * ORDER) + (i - 1) as u64;
 
                         branch.children[i-1] = Some((hash, child_id.to_le_bytes()));
                         branch .count += 1;
@@ -87,7 +88,7 @@ impl BranchNode {
     }
 
     pub fn to_bytes(&self) -> Vec<u8> {
-        let mut buff = Vec::with_capacity(1+(17*32));
+        let mut buff = Vec::with_capacity((1 + (ORDER + 1) * 32) as usize);
         buff.extend_from_slice(&[BRANCH]);
         buff.extend_from_slice(&self.hash);
 
@@ -119,7 +120,7 @@ impl BranchNode {
             child.0.copy_from_slice(hash);
         } else {
             let self_id = u64::from_le_bytes(self.id);
-            let new_id = ((self_id * 16) + *nib as u64).to_le_bytes();
+            let new_id = ((self_id * ORDER) + *nib as u64).to_le_bytes();
             self.children[*nib as usize] = Some((hash.clone(), new_id));
             self.count += 1;
         }
@@ -196,7 +197,7 @@ impl BranchNode {
         } else {
 
             // leaf is child
-            let child_id = (u64::from_le_bytes(self.id) * 16) + nibbles[0] as u64;
+            let child_id = (u64::from_le_bytes(self.id) * ORDER) + nibbles[0] as u64;
             let l = ledger.new_cached_leaf(child_id);
             let mut leaf = l.borrow_mut();
             leaf.set_path(&nibbles[1..]);
@@ -238,7 +239,7 @@ impl BranchNode {
                     let mut hash_to_parent = Self::ZERO_HASH;
 
                     if self.count == 1 {
-                        let parent_id = u64::from_le_bytes(*self.get_id()) / 16;
+                        let parent_id = u64::from_le_bytes(*self.get_id()) / ORDER;
                         let parent_node = ledger.load_node(&parent_id.to_le_bytes());
                         if parent_node.is_none() {
                             return Some((self.derive_hash(), None));

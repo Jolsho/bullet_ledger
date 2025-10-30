@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::VecDeque, rc::Rc};
 
-use crate::core::ledger::{branch::BranchNode, derive_leaf_hash, derive_value_hash};
+use crate::core::ledger::{branch::{BranchNode, ORDER}, derive_leaf_hash, derive_value_hash};
 
 use super::{Hash, node::{NodeID, NodePointer, LEAF}, Ledger};
 
@@ -151,7 +151,7 @@ impl Leaf {
 
         let mut ext_o = None;
         if shared_path_end > 0 {
-            branch_id = self_id * 16;
+            branch_id = self_id * ORDER;
 
             let e = ledger.new_cached_ext(self_id);
             let mut ext = e.borrow_mut();
@@ -171,7 +171,7 @@ impl Leaf {
 
         // derive a new self
         let self_nib = self.path.pop_front().unwrap();
-        let new_self_id = (branch_id * 16) + self_nib as u64;
+        let new_self_id = (branch_id * ORDER) + self_nib as u64;
         let self_leaf = ledger.new_cached_leaf(new_self_id);
         let mut new_self = self_leaf.borrow_mut();
         std::mem::swap(&mut new_self.path, &mut self.path);
@@ -180,7 +180,7 @@ impl Leaf {
         branch.insert(&self_nib, new_self.get_hash());
 
         // derive a new leaf
-        let new_leaf_id = (branch_id * 16) + nibbles[0] as u64;
+        let new_leaf_id = (branch_id * ORDER) + nibbles[0] as u64;
         let l = ledger.new_cached_leaf(new_leaf_id);
         let mut leaf = l.borrow_mut();
         leaf.set_path(&nibbles[1..]);

@@ -5,16 +5,25 @@ use crate::core::ledger::derive_leaf_hash;
 
 use super::{Ledger, branch::BranchNode, derive_value_hash, ext::ExtNode, leaf::Leaf, lmdb::DB, Hash, node::{Node, NodeID}};
 
-pub(super) fn get_nibbles(key: &[u8]) -> Vec<u8> {
-    let mut nibbles = Vec::with_capacity(key.len() * 2);
-    for &byte in key {
-        let high_nibble = byte >> 4;
-        let low_nibble = byte & 0x0F;
-        nibbles.push(high_nibble);
-        nibbles.push(low_nibble);
-    }
-    nibbles
-}
+/*
+
+TODO
+    Alright so I just made the virtual put functions but I dont think its useful..
+        Turns out its useless but if I build on it it can do good...
+        will batch multiple virtual puts, for validating final block root...
+            to prevent too many nodes in memory will increase branching factor to 256
+    KZG VERKLE PROOFS::
+        BUILDING_BLOCK_PROOFS::
+            just to see this imagine not succinct ZK proofs, but regular merkle proofs.
+            Virtual aggregate state transition.
+                each virtual node is mapped by id AND a min-heap based on id
+                mapping for updating... min-heap for building proof in order...
+            BUILD THIS FIRST WITHOUT ZK...
+                after that we can change this to proof building instead of just hashing...
+        I THINK INCREASE BRANCHING FACTOR FIRST THOUGH....
+            THIS IS LIKE STEP ONE...
+
+*/
 
 impl Ledger { 
 
@@ -53,11 +62,8 @@ impl Ledger {
     pub fn get_value(&mut self, key: &[u8; 32]) -> Option<Vec<u8>> {
         let mut res = None;
         if let Some(root) = self.root.take() {
-            let nibs = get_nibbles(key);
-
             self.db.start_trx();
-
-            if let Some(val_hash) = root.search(self, &nibs) {
+            if let Some(val_hash) = root.search(self, &key[..]) {
                 if let Ok(value) = self.db.get(&val_hash) {
                     res = Some(value);
                 }
@@ -83,11 +89,10 @@ impl Ledger {
         // if definetely doesnt exist
         if !self.value_exists(&hash){ 
             if let Some(mut root) = self.root.take() {
-                let nibs = get_nibbles(key);
 
                 self.db.start_trx();
 
-                if let Some(new_root_hash) = root.put(self, &nibs, key, &hash, is_virtual) {
+                if let Some(new_root_hash) = root.put(self, &key.clone(), &key, &hash, is_virtual) {
                     root_hash = Some(new_root_hash);
 
                     if !is_virtual {
@@ -114,10 +119,9 @@ impl Ledger {
     pub fn remove(&mut self, key: &[u8]) -> Option<Hash> {
         let mut root_hash = None;
         if let Some(mut root) = self.root.take() {
-            let nibs = get_nibbles(key);
             self.db.start_trx();
 
-            if let Some((new_root_hash, _)) = root.remove(self, &nibs) {
+            if let Some((new_root_hash, _)) = root.remove(self, &key) {
                 root_hash = Some(new_root_hash);
             }
             self.root = Some(root);
