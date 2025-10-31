@@ -4,6 +4,7 @@ use std::{ffi::{c_void, CString}, fs, path::Path};
 struct BulletDB {
     _private: [u8; 0],
 }
+
 unsafe extern "C" {
     fn lmdb_open(path: *const std::os::raw::c_char, map_size: usize) -> *mut BulletDB;
     fn lmdb_close(handle: *mut BulletDB);
@@ -25,6 +26,14 @@ pub struct DB {
     in_txn: bool,
 }
 
+impl Drop for DB {
+    fn drop(&mut self) {
+        unsafe { 
+            lmdb_close(self.handle) 
+        };
+    }
+}
+
 
 impl DB {
     pub fn new(path: &str) -> Self {
@@ -34,7 +43,7 @@ impl DB {
         }
         let handle = unsafe {
 
-            let map_size: usize = 25 * 1024 * 1024 * 1024; // 100 GB
+            let map_size: usize = 1 * 1024 * 1024 * 1024; // 100 GB
             // TODO -- eventually need to check to see if needs to be larger
             // like if there is already a database
 

@@ -1,10 +1,10 @@
-// codes.cpp
+// extern.cpp
 #include <lmdb.h>
 #include "bullet_db.h"
+#include "extern.h"
 
 extern "C" {
 
-// Correctly export integer constants
 extern const int SUCCESS         = MDB_SUCCESS;
 extern const int NOTFOUND        = MDB_NOTFOUND;
 extern const int ALREADY_EXISTS  = MDB_KEYEXIST;
@@ -33,32 +33,39 @@ void lmdb_close(void* handle) {
 
 void lmdb_start_trx(void* handle) {
     auto h = static_cast<BulletDB*>(handle);
-    mdb_txn_begin(h->env, nullptr, 0, &h->txn);
+    mdb_txn_begin(h->env_, nullptr, 0, &h->txn_);
 }
 
 void lmdb_end_trx(void* handle, int rc) {
     auto h = static_cast<BulletDB*>(handle);
-    if (rc == 0) mdb_txn_commit(h->txn);
-    else mdb_txn_abort(h->txn);
+    if (rc == 0) mdb_txn_commit(h->txn_);
+    else mdb_txn_abort(h->txn_);
 }
 
-int lmdb_put(void* handle, const void* key_data, size_t key_size, const void* value_data, size_t value_size) {
+int lmdb_put(void* handle, 
+             const void* key_data, size_t key_size, 
+             const void* value_data, size_t value_size) {
     return static_cast<BulletDB*>(handle) 
         ->put(key_data, key_size, value_data, value_size);
 }
 
-int lmdb_get(void* handle, const void* key_data, size_t key_size, void** value_data, size_t* value_size) {
+int lmdb_get(void* handle, 
+             const void* key_data, size_t key_size, 
+             void** value_data, size_t* value_size) {
     return static_cast<BulletDB*>(handle)
         ->get(key_data, key_size, value_data, value_size);
 
 }
-void* mutable_get(void* handle, const void* key, size_t key_size, size_t value_size) {
+void* mutable_get(void* handle, 
+                  const void* key, size_t key_size, 
+                  size_t value_size) {
     return static_cast<BulletDB*>(handle) 
         ->mut_get(key, key_size, value_size);
 }
 
 
-int lmdb_delete(void* handle, const void* key_data, size_t key_size) {
+int lmdb_delete(void* handle, 
+                const void* key_data, size_t key_size) {
     return static_cast<BulletDB*>(handle) 
         ->del(key_data, key_size);
 }

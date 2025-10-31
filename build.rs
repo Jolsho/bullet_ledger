@@ -17,4 +17,5 @@ fn main() {
     println!("cargo:rustc-link-lib=lmdb");
     println!("cargo:rerun-if-changed=src/bullet_db.cpp");
     println!("cargo:rerun-if-changed=src/bullet_db.h");
+    println!("cargo:rerun-if-changed=src/exter.cpp");
 }
