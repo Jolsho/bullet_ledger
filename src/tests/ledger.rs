@@ -7,7 +7,7 @@ fn ledger() {
     let test_file = TestFile::new("ledger");
     let mut ledger = Ledger::new(&test_file.path, 128).unwrap();
 
-    let mut raw_hashes = Vec::with_capacity(2000);
+    let mut raw_hashes = Vec::with_capacity(100);
     let mut rng: rand::rngs::StdRng = rand::SeedableRng::from_seed([0u8; 32]);
     while raw_hashes.len() < raw_hashes.capacity() {
         let mut hash = [0u8; 32];

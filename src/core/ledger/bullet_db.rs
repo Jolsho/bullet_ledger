@@ -1,27 +1,27 @@
 use std::{ffi::{c_void, CString}, fs, path::Path};
 
 #[repr(C)]
-struct LMDBHandle {
+struct BulletDB {
     _private: [u8; 0],
 }
 unsafe extern "C" {
-    fn lmdb_open(path: *const std::os::raw::c_char, map_size: usize) -> *mut LMDBHandle;
-    fn lmdb_close(handle: *mut LMDBHandle);
-    fn lmdb_start_trx(handle: *mut LMDBHandle);
-    fn lmdb_end_trx(handle: *mut LMDBHandle, rc: i32);
-    fn lmdb_delete(handle: *mut LMDBHandle, key_data: *const c_void, key_size: usize) -> i32;
-    fn lmdb_exists(handle: *mut LMDBHandle, key_data: *const c_void, key_size: usize) -> i32;
-    fn lmdb_get(handle: *mut LMDBHandle,
+    fn lmdb_open(path: *const std::os::raw::c_char, map_size: usize) -> *mut BulletDB;
+    fn lmdb_close(handle: *mut BulletDB);
+    fn lmdb_start_trx(handle: *mut BulletDB);
+    fn lmdb_end_trx(handle: *mut BulletDB, rc: i32);
+    fn lmdb_delete(handle: *mut BulletDB, key_data: *const c_void, key_size: usize) -> i32;
+    fn lmdb_exists(handle: *mut BulletDB, key_data: *const c_void, key_size: usize) -> i32;
+    fn lmdb_get(handle: *mut BulletDB,
                 key_data: *const c_void, key_size: usize,
                 value_data: *mut *mut c_void, value_size: *mut usize) -> i32;
 
-    fn lmdb_put(handle: *mut LMDBHandle,
+    fn lmdb_put(handle: *mut BulletDB,
                 key_data: *const c_void, key_size: usize,
                 value_data: *const c_void, value_size: usize) -> i32;
 }
 
 pub struct DB {
-    handle: *mut LMDBHandle,
+    handle: *mut BulletDB,
     in_txn: bool,
 }
 

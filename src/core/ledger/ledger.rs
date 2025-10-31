@@ -3,7 +3,7 @@ use lru::LruCache;
 
 use crate::core::ledger::derive_leaf_hash;
 
-use super::{Ledger, branch::BranchNode, derive_value_hash, ext::ExtNode, leaf::Leaf, lmdb::DB, Hash, node::{Node, NodeID}};
+use super::{Ledger, branch::BranchNode, derive_value_hash, ext::ExtNode, leaf::Leaf, bullet_db::DB, Hash, node::{Node, NodeID}};
 
 /*
 

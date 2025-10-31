@@ -1,12 +1,12 @@
 use lru::LruCache;
 
-use {lmdb::DB, node::Node};
+use {bullet_db::DB, node::Node};
 
 mod node;
 mod branch;
 mod leaf;
 mod ext;
-mod lmdb;
+mod bullet_db;
 mod ledger;
 
 pub type Hash = [u8;32];
