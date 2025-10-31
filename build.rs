@@ -5,7 +5,7 @@ fn main() {
         .include("libs/bullet_db")
         .files([
             "libs/bullet_db/bullet_db.cpp",
-            "libs/bullet_db/codes.cpp"
+            "libs/bullet_db/extern.cpp"
         ])
         .flag_if_supported("-std=c++17")
         .compile("bullet_db");
