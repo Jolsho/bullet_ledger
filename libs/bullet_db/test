@@ -15,7 +15,7 @@ fi
 base="$1"
 file="${base}.cpp"
 src_path="./tests/$file"
-build_path="./tests"
+build_path="./tests/build"
 
 # Check if file exists
 if [ ! -f "$src_path" ]; then
