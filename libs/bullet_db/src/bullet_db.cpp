@@ -9,7 +9,6 @@
 #include "bullet_db.h"
 
 BulletDB::BulletDB(const char* path, size_t map_size) {
-    keys_.reserve(10);
     mdb_env_create(&env_);
     mdb_env_set_mapsize(env_, map_size);
     mdb_env_open(env_, path, 0, 0600);
@@ -27,6 +26,7 @@ BulletDB::BulletDB(const char* path, size_t map_size) {
     l3_.reserve(10);
     // 12,000 * (8 + 8 + 50)bytes ==  792KB
     //      uint_64 + void* + overhead
+    keys_.reserve(10);
 }
 
 BulletDB::~BulletDB() {
@@ -35,14 +35,20 @@ BulletDB::~BulletDB() {
     mdb_env_close(env_);
 }
 
-int BulletDB::put(const void* key_data, size_t key_size, const void* value_data, size_t value_size) {
+int BulletDB::put(
+    const void* key_data, size_t key_size, 
+    const void* value_data, size_t value_size
+) {
     MDB_val key{ key_size, (void*)(key_data) };
     MDB_val value{ value_size, (void*)(value_data) };
 
     return mdb_put(txn_, dbi_, &key, &value, 0);
 }
 
-int BulletDB::get(const void* key_data, size_t key_size, void** value_data, size_t* value_size) {
+int BulletDB::get(
+    const void* key_data, size_t key_size, 
+    void** value_data, size_t* value_size
+) {
     MDB_val key{ key_size, (void*)(key_data) };
     MDB_val value;
 
@@ -55,14 +61,17 @@ int BulletDB::get(const void* key_data, size_t key_size, void** value_data, size
     return rc;
 }
 
-void* BulletDB::mut_get(const void* key, size_t key_size, size_t value_size) {
+void* BulletDB::mut_get(
+    const void* key, size_t key_size, 
+    size_t value_size
+) {
     MDB_val k{ key_size, const_cast<void*>(key) };
     MDB_val v{ value_size, nullptr };
     int rc = mdb_put(txn_, dbi_, &k, &v, MDB_RESERVE);
     return rc == 0 ? v.mv_data : nullptr;
 }
 
-int BulletDB::del(const void* key_data, size_t key_size) {
+int BulletDB::del( const void* key_data, size_t key_size) {
     MDB_val key{ key_size, (void*)(key_data) };
     return mdb_del(txn_, dbi_, &key, nullptr);
 }
@@ -72,8 +81,6 @@ int BulletDB::exists(const void* key_data, size_t key_size) {
     MDB_val value;
     return mdb_get(txn_, dbi_, &key, &value);
 }
-
-
 
 std::vector<uint64_t> BulletDB::flatten_sort_l2() {
 

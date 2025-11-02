@@ -1,0 +1,3 @@
+[submodule "libs/bullet_db/deps/blst"]
+	path = libs/bullet_db/deps/blst
+	url = https://github.com/supranational/blst.git
