@@ -1,21 +1,31 @@
 #include <cstring>
 #include <vector>
 #include <array>
-#include <blst.h>
+
+#include "blst.h"
 
 using scalar_vec = std::vector<blst_scalar>;
 
-// -------------------- points --------------------
+// =======================================
+// =============== POINTS ================
+// =======================================
+
 blst_p1 new_p1();
 blst_p2 new_p2();
 
 std::array<uint8_t, 48> compress_p1(blst_p1* pk);
 void print_p1(const blst_p1& pk);
+void print_p1_affine(const blst_p1_affine& pk);
 
 std::array<uint8_t, 96> compress_p2(const blst_p2& pk);
 void print_p2(const blst_p2& pk);
+void print_p1_affine(const blst_p1_affine& pk);
 
-// -------------------- scalar --------------------
+
+// =======================================
+// =============== SCALARS ===============
+// =======================================
+
 blst_scalar new_scalar(const uint64_t v = 0);
 blst_scalar rand_scalar();
 void scalar_add_inplace(blst_scalar &dst, const blst_scalar &src);

@@ -15,12 +15,14 @@ target_sources(bullet_db
         src/key_sig.cpp
         src/kzg.cpp
         src/pippen.cpp
+        src/path.cpp
 
         src/bullet_db.h
         src/pnt_sclr.h
         src/key_sig.h
         src/kzg.h
         src/pippen.h
+        src/path.h
 
         bindings/extern.cpp
 

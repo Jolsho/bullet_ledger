@@ -11,7 +11,22 @@
 
 /* 
  *  ( C, Y, Z, Pi )
- *      challenge based hiding 
+ *      challenge based hiding can hide Y
+ *      Z can stay visible
+ *
+ *  SO FAR::
+ *      have the ability to generate path commitments...
+ *          aka there is a leaf somewhere in this tree given root...
+ *          and verify those things...
+ *
+ *      overwrite parent commitments as C_parent_new = C_parent_old - C_child_old + C_child_new
+ *          this is done recursively up and is fairly easy...
+ *          you will end at root and can verify against provided root
+ *
+ *      another thing is that you can prove an account and balance...
+ *      you solve C_root at first byte of key which produces C_next_node_in_path
+ *          and you can do this 3/4 times to get to a leaf....
+ *
  *
  *  in a verkle...
  *      each put derives a path of commitments...
@@ -32,16 +47,18 @@
 */
 
 void test_commit_and_verify_pip(
-    const SRS& S, PippMan& pip, const scalar_vec& Fx
+    const SRS& S, 
+    PippMan& pip, 
+    const scalar_vec& Fx,
+    const blst_scalar Z
 ) {
     // Open f(z) at z=2
-    blst_scalar Z = new_scalar(2);
-    blst_scalar PIP_Y = pip.evaluate_polynomial(Fx, Z);
+    blst_scalar Y = eval_poly(Fx, Z);
 
     // Commit to f(x)
-    blst_p1 PIP_C = pip.commit(Fx);
+    blst_p1_affine PIP_C = pip.commit(Fx);
     std::cout << "PIP_Commitment to f(x):\n" << "    ";
-    print_p1(PIP_C);
+    print_p1_affine(PIP_C);
     printf("\n");
 
     // f(x) = q(x) + r(x)
@@ -49,29 +66,30 @@ void test_commit_and_verify_pip(
 
     // Commit to q(x)
     std::cout << "PIP_Commitment to Q(x) AKA Pi:\n" << "    ";
-    blst_p1 Pi = pip.commit(Qx);
-    print_p1(Pi);
+    blst_p1_affine Pi = pip.commit(Qx);
+    print_p1_affine(Pi);
 
     // validate q(x) = (f(x) - f(z))/(x-z)
-    assert(verify_proof(PIP_C, PIP_Y, Z, Pi, S));
+    assert(verify_proof(PIP_C, Y, Z, Pi, S));
     std::cout << "\nVALID PIP...\n";
 
     blst_scalar fake_Z = Fx[3];
-    assert(!verify_proof(PIP_C, PIP_Y, fake_Z, Pi, S));
+    assert(!verify_proof(PIP_C, Y, fake_Z, Pi, S));
 }
 
 void test_commit_and_verify_reg(
-    const SRS& S, const scalar_vec& Fx
+    const SRS& S, 
+    const scalar_vec& Fx,
+    const blst_scalar Z
 ) {
 
     // Open f(z) at z=2
-    blst_scalar Z = new_scalar(2);
     blst_scalar Y = eval_poly(Fx, Z);
 
     // Commit to f(x)
-    blst_p1 C = commit(Fx, S);
+    blst_p1_affine C = commit(Fx, S);
     std::cout << "Commitment to f(x):\n" << "    ";
-    print_p1(C);
+    print_p1_affine(C);
     printf("\n");
 
     // f(x) = q(x) + r(x)
@@ -80,8 +98,8 @@ void test_commit_and_verify_reg(
 
     // Commit to q(x)
     std::cout << "Commitment to Q(x) AKA Pi:\n" << "    ";
-    blst_p1 Pi = commit(Qx, S);
-    print_p1(Pi);
+    blst_p1_affine Pi = commit(Qx, S);
+    print_p1_affine(Pi);
 
     // validate q(x) = (f(x) - f(z))/(x-z)
     assert(verify_proof(C, Y, Z, Pi, S));
@@ -111,17 +129,18 @@ int main() {
     // GENERATE SRS
     blst_scalar s = rand_scalar();
     SRS S(Fx.size(), s);
+    blst_scalar Z = new_scalar(2);
 
     printf("TESTING KZG COMMIT & VERIFY DEFAULT \n");
     printf("- - - - - - - - - - - - - - - - - \n");
-    test_commit_and_verify_reg(S, Fx);
+    test_commit_and_verify_reg(S, Fx, Z);
     printf("==================================\n");
 
     // PIPPEN::
     PippMan pip(S);
     printf("TESTING KZG COMMIT & VERIFY PIP_OPTIMIZATION \n");
     printf("- - - - - - - - - - - - - - - - - \n");
-    test_commit_and_verify_pip(S, pip, Fx);
+    test_commit_and_verify_pip(S, pip, Fx, Z);
     printf("==================================\n");
 }
 

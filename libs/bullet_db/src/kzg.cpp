@@ -5,21 +5,20 @@
 
 // -------------------- eval polynomial --------------------
 blst_scalar eval_poly(
-    const scalar_vec& coeffs,
-    blst_scalar& z
+    const scalar_vec& Fx,
+    const blst_scalar& z
 ) {
-    blst_scalar v_k = new_scalar();
-    blst_scalar tmp;
-    for (size_t i = 0; i < coeffs.size(); i++) {
-        scalar_pow(tmp, z, i); // z^i
-        scalar_mul_inplace(tmp, coeffs[i]);
-        scalar_add_inplace(v_k, tmp);
+    // f(z) = y
+    blst_scalar Y = new_scalar();
+    for (int i = Fx.size() - 1; i >= 0; i--) {
+        scalar_mul_inplace(Y, z);
+        scalar_add_inplace(Y, Fx[i]);
     }
-    return v_k;
+    return Y;
 }
 
 // -------------------- commit polynomial --------------------
-blst_p1 commit(
+blst_p1_affine commit(
     const scalar_vec& coeffs, 
     const SRS& srs
 ) {
@@ -29,7 +28,9 @@ blst_p1 commit(
         blst_p1_mult(&tmp, &srs.g1_powers_jacob[i], coeffs[i].b, BIT_COUNT);
         blst_p1_add_or_double(&C, &C, &tmp);
     }
-    return C;
+    blst_p1_affine C_aff;
+    blst_p1_to_affine(&C_aff, &C);
+    return C_aff;
 }
 
 
@@ -57,63 +58,54 @@ scalar_vec derive_q(
 
 
 bool verify_proof(
-    const blst_p1& C,
+    const blst_p1_affine& C,
     const blst_scalar& Y,
     const blst_scalar& Z,
-    const blst_p1& Pi,
+    const blst_p1_affine& Pi,
     const SRS& S 
 ) {
-    // Compute C - g^{Y}
-    blst_p1 neg_temp;
-    blst_p1 C_minus_Y;
+    // Compute C - gY
+    blst_p1 C_Y;
+    // 0 -> gY -> -gY
+    blst_p1_mult(&C_Y, &S.g1_powers_jacob[0], Y.b, BIT_COUNT);
+    blst_p1_cneg(&C_Y, true);
+    // (- gY) + C == C - gY
+    blst_p1_add_or_double_affine(&C_Y, &C_Y, &C);
 
-    // g^{Y} using generator g1_powers_jacob[0] (assumed)
-    blst_p1_mult(&neg_temp, &S.g1_powers_jacob[0], Y.b, BIT_COUNT);
-    blst_p1_cneg(&neg_temp, true);
+    // to affine
+    blst_p1_affine C_Y_aff;
+    blst_p1_to_affine(&C_Y_aff, &C_Y);
 
-    // C - g^{Y}
-    blst_p1_add_or_double(&C_minus_Y, &C, &neg_temp);
 
-    // Compute g2^{s - z} = g2^{s} * g2^{-z} 
-    blst_p2 g2_neg_z; 
-    blst_p2 g2_s_minus_z;
+    // Compute g2(r - z)
+    blst_p2 R_Z;
+    // z -> g2(z) -> g2(-z)
+    blst_p2_mult(&R_Z, &S.h, Z.b, BIT_COUNT);
+    blst_p2_cneg(&R_Z, true);
+    // g2(-z) + g2(r) == g2(r - z)
+    blst_p2_add_or_double(&R_Z, &R_Z, &S.g2_powers_jacob[1]);
 
-    // g2^{z}, multiply generator srs.h by z
-    blst_p2_mult(&g2_neg_z, &S.h, Z.b, BIT_COUNT);
-    blst_p2_cneg(&g2_neg_z, true);  // inverse
+    // to affine
+    blst_p2_affine R_Z_aff;
+    blst_p2_to_affine(&R_Z_aff, &R_Z);
 
-    // g2^{s - z} = g2^{s} * g2^{-z}
-    blst_p2_add_or_double(&g2_s_minus_z, &S.g2_powers_jacob[1], &g2_neg_z);
 
-    // Pairing check
+    // e(C - gY, g2) == e(pi, g2(r - z))
     blst_fp12 lhs, rhs;
-
-    // e(C - g^{Y}, g2)
-    blst_p1_affine aff_C;
-    blst_p1_to_affine(&aff_C, &C_minus_Y);
-    blst_p2_affine aff_g2;
-    blst_p2_to_affine(&aff_g2, &S.h);
-    blst_miller_loop(&lhs, &aff_g2, &aff_C);
+    blst_miller_loop(&lhs, &S.g2_powers_aff[0], &C_Y_aff);
+    blst_miller_loop(&rhs, &R_Z_aff, &Pi);
     blst_final_exp(&lhs, &lhs);
-
-    // e(pi, g2^{s - z})
-    blst_p1_affine aff_pi;
-    blst_p1_to_affine(&aff_pi, &Pi);
-
-    blst_p2_affine aff_g2_s_minus_z;
-    blst_p2_to_affine(&aff_g2_s_minus_z, &g2_s_minus_z);
-
-    blst_miller_loop(&rhs, &aff_g2_s_minus_z, &aff_pi);
     blst_final_exp(&rhs, &rhs);
 
-    // Compare pairings
     return blst_fp12_is_equal(&lhs, &rhs);
 }
 
-// ------------- SRS ---------------------
-size_t SRS::max_degree() {
-        return g1_powers_jacob.size() - 1; 
-}
+
+
+// =======================================
+// ============= SRS =====================
+// =======================================
+size_t SRS::max_degree() { return g1_powers_jacob.size() - 1; }
 
 SRS::SRS(size_t degree, const blst_scalar &s) {
     g1_powers_jacob.resize(degree + 1);
@@ -126,32 +118,19 @@ SRS::SRS(size_t degree, const blst_scalar &s) {
     blst_p2 g2 = *blst_p2_generator();
     h = g2;
 
-    // s^0 = 1
+    // s(0) = 1
     blst_scalar pow_s = new_scalar(1);
 
-    // tmp variables
-    blst_p1 tmp1;
-    blst_p1_affine tmp1_5;
-    blst_p2 tmp2;
-    blst_p2_affine tmp2_5;
-
-    //blst_p1s_to_affine(blst_p1_affine *dst, const blst_p1 *const *points, size_t npoints)
+    // Compute Jacobian powers
     for (size_t i = 0; i <= degree; i++) {
-        // G1: g1^(s^i)
-        blst_p1_mult(&tmp1, &g1, pow_s.b, BIT_COUNT);
-        g1_powers_jacob[i] = tmp1;
-
-        blst_p1_to_affine(&tmp1_5, &tmp1);
-        g1_powers_aff[i] = tmp1_5;
-
-        // G2: g2^(s^i)
-        blst_p2_mult(&tmp2, &g2, pow_s.b, BIT_COUNT);
-        g2_powers_jacob[i] = tmp2;
-
-        blst_p2_to_affine(&tmp2_5, &tmp2);
-        g2_powers_aff[i] = tmp2_5;
-
-        // pow_s *= s  (next power)
+        blst_p1_mult(&g1_powers_jacob[i], &g1, pow_s.b, BIT_COUNT);
+        blst_p2_mult(&g2_powers_jacob[i], &g2, pow_s.b, BIT_COUNT);
         scalar_mul_inplace(pow_s, s);
+    }
+
+    // Convert all to affine in a separate loop
+    for (size_t i = 0; i <= degree; i++) {
+        blst_p1_to_affine(&g1_powers_aff[i], &g1_powers_jacob[i]);
+        blst_p2_to_affine(&g2_powers_aff[i], &g2_powers_jacob[i]);
     }
 }

@@ -1,6 +1,6 @@
 #include <cstring>
 #include <blst.h>
-#include "pnt_sclr.h"
+#include "../src/pnt_sclr.h"
 
 // Negate scalar
 inline blst_scalar scalar_neg(const blst_scalar& a) {
