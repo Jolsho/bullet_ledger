@@ -19,8 +19,8 @@ key_pair gen_key_pair(
 );
 
 bool verify_sig(
-    const blst_p1* PK,
-    blst_p2* signature, 
+    const blst_p1 &PK,
+    blst_p2 &signature, 
     const byte* msg,
     size_t msg_len,
     const byte* tag,

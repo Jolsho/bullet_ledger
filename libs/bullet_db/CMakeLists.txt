@@ -11,18 +11,23 @@ add_library(bullet_db STATIC)
 target_sources(bullet_db
     PRIVATE
         src/bullet_db.cpp
-        src/pnt_sclr.cpp
-        src/key_sig.cpp
-        src/kzg.cpp
-        src/pippen.cpp
-        src/path.cpp
-
         src/bullet_db.h
-        src/pnt_sclr.h
+
+        src/key_sig.cpp
         src/key_sig.h
+
         src/kzg.h
-        src/pippen.h
-        src/path.h
+        src/kzg_single.cpp
+        src/kzg_multi.cpp
+
+        src/path.cpp
+        src/pippen.cpp
+
+        src/pnt_sclr.cpp
+        src/pnt_sclr.h
+
+        src/polynomials.cpp
+        src/srs.cpp
 
         bindings/extern.cpp
 

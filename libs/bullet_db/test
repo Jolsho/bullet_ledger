@@ -6,7 +6,7 @@
 set -e
 
 # Check for argument
-if [ $# -ne 1 ]; then
+if [ $# -lt 1 ]; then
     echo "Usage: $0 <file.cpp>"
     exit 1
 fi
@@ -34,4 +34,8 @@ g++ -std=c++20 -Wall -Wextra -O2 "$src_path" -o "$build_path/$base" \
 # Run
 echo "Running $build_path/$base"
 echo "=================================="
-"$build_path/$base"
+if [ -n "$2" ]; then
+    "$build_path/$base" -"$2"
+else
+    "$build_path/$base"
+fi

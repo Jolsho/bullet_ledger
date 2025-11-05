@@ -8,6 +8,7 @@
 #include <vector>
 #include "blst.h"
 #include "key_sig.h"
+#include "pnt_sclr.h"
 
 std::tuple<const byte*, size_t> str_to_bytes(const char* str) {
     const byte* bytes = reinterpret_cast<const byte*>(str);
@@ -35,20 +36,15 @@ key_pair gen_key_pair(const char* tag, bytes32 &seed) {
 }
 
 bool verify_sig(
-    const blst_p1* PK,
-    blst_p2* signature, 
+    const blst_p1 &PK,
+    blst_p2 &signature, 
     const byte* msg,
     size_t msg_len,
     const byte* tag,
     size_t tag_len
 ) {
-    blst_p2_affine sig_affine;
-    blst_p2_to_affine(&sig_affine, signature);
-    if (!blst_p2_affine_in_g2(&sig_affine)) {
-    }
-
-    blst_p1_affine pk_affine;
-    blst_p1_to_affine(&pk_affine, PK);
+    blst_p2_affine sig_affine = p2_to_affine(signature);
+    blst_p1_affine pk_affine = p1_to_affine(PK);
 
     blst_fp12 final;
     blst_aggregated_in_g2(&final, &sig_affine);
@@ -78,8 +74,7 @@ bool verify_aggregate_signature(
     if (pks.size() < 2) return false;
 
     // Convert agg_sig to affine
-    blst_p2_affine sig_aff;
-    blst_p2_to_affine(&sig_aff, &agg_sig);
+    blst_p2_affine sig_aff = p2_to_affine(agg_sig);
 
     // then to p12
     blst_fp12 gtsig;
@@ -90,9 +85,8 @@ bool verify_aggregate_signature(
     blst_pairing_init(ctx, true, tag, tag_len);
 
     // Convert agg_pk to affine
-    blst_p1_affine pk_aff;
     for (size_t i = 0; i < pks.size(); i++) {
-        blst_p1_to_affine(&pk_aff, &pks[i]);
+        blst_p1_affine pk_aff = p1_to_affine(pks[i]);
         blst_pairing_aggregate_pk_in_g1(ctx, &pk_aff, NULL, msg, msg_len);
     }
 

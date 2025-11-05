@@ -22,7 +22,7 @@ void test_single_key_sig() {
     blst_sign_pk_in_g1(&raw_sig, &hash, &keys.sk);
 
     assert(verify_sig(
-        &keys.pk, &raw_sig, 
+        keys.pk, raw_sig, 
         msg, msg_len,
         dst, dst_len
     ));

@@ -2,10 +2,8 @@
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
-#include <vector>
 #include <blst.h>
-#include "pippen.h"
-#include "path.h"
+#include "kzg.h"
 
 // =====================================================
 // ============= CONSTRUCT / DESTRUCT ==================
@@ -88,13 +86,9 @@ blst_p1_affine PippMan::commit(const scalar_vec& coeffs) {
     blst_p1s_mult_pippenger(&C, 
         g1_powers_aff_ptrs.data(), 
         coeffs.size(), 
-        scalar_ptrs.data(), BIT_COUNT, 
+        scalar_ptrs.data(), 256, 
         scratch_space);
-
-    blst_p1_affine C_aff;
-    blst_p1_to_affine(&C_aff, &C);
-
-    return C_aff;
+    return p1_to_affine(C);
 }
 
 void PippMan::mult_p1s(
@@ -110,17 +104,16 @@ void PippMan::mult_p1s(
         point_ptrs.data(), 
         points.size(), 
         scalar_ptrs.data(), 
-        BIT_COUNT, 
+        256, 
         scratch_space);
 }
 
 void PippMan::mult_fixed_base(
     blst_p1 &agg,
     const scalar_vec& scalars,
-    const blst_p1* base
+    const blst_p1 &base
 ) {
-    blst_p1_affine base_aff;
-    blst_p1_to_affine(&base_aff, base);
+    blst_p1_affine base_aff = p1_to_affine(base);
     const blst_p1_affine* point_arr[] = { &base_aff };
 
     new_scratch_space(1);
@@ -128,54 +121,6 @@ void PippMan::mult_fixed_base(
     blst_p1s_mult_pippenger(&agg, 
         point_arr, 1, 
         scalar_ptrs.data(), 
-        BIT_COUNT, 
+        256, 
         scratch_space);
-}
-
-std::tuple<blst_p1_affine, blst_p1_affine> PippMan::path_commit_n_proof(
-    const blst_scalar seed,                 // initial challenge
-    const vector<blst_p1_affine> proofs,    // Pi_i
-    vector<blst_p1_affine> commits,         // C_i
-    const vector<blst_scalar> zs,           // evaluation points
-    vector<blst_scalar> values              // v_i
-) {
-    assert(proofs.size() == commits.size());
-    assert(proofs.size() == zs.size());
-    assert(proofs.size() == values.size());
-
-    vector<blst_scalar> alphas(proofs.size());
-    blst_scalar prev = seed;
-    for (size_t i = 0; i < proofs.size(); ++i) {
-
-        compute_challenge_inplace(prev, values[i], zs[i]);
-        alphas[i] = prev;
-
-        // v_i *= alpha
-        scalar_mul_inplace(values[i], alphas[i]);
-    }
-
-    blst_p1 C_agg = new_p1();
-    blst_p1 V_agg = new_p1();
-
-    // C_part =  sum(α_i * C_i)
-    mult_p1s(C_agg, alphas, commits);
-
-    // V_part = sum(α_i * v_i) * g1
-    // sincle values is now [(α_i * v_i) ... ]
-    mult_fixed_base(V_agg, values, blst_p1_generator());
-
-    // C_part += -(V_part)
-    blst_p1_cneg(&V_agg, true);
-    blst_p1_add_or_double(&C_agg, &C_agg, &V_agg);
-
-    // aggregate( alpha * Pi_i )
-    blst_p1 P_agg = new_p1();
-    mult_p1s(P_agg, alphas, proofs);
-
-    // convert aggregate projectives to affine
-    blst_p1_affine Pi_aff, C_aff;
-    blst_p1_to_affine(&Pi_aff, &P_agg);
-    blst_p1_to_affine(&C_aff, &C_agg);
-
-    return std::make_tuple(C_aff, Pi_aff);
 }
