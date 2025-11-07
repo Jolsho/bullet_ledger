@@ -22,7 +22,8 @@ blst_scalar eval_poly(
 // ================== COMMIT POLYNOMIAL ==================
 // =======================================================
 // commits to f(x) via evaluating f(r)
-blst_p1_affine commit_g1(
+
+blst_p1 commit_g1_projective(
     const scalar_vec& coeffs, 
     const SRS& srs
 ) {
@@ -32,6 +33,14 @@ blst_p1_affine commit_g1(
         blst_p1_mult(&tmp, &srs.g1_powers_jacob[i], coeffs[i].b, BIT_COUNT);
         blst_p1_add_or_double(&C, &C, &tmp);
     }
+    return C;
+}
+
+blst_p1_affine commit_g1(
+    const scalar_vec& coeffs, 
+    const SRS& srs
+) {
+    blst_p1 C = commit_g1_projective(coeffs, srs);
     return p1_to_affine(C);
 }
 

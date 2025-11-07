@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstddef>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <blst.h>
@@ -20,6 +21,7 @@ PippMan::PippMan(SRS& srs) {
     for(size_t i = 0; i < n; i++) {
         g1_powers_aff_ptrs[i] = &srs.g1_powers_aff[i];
     }
+    scratch_space = nullptr;
 }
 
 PippMan::~PippMan() {
@@ -80,9 +82,11 @@ void PippMan::clear_scalars() {
 // ==============================================
 
 blst_p1_affine PippMan::commit(const scalar_vec& coeffs) {
+
     fill_scalars(coeffs);
     new_scratch_space(coeffs.size());
-    blst_p1 C;
+    blst_p1 C = new_p1();
+
     blst_p1s_mult_pippenger(&C, 
         g1_powers_aff_ptrs.data(), 
         coeffs.size(), 

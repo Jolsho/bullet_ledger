@@ -1,12 +1,9 @@
-#include <blst.h>
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <vector>
-#include "../src/key_sig.h"
-#include "../src/kzg.h"
+#include "utils.h"
 
 void test_single_key_sig() {
     bytes32 seed = gen_rand_32();
@@ -57,15 +54,14 @@ void test_many_key_sig() {
     printf("\n");
 }
 
-int main() {
+void main_key_sig() {
     printf("TESTING ONE KEY & SIGNATURE \n");
-    printf("- - - - - - - - - - - - - - - - - \n");
     test_single_key_sig();
-    printf("==================================\n");
+
+    printf("\n");
 
     printf("TESTING MANY KEYS & SIGNATURES \n");
-    printf("- - - - - - - - - - - - - - - - - \n");
     test_many_key_sig();
-    printf("==================================\n");
 
+    printf("=====================================\n");
 }

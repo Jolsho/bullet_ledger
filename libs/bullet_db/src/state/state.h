@@ -1,4 +1,4 @@
-// bullet_db.h
+#pragma once
 #include <cstdint>
 #include <cstdio>
 #include <lmdb.h>

@@ -5,10 +5,8 @@
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
-#include <vector>
 #include "blst.h"
-#include "key_sig.h"
-#include "pnt_sclr.h"
+#include "utils.h"
 
 std::tuple<const byte*, size_t> str_to_bytes(const char* str) {
     const byte* bytes = reinterpret_cast<const byte*>(str);

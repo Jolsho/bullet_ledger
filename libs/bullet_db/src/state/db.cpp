@@ -1,12 +1,10 @@
-// bullet_db.cpp
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <lmdb.h>
 #include <cstring>
 #include <cstdlib>
-#include <vector>
-#include "bullet_db.h"
+#include "state.h"
 
 BulletDB::BulletDB(const char* path, size_t map_size) {
     mdb_env_create(&env_);

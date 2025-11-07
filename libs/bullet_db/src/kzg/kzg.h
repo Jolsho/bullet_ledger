@@ -1,7 +1,7 @@
-#include "pnt_sclr.h"
+#pragma once
+#include "../utils/utils.h"
 #include <vector>
 
-using scalar_vec = std::vector<blst_scalar>;
 using std::vector;
 
 size_t const BIT_COUNT = 256;
@@ -25,69 +25,6 @@ public:
     SRS(size_t degree, const blst_scalar &s);
     size_t max_degree();
 };
-
-// =======================================
-// ============= SINGLE POINT ============
-// =======================================
-
-
-// Y = f(z)
-blst_scalar eval_poly(
-    const scalar_vec& coeffs,
-    const blst_scalar& z);
-
-// C_f(r)
-blst_p1_affine commit_g1(
-    const scalar_vec& coeffs, 
-    const SRS& srs);
-
-blst_p2_affine commit_g2(
-    const scalar_vec& coeffs, 
-    const SRS& srs);
-
-// Q(r) = (f(r) - f(z)) / (r - z)
-scalar_vec derive_q(
-    const scalar_vec& coeffs, 
-    const blst_scalar& z);
-
-// e( C-gY, g2 ) == e( Pi, g2(r-z) )
-bool verify_proof(
-    const blst_p1_affine& C,
-    const blst_scalar& Y,
-    const blst_scalar& Z,
-    const blst_p1_affine& Pi,
-    const SRS& S);
-
-
-// =======================================
-// ============= POLYNOMIALS ============
-// =======================================
-
-void poly_normalize(scalar_vec &p);
-scalar_vec poly_add(const scalar_vec &a, const scalar_vec &b);
-scalar_vec poly_sub(const scalar_vec &a, const scalar_vec &b);
-scalar_vec poly_scale(const scalar_vec &a, const blst_scalar &s);
-scalar_vec poly_mul(const scalar_vec &a, const scalar_vec &b);
-void poly_divmod(const scalar_vec &A, const scalar_vec &B, scalar_vec &Q, scalar_vec &R);
-
-// =======================================
-// ============= MULTI POINT ============
-// =======================================
-
-bool verify_multi_proof(
-    blst_p1_affine &C_aff,
-    scalar_vec &ys,
-    scalar_vec &zs,
-    blst_p1_affine &Pi,
-    SRS &S
-);
-
-scalar_vec derive_q_multi(
-    const scalar_vec &Fx, 
-    const scalar_vec &zs, const 
-    scalar_vec &ys, 
-    const SRS &srs
-);
 
 // =======================================
 // ============== PIP SHIT ===============
@@ -125,3 +62,89 @@ private:
     size_t current_scratch_size();
     void free_scratch_space();
 };
+
+// =======================================
+// ============= SINGLE POINT ============
+// =======================================
+
+
+// Y = f(z)
+blst_scalar eval_poly(
+    const scalar_vec& coeffs,
+    const blst_scalar& z);
+
+// C_f(r)
+blst_p1 commit_g1_projective(
+    const scalar_vec& coeffs, 
+    const SRS& srs
+);
+blst_p1_affine commit_g1(
+    const scalar_vec& coeffs, 
+    const SRS& srs);
+
+blst_p2_affine commit_g2(
+    const scalar_vec& coeffs, 
+    const SRS& srs);
+
+// Q(r) = (f(r) - f(z)) / (r - z)
+scalar_vec derive_q(
+    const scalar_vec& coeffs, 
+    const blst_scalar& z);
+
+// e( C-gY, g2 ) == e( Pi, g2(r-z) )
+bool verify_proof(
+    const blst_p1_affine& C,
+    const blst_scalar& Y,
+    const blst_scalar& Z,
+    const blst_p1_affine& Pi,
+    const SRS& S);
+
+
+// =======================================
+// ============= POLYNOMIALS ============
+// =======================================
+
+scalar_vec poly_add(const scalar_vec &a, const scalar_vec &b);
+scalar_vec poly_sub(const scalar_vec &a, const scalar_vec &b);
+scalar_vec poly_scale(const scalar_vec &a, const blst_scalar &s);
+scalar_vec poly_mul(const scalar_vec &a, const scalar_vec &b);
+void poly_divmod(const scalar_vec &A, const scalar_vec &B, scalar_vec &Q, scalar_vec &R);
+void poly_normalize(scalar_vec &p);
+
+// =======================================
+// ============= MULTI POINT ============
+// =======================================
+
+bool verify_multi_proof(
+    blst_p1_affine &C_aff,
+    scalar_vec &ys,
+    scalar_vec &zs,
+    blst_p1_affine &Pi,
+    SRS &S
+);
+
+scalar_vec derive_q_multi(
+    const scalar_vec &Fx, 
+    const scalar_vec &zs, const 
+    scalar_vec &ys, 
+    const SRS &srs
+);
+
+// =======================================
+// ============= MULTI FUNC ==============
+// =======================================
+
+scalar_vec derive_aggregate_polynomial(
+    vector<scalar_vec> &Fxs,
+    vector<blst_p1> &Cs,
+    scalar_vec &Ys,
+    blst_scalar &Z
+);
+
+bool verify_multi_func(
+    vector<blst_p1> &Cs,
+    scalar_vec &Ys,
+    blst_scalar &Z,
+    blst_p1_affine &Pi,
+    SRS &S
+);

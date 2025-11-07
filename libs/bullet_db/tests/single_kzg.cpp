@@ -1,22 +1,10 @@
 #include <blst.h>
 #include <cassert>
-#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
-#include "../src/key_sig.h"
-#include "../src/kzg.h"
-
-scalar_vec random_poly(size_t degree) {
-    // GENERATE POLYNOMIAL
-    scalar_vec Fx;
-    for (uint64_t i = 1; i <= degree; i++) {
-        blst_scalar s = rand_scalar();
-        Fx.push_back(s);
-    }
-    return Fx;
-}
+#include "kzg.h"
 
 void test_commit_and_verify_pip(
     const SRS& S, 
@@ -88,39 +76,27 @@ void test_commit_and_verify_reg(
     printf("TOTAL BYTE_COUNT: %d\n", total_size);
 }
 
-int main(int argc, char* argv[]) {
-
-    bool tests[2] {true, true};
-    for (int i = 1; i < argc; ++i) {
-        std::string arg = argv[i];
-        if (arg == "-single") {
-            tests[1] = false;
-        } else if (arg == "-agg") {
-            tests[0] = false;
-        }
-    }
-
-
-    if (tests[0]) {
-        scalar_vec Fx = random_poly(50);
-
-        // GENERATE SRS
+void main_single() {
+    scalar_vec Fx;
+    for (uint64_t i = 1; i <= 50; i++) {
         blst_scalar s = rand_scalar();
-        SRS S(Fx.size(), s);
-        blst_scalar Z = new_scalar(2);
-
-        printf("TESTING KZG DEFAULT \n");
-        printf("- - - - - - - - - - - - - - - - - \n");
-        test_commit_and_verify_reg(S, Fx, Z);
-        printf("==================================\n");
-
-        // PIPPEN::
-        PippMan pip(S);
-        printf("TESTING KZG PIP_OPTIMIZATION \n");
-        printf("- - - - - - - - - - - - - - - - - \n");
-        test_commit_and_verify_pip(S, pip, Fx, Z);
-        printf("==================================\n");
+        Fx.push_back(s);
     }
+
+    // GENERATE SRS
+    blst_scalar s = rand_scalar();
+    SRS S(Fx.size(), s);
+    blst_scalar Z = new_scalar(2);
+
+    printf("TESTING KZG DEFAULT \n");
+    test_commit_and_verify_reg(S, Fx, Z);
+
+    printf("\n");
+
+    // PIPPEN::
+    PippMan pip(S);
+    printf("TESTING KZG PIP_OPTIMIZATION \n");
+    test_commit_and_verify_pip(S, pip, Fx, Z);
+
+    printf("=====================================\n");
 }
-
-

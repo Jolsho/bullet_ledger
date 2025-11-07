@@ -1,4 +1,7 @@
-cmake_minimum_required(VERSION 3.28)
+cmake_minimum_required(VERSION 3.9)
+include(cmake/funcs.cmake)
+include(FetchContent)
+
 project(bullet_lmdb)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -6,38 +9,86 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Build static library
 add_library(bullet_db STATIC)
+
+prefix_list(KZG "src/kzg/"
+    multi
+    pippen
+    polynomial
+    single
+    srs
+)
+
+prefix_list(STATE "src/state/"
+    db
+    path
+)
+
+prefix_list(UTILS "src/utils/" 
+    pnt_sclr
+    key_sig
+)
+
+prefix_list(BINDINGS "bindings/" 
+    extern
+)
+
+set(HEADERS
+    ${PROJECT_SOURCE_DIR}/src/kzg/kzg.h
+    ${PROJECT_SOURCE_DIR}/src/state/state.h
+    ${PROJECT_SOURCE_DIR}/src/utils/utils.h
+    ${PROJECT_SOURCE_DIR}/bindings/extern.h
+)
+
+
 target_sources(bullet_db
     PRIVATE
-        src/bullet_db.cpp
-        src/bullet_db.h
-
-        src/key_sig.cpp
-        src/key_sig.h
-
-        src/kzg.h
-        src/kzg_single.cpp
-        src/kzg_multi.cpp
-
-        src/path.cpp
-        src/pippen.cpp
-
-        src/pnt_sclr.cpp
-        src/pnt_sclr.h
-
-        src/polynomials.cpp
-        src/srs.cpp
-
-        bindings/extern.cpp
-
+        ${UTILS}
+        ${STATE}
+        ${KZG}
+        ${BINDINGS}
     PUBLIC
-        bindings/extern.h
+        ${HEADERS}
 )
-target_include_directories(bullet_db PUBLIC deps/blst/bindings)
-target_link_libraries(bullet_db PUBLIC deps/blst/libblst.a)
 
 
-# Optionally, link external libraries if needed (e.g., LMDB)
-find_library(LMDB_LIB lmdb)
-target_link_libraries(bullet_db PUBLIC ${LMDB_LIB})
+
+####################################################
+#                   BLST
+####################################################
+set(BLST_SOURCE ${PROJECT_SOURCE_DIR}/deps/blst)
+set(BLST_INCLUDE ${BLST_SOURCE}/bindings)
+target_include_directories(bullet_db PUBLIC ${BLST_INCLUDE})
+target_link_libraries(bullet_db PUBLIC ${BLST_SOURCE}/libblst.a)
+
+
+####################################################
+#                   BLAKE 3
+####################################################
+set(BLAKE3_SOURCE ${PROJECT_SOURCE_DIR}/deps/blake3)
+set(BLAKE3_INCLUDE ${BLAKE3_SOURCE}/c)
+target_include_directories(bullet_db PUBLIC ${BLAKE3_INCLUDE})
+target_link_libraries(bullet_db PUBLIC ${BLAKE3_SOURCE}/libblake3.a)
+
+
+####################################################
+#                   LMDB
+####################################################
+find_path(LMDB_INCLUDE_DIR lmdb.h)
+find_library(LMDB_LIBRARY NAMES lmdb)
+
+if(NOT LMDB_INCLUDE_DIR OR NOT LMDB_LIBRARY)
+    message(FATAL_ERROR "LMDB not found on the system")
+endif()
+
+target_include_directories(bullet_db PRIVATE ${LMDB_INCLUDE_DIR})
+target_link_libraries(bullet_db PRIVATE ${LMDB_LIBRARY})
+
+
+####################################################
+#                   TESTING
+####################################################
+option(BUILD_TESTS "Build test executables" ON)
+if(BUILD_TESTS)
+    add_subdirectory(tests)
+endif()

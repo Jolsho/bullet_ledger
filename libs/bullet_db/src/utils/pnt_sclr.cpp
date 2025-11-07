@@ -4,10 +4,9 @@
 #include <array>
 #include <iomanip>
 
-#include <blst.h>
+#include "blst.h"
 #include "blst_aux.h"
-#include "key_sig.h"
-#include "pnt_sclr.h"
+#include "utils.h"
 
 
 // =======================================

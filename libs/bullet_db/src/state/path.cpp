@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include "blst.h"
-#include "kzg.h"
+#include "../kzg/kzg.h"
 
 //================================================
 //============= UPDATE COMMITS ===================
