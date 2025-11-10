@@ -6,26 +6,6 @@
 #include "kzg.h"
 #include "utils.h"
 
-/*
- *      
- *  Single, multi_point, and multi_function proofs all have their own utility...
- *
- *  Single can be usied for individual transactions. like basic ones.
- *  Then we can do even more complex account proofs with multipoint.
- *
- *
- *  And then with multi function you can do complex accounts in aggregate...
- *      Multi point per function or not...
- *  But yea I think there are utilities for all of these proofs.
- *  
- *  its just a matter of actually doing the thing.
- *
- *
- *  NEXT IS MULTI-FUNCTION single point...
- *      this is like checking the same attribute of a dataset
- *      like a single column
- *
- */
 
 void test_multi_point() {
     // Example (over placeholder Fr): f(X) = 3 + 2X + X^2  (coeffs [3,2,1])

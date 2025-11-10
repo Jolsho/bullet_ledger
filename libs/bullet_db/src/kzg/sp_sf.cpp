@@ -2,9 +2,14 @@
 #include <cassert>
 #include "kzg.h"
 
-// =======================================================
+// ======================================================
+// ========== SINGLE POINT SINGLE FUNCTION ==============
+// ======================================================
+
+
+
 // ================== EVAL POLYNOMIAL ====================
-// =======================================================
+
 blst_scalar eval_poly(
     const scalar_vec& Fx,
     const blst_scalar& z
@@ -18,11 +23,9 @@ blst_scalar eval_poly(
     return Y;
 }
 
-// =======================================================
 // ================== COMMIT POLYNOMIAL ==================
-// =======================================================
-// commits to f(x) via evaluating f(r)
 
+// commits to f(x) via evaluating f(r)
 blst_p1 commit_g1_projective(
     const scalar_vec& coeffs, 
     const SRS& srs
@@ -30,7 +33,7 @@ blst_p1 commit_g1_projective(
     blst_p1 C = new_p1();
     blst_p1 tmp;
     for (size_t i = 0; i < coeffs.size(); i++) {
-        blst_p1_mult(&tmp, &srs.g1_powers_jacob[i], coeffs[i].b, BIT_COUNT);
+        p1_mult(tmp, srs.g1_powers_jacob[i], coeffs[i]);
         blst_p1_add_or_double(&C, &C, &tmp);
     }
     return C;
@@ -51,16 +54,15 @@ blst_p2_affine commit_g2(
     blst_p2 C = new_p2();
     blst_p2 tmp;
     for (size_t i = 0; i < coeffs.size(); i++) {
-        blst_p2_mult(&tmp, &srs.g2_powers_jacob[i], coeffs[i].b, BIT_COUNT);
+        p2_mult(tmp, srs.g2_powers_jacob[i], coeffs[i]);
         blst_p2_add_or_double(&C, &C, &tmp);
     }
     return p2_to_affine(C);
 }
 
 
-// =======================================================
 // ============= OPEN SINGLE (synthetic) =================
-// =======================================================
+
 // Q(x) = (f(x) - f(z)) / (x - z)
 scalar_vec derive_q(
     const scalar_vec& coeffs, 
@@ -90,9 +92,8 @@ scalar_vec derive_q(
 }
 
 
-// =======================================================
 // ============= VERIFY SINGLE POINT ====================
-// =======================================================
+
 bool verify_proof(
     const blst_p1_affine& C,
     const blst_scalar& Y,
@@ -103,7 +104,7 @@ bool verify_proof(
     // Compute C - gY
     blst_p1 C_Y;
     // 0 -> gY -> -gY
-    blst_p1_mult(&C_Y, &S.g, Y.b, BIT_COUNT);
+    p1_mult(C_Y, S.g, Y);
     blst_p1_cneg(&C_Y, true);
     // (- gY) + C == C - gY
     blst_p1_add_or_double_affine(&C_Y, &C_Y, &C);
@@ -115,7 +116,7 @@ bool verify_proof(
     // Compute g2(r - z)
     blst_p2 R_Z;
     // z -> g2(z) -> g2(-z)
-    blst_p2_mult(&R_Z, &S.h, Z.b, BIT_COUNT);
+    p2_mult(R_Z, S.h, Z);
     blst_p2_cneg(&R_Z, true);
     // g2(-z) + g2(r) == g2(r - z)
     blst_p2_add_or_double(&R_Z, &R_Z, &S.g2_powers_jacob[1]);

@@ -12,10 +12,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(bullet_db STATIC)
 
 prefix_list(KZG "src/kzg/"
-    multi
+    mp_mf
+    mp_sf
+    sp_mf
+    sp_sf
     pippen
     polynomial
-    single
     srs
 )
 
@@ -25,7 +27,8 @@ prefix_list(STATE "src/state/"
 )
 
 prefix_list(UTILS "src/utils/" 
-    pnt_sclr
+    points
+    scalar
     key_sig
 )
 

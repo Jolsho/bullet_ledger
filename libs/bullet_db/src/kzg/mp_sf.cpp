@@ -1,14 +1,16 @@
-#include <array>
 #include <cstdio>
 #include <stdexcept>
 #include <cassert>
 #include "blst.h"
 #include "kzg.h"
-#include "blake3.h"
 
-// =======================================================
+// ======================================================
+// ========== MULTI_POINT SINGLE FUNCTION ===============
+// ======================================================
+
+
+
 // ============= DERIVE VANISHING POLYNOMIAL =============
-// =======================================================
 
 // derive_Z: given evaluation points z[0..n-1], return coefficients of Z(X) = prod_j (X - z_j)
 scalar_vec derive_Z(const scalar_vec &zs) {
@@ -24,9 +26,7 @@ scalar_vec derive_Z(const scalar_vec &zs) {
 }
 
 
-// =======================================================
 // ======== LAGRANGE INTERPOLATION POLYNOMIAL ============
-// =======================================================
 
 // derive_I: Lagrange interpolation that returns polynomial I(X) of degree < n
 // zs: x points, ys: corresponding y values (same length)
@@ -68,9 +68,7 @@ scalar_vec derive_I(const scalar_vec &zs, const scalar_vec &ys) {
 }
 
 
-// ======================================================
 // =============== QUOTIENT POLYNOMIAL ==================
-// ======================================================
 
 // Returns coefficients of Q(X)
 scalar_vec derive_q_multi(
@@ -110,9 +108,7 @@ scalar_vec derive_q_multi(
 }
 
 
-// ======================================================
 // ========== VERIFY MULTI_POINT_PROOF ==================
-// ======================================================
 
 // e( C - g1(I), g2 )  ==  e( Pi, g2(Z) )
 bool verify_multi_proof(
@@ -159,141 +155,3 @@ bool verify_multi_proof(
 
 
 
-
-// ======================================================
-// ========== MULTI_FUNCTION SINGLE POINT ===============
-// ======================================================
-
-
-/*  C_i =  g( Fx_i )
- *  g(x) = sum ( a_i | Fx_i )
- *  a_i = Hash( C_i, y_i, z )
- *  g(z) = sum( a_i * y_i )
- *
- *  PROVER::
- *      1) a_i = Hash( C_i ..., y_i ..., z )
- *      2) g(x) = sum ( a_i * Fx_i )
- *      3) G = commit(g(x))
- *      4) Q(x) = (g(x) - g(z)) / (x - z)
- *      5) Pi = commit(Q(x))
- *      -> (G, Pi, C_i ..., y_i ..., z)
- *
- *  VERIFIER:: (G, Pi, C_i..., y_i ..., z)
- *      1) a_i = Hash( C_i ..., y_i ..., z )
- *      2) G' = sum( a_i * C_i ) == G
- *      3) g(z) = sum( a_i * y_i )
- *      4) e( G' - g1(g(z)), g2) == e(Pi, g2(X - z))
- *      -> bool is_valid
-*/
-
-using std::array;
-
-vector<blst_scalar> fiat_shamir(
-    const vector<blst_p1> &Cs,
-    const vector<blst_scalar> &Ys,
-    const blst_scalar &z
-) {
-    blake3_hasher h;
-    blake3_hasher_init(&h);
-
-    // Domain separation
-    blake3_hasher_update(&h, "KZG-multi-open", 15);
-
-    // Hash commitments (compressed)
-    array<uint8_t,48> buf;
-    for (auto &C : Cs) {
-        blst_p1_compress(buf.data(), &C);
-        blake3_hasher_update(&h, buf.data(), buf.size());
-    }
-
-    // Hash evaluation scalars
-    for (auto &y : Ys)
-        blake3_hasher_update(&h, y.b, 32);
-
-    // Hash z
-    blake3_hasher_update(&h, z.b, 32);
-
-    // Base transcript
-    array<uint8_t,32> base_digest;
-    blake3_hasher_finalize(&h, base_digest.data(), base_digest.size());
-
-    // Expand
-    vector<blst_scalar> alphas;
-    alphas.reserve(Cs.size());
-    for (size_t i = 0; i < Cs.size(); ++i) {
-        blake3_hasher h2;
-        blake3_hasher_init(&h2);
-        blake3_hasher_update(&h2, base_digest.data(), base_digest.size());
-        blake3_hasher_update(&h2, &i, sizeof(i));
-        array<uint8_t,32> d;
-        blake3_hasher_finalize(&h2, d.data(), d.size());
-        blst_scalar a;
-        blst_scalar_from_le_bytes(&a, d.data(), 32);
-        alphas.push_back(a);
-    }
-
-    return alphas;
-}
-
-
-scalar_vec derive_aggregate_polynomial(
-    vector<scalar_vec> &Fxs,
-    vector<blst_p1> &Cs,
-    scalar_vec &Ys,
-    blst_scalar &Z
-) {
-    auto alphas = fiat_shamir(Cs, Ys, Z);
-
-    scalar_vec g(Fxs[0].size());
-    for (size_t i = 0; i < Fxs.size(); i++) {
-        g = poly_add(g, poly_scale(Fxs[i], alphas[i]));
-    }
-    return g;
-}
-
-bool verify_multi_func(
-    vector<blst_p1> &Cs,
-    scalar_vec &Ys,
-    blst_scalar &Z,
-    blst_p1_affine &Pi,
-    SRS &S
-) {
-    auto alphas = fiat_shamir(Cs, Ys, Z);
-
-    blst_p1 G = new_p1();
-    for (size_t i = 0; i < Cs.size(); i++) {
-        blst_p1 scaled;
-        blst_p1_mult(&scaled, &Cs[i], alphas[i].b, BIT_COUNT);
-        blst_p1_add_or_double(&G, &G, &scaled);
-    }
-
-    blst_scalar Y = new_scalar();
-    for (size_t i = 0; i < Ys.size(); i++) {
-        scalar_add_inplace(Y, scalar_mul(Ys[i], alphas[i]));
-    }
-
-    blst_p1 G_Z = new_p1();
-    blst_p1_mult(&G_Z, &S.g, Y.b, BIT_COUNT);
-    blst_p1_cneg(&G_Z, true);
-
-    blst_p1_add_or_double(&G, &G, &G_Z);
-
-    blst_p1_affine G_aff = p1_to_affine(G);
-
-    blst_p2 X_minus_z = S.g2_powers_jacob[1];
-    blst_p2 tmp;
-    blst_p2_mult(&tmp, &S.h, Z.b, BIT_COUNT);
-    blst_p2_cneg(&tmp, true);                     // -z exponent
-    blst_p2_add_or_double(&X_minus_z, &X_minus_z, &tmp); // G2^{tau - z}
-    //
-    blst_p2_affine X_Z_aff = p2_to_affine(X_minus_z);
-
-
-    blst_fp12 lhs, rhs;
-    blst_miller_loop(&lhs,&S.g2_powers_aff[0], &G_aff);
-    blst_miller_loop(&rhs, &X_Z_aff, &Pi);
-    // Final exponentiation
-    blst_final_exp(&lhs, &lhs);
-    blst_final_exp(&rhs, &rhs);
-    return blst_fp12_is_equal(&lhs, &rhs);
-}

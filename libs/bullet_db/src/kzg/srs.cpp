@@ -23,8 +23,8 @@ SRS::SRS(size_t degree, const blst_scalar &s) {
 
     // Compute Jacobian powers
     for (size_t i = 0; i <= degree; i++) {
-        blst_p1_mult(&g1_powers_jacob[i], &g1, pow_s.b, BIT_COUNT);
-        blst_p2_mult(&g2_powers_jacob[i], &g2, pow_s.b, BIT_COUNT);
+        p1_mult(g1_powers_jacob[i], g1, pow_s);
+        p2_mult(g2_powers_jacob[i], g2, pow_s);
         scalar_mul_inplace(pow_s, s);
     }
 

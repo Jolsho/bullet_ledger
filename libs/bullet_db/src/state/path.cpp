@@ -2,7 +2,7 @@
 #include <cstdlib>
 #include <cstring>
 #include "blst.h"
-#include "../kzg/kzg.h"
+#include "../utils/utils.h"
 
 //================================================
 //============= UPDATE COMMITS ===================
@@ -36,7 +36,7 @@ blst_p1 update_leaf_parent(
 
     // delta * G1
     blst_p1 delta_commit;
-    blst_p1_mult(&delta_commit, blst_p1_generator(), delta.b, BIT_COUNT);
+    p1_mult(delta_commit, *blst_p1_generator(), delta);
 
     update_parent(C_parent, delta_commit);
 
@@ -52,6 +52,6 @@ void update_internal_parent(
     blst_scalar alpha
 ) {
     // scale delta
-    blst_p1_mult(&delta_in, &delta_in, alpha.b, BIT_COUNT);
+    p1_mult(delta_in, delta_in, alpha );
     update_parent(C_parent,  delta_in);
 }

@@ -8,7 +8,7 @@
 int main(int argc, char* argv[]) {
     printf("\noptions == {multi, single, key_sig, kzg}\n\n");
 
-    bool tests[] = {true, true, true};
+    bool tests[] = {true, true, true, true};
 
     if (argc > 1) {
         std::string a = argv[1];
@@ -39,6 +39,10 @@ int main(int argc, char* argv[]) {
     if (tests[1]) main_single();
 
     // MULTI_POINT
-    if (tests[2]) main_multi();
+    if (tests[2]) {
+        main_multi();
+        main_full();
+    }
+
 
 }

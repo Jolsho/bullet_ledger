@@ -4,8 +4,6 @@
 
 using std::vector;
 
-size_t const BIT_COUNT = 256;
-
 // =======================================
 // ============= SRS =====================
 // =======================================
@@ -25,6 +23,7 @@ public:
     SRS(size_t degree, const blst_scalar &s);
     size_t max_degree();
 };
+
 
 // =======================================
 // ============== PIP SHIT ===============
@@ -130,9 +129,24 @@ scalar_vec derive_q_multi(
     const SRS &srs
 );
 
+scalar_vec derive_I(
+    const scalar_vec &zs, 
+    const scalar_vec &ys
+);
+
+scalar_vec derive_Z(
+    const scalar_vec &zs
+);
+
 // =======================================
 // ============= MULTI FUNC ==============
 // =======================================
+
+scalar_vec fiat_shamir(
+    const vector<blst_p1> &Cs,
+    const vector<blst_scalar> &Ys,
+    const scalar_vec &Zs
+);
 
 scalar_vec derive_aggregate_polynomial(
     vector<scalar_vec> &Fxs,
@@ -147,4 +161,24 @@ bool verify_multi_func(
     blst_scalar &Z,
     blst_p1_affine &Pi,
     SRS &S
+);
+
+// ===================================================
+// ============= MULTI FUNC MULTI POINT ==============
+// ===================================================
+
+std::tuple<blst_p1, blst_p1_affine> multi_func_multi_point_prover(
+    const vector<scalar_vec> &funcs,
+    const vector<blst_p1> &Cs,
+    const scalar_vec &Zs,
+    const vector<scalar_vec> &Ys_mat,
+    const SRS &S
+);
+
+bool multi_func_multi_point_verify(
+    const vector<blst_p1> &Cs,
+    const scalar_vec &Zs,
+    const vector<scalar_vec> &Ys_mat,
+    const blst_p1_affine &Pi,
+    const SRS &S
 );
