@@ -21,6 +21,10 @@ prefix_list(KZG "src/kzg/"
     srs
 )
 
+prefix_list(BINDINGS "src/ipa" 
+    ipa
+)
+
 prefix_list(STATE "src/state/"
     db
     path
@@ -37,6 +41,7 @@ prefix_list(BINDINGS "bindings/"
 )
 
 set(HEADERS
+    ${PROJECT_SOURCE_DIR}/src/ipa/ipa.h
     ${PROJECT_SOURCE_DIR}/src/kzg/kzg.h
     ${PROJECT_SOURCE_DIR}/src/state/state.h
     ${PROJECT_SOURCE_DIR}/src/utils/utils.h

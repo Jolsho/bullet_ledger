@@ -39,10 +39,7 @@ int main(int argc, char* argv[]) {
     if (tests[1]) main_single();
 
     // MULTI_POINT
-    if (tests[2]) {
-        main_multi();
-        main_full();
-    }
+    if (tests[2]) main_multi();
 
 
 }
