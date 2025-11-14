@@ -211,7 +211,7 @@ impl BranchNode {
         return Some(self.derive_hash());
     }
 
-    pub fn get_last_child(&self) -> (u8, &Option<(Hash, NodeID)>) {
+    pub fn get_last_remaining_child(&self) -> (u8, &Option<(Hash, NodeID)>) {
         for (i, c) in self.children.iter().enumerate() {
             if c.is_some() {
                 return (i as u8, c)
@@ -246,7 +246,7 @@ impl BranchNode {
                         }
                         let parent_node = parent_node.unwrap();
 
-                        let (nib, child) = self.get_last_child();
+                        let (nib, child) = self.get_last_remaining_child();
                         let child_node = ledger.load_node(&child.unwrap().1).unwrap();
                         let mut path_to_parent = Vec::new();
 
@@ -254,7 +254,7 @@ impl BranchNode {
                             ledger.delete_node(self.get_id());
                             // extend parent by last child nibble
                             path_to_parent.push(nib);
-
+ 
                             if let Node::Extension(c) = child_node {
                                 let mut child_ext = c.borrow_mut();
                                 ledger.delete_node(child_ext.get_id());

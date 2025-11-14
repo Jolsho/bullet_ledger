@@ -346,8 +346,6 @@ impl ExtNode {
 
                     if let Some(new_path) = path_ext.take() {
                         new_path.into_iter().for_each(|nib| {
-                            let tmp = self.path.pop_back().unwrap();
-                            self.path.push_back(tmp);
                             self.path.push_back(nib)
                         });
                     }
