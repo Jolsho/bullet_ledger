@@ -6,40 +6,43 @@
 #include "tests.h"
 
 int main(int argc, char* argv[]) {
-    printf("\noptions == {multi, single, key_sig, kzg}\n\n");
-
-    bool tests[] = {true, true, true, true};
+    printf("\noptions == {multi, single, key_sig, kzg, state}\n\n");
+    printf("=====================================\n");
 
     if (argc > 1) {
         std::string a = argv[1];
-
         if (a == "multi") {
-            tests[0] = false;
-            tests[1] = false;
+            main_multi();
 
         } else if (a == "single") {
-            tests[0] = false;
-            tests[2] = false;
+            main_single();
 
         } else if (a == "key_sig") {
-            tests[1] = false;
-            tests[2] = false;
+            main_key_sig();
 
         } else if (a == "kzg") {
-            tests[0] = false;
+            main_multi();
+            main_single();
+
+        } else if (a == "state") {
+            main_state_trie();
         }
+        return 0;
     }
 
-    printf("=====================================\n");
 
     // KEY_N_SIG
-    if (tests[0]) main_key_sig();
+    main_key_sig();
 
     // SINGLE_POINT
-    if (tests[1]) main_single();
+    main_single();
 
     // MULTI_POINT
-    if (tests[2]) main_multi();
+    main_multi();
 
+    // STATE_TRIE
+    main_state_trie();
+
+    return 0;
 
 }

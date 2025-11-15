@@ -36,6 +36,8 @@ public:
 
     BulletDB(const char* path, size_t map_size);
     ~BulletDB();
+    void start_txn();
+    void end_txn(int rc = 0);
     int put(const void* key_data, size_t key_size, 
             const void* value_data, size_t value_size);
     int get(const void* key_data, size_t key_size, 

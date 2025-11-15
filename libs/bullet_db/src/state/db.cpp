@@ -33,6 +33,15 @@ BulletDB::~BulletDB() {
     mdb_env_close(env_);
 }
 
+void BulletDB::start_txn() { 
+    mdb_txn_begin(env_, nullptr, 0, &txn_); 
+}
+
+void BulletDB::end_txn(int rc) {
+    if (rc == 0) mdb_txn_commit(txn_);
+    else mdb_txn_abort(txn_);
+}
+
 int BulletDB::put(
     const void* key_data, size_t key_size, 
     const void* value_data, size_t value_size

@@ -1,7 +1,15 @@
 #include <bit>
 #include <cstdlib>
+#include <iostream>
 #include "blake3.h"
 #include "nodes.h"
+
+void print_hash(const byte* a, const size_t size, const char* tag) {
+    for (auto i = 0; i < size; i++) {
+        std::cout << static_cast<int>(*(a + i)) << " ";
+    }
+    printf("%s \n", tag);
+}
 
 uint64_array u64_to_array(uint64_t num) {
     return std::bit_cast<std::array<byte, 8>>(num);
@@ -19,7 +27,7 @@ bool is_zero(std::span<std::byte> s) {
     return true;
 }
 
-Hash derive_leaf_hash(ByteSlice &key, Hash &hash) {
+Hash derive_leaf_hash(const ByteSlice &key, const Hash &hash) {
     blake3_hasher hasher;
     blake3_hasher_init(&hasher);
     blake3_hasher_update(
@@ -54,5 +62,4 @@ Hash derive_value_hash(byte* value, size_t size) {
 
     return hash;
 }
-
 

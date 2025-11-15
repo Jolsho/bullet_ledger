@@ -2,8 +2,10 @@
 #include "nodes.h"
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <memory>
 #include <optional>
 #include <tuple>
@@ -11,27 +13,24 @@
 
 Branch::Branch(std::optional<NodeId> id, std::optional<ByteSlice*> buff) {
     if (!id.has_value()) { return; }
-    NodeId node_id = id.value();
+    id_ = id.value();
+
+    if (!buff.has_value()) { return; }
     ByteSlice* buffer = buff.value();
 
-    id_ = node_id;
-    uint64_t p = u64_from_array(node_id);
+    uint64_t p = u64_from_array(id_);
     for (size_t i = 0; i < static_cast<size_t>(ORDER + 1); i++) {
         size_t start = 32 * i;
-        size_t end = 32 * (i + 1);
 
+        auto current = buffer->subspan(start,32);
         if (i == 0) {
-            while (start < end) {
-                hash_[start] = (*buffer)[start];
-                start++;
-            }
+            std::ranges::copy(current, hash_.begin());
         } else {
-            auto current = buffer->subspan(start,end);
             if (!is_zero(current)) {
                 Hash hash;
                 std::ranges::copy(current, hash.begin());
 
-                uint64_t child_id = (p & ORDER) + (i - 1);
+                uint64_t child_id = (p * ORDER) + (i - 1);
                 children_[i - 1] = std::make_unique<Hash>(hash);
             } else {
                 children_[i-1] = std::make_unique<Hash>();
@@ -40,15 +39,11 @@ Branch::Branch(std::optional<NodeId> id, std::optional<ByteSlice*> buff) {
     }
 }
 
-Branch::~Branch() {}
-
-
 void Branch::insert_child(byte &nib, Hash &hash) {
     auto nib_num = static_cast<int>(nib);
     if (Hash* child_hash = children_[nib_num].get()) {
-        std::ranges::copy(hash, child_hash->begin());
+        *child_hash = hash;
     } else {
-        uint64_t self_id = u64_from_array(id_);
         Hash hash_copy(hash);
         children_[nib_num] = std::make_unique<Hash>(hash_copy);
         count_++;
@@ -67,9 +62,10 @@ tuple<byte, Hash, NodeId> Branch::get_last_remaining_child() {
     for (size_t i = 0; i < ORDER; i++) {
         if (Hash* child_hash = children_[i].get()) {
             uint64_t id = u64_from_array(id_) * ORDER + i;
+            Hash hash_copy(*child_hash);
             return std::make_tuple(
                 static_cast<byte>(i), 
-                *child_hash, 
+                hash_copy, 
                 u64_to_array(id)
             );
         }
@@ -81,41 +77,72 @@ NodeId* Branch::get_next_id(ByteSlice &nibs) {
     int num = static_cast<int>(nibs[0]);
     if (Hash* child_hash = children_[num].get()) {
         uint64_t id = u64_from_array(id_) * ORDER + num;
-        std::ranges::copy(tmp_id_, u64_to_array(id).begin());
+        tmp_id_ = u64_to_array(id);
         return &tmp_id_;
     } else {
         return nullptr;
     }
 }
+void Branch::change_id(const NodeId &new_id, Ledger &ledger) {
+    uint64_t num = u64_from_array(new_id);
 
-void Branch::change_id(NodeId &id, Ledger &ledger) {
-    uint64_t num = u64_from_array(id);
-    uint64_array raw_id(id_);
+    for (uint64_t i = 0; i < ORDER; i++) {
+        if (!children_[i]) continue;  // no child here, skip
 
-    for (uint64_t i = 0; i < count_; i++) {
-        if (Hash* child_hash = children_[i].get()) {
-            uint64_t child_id = u64_from_array(id_) * ORDER + i;
+        // Compute old and new IDs
+        uint64_t old_child_id = u64_from_array(id_) * ORDER + i;
+        uint64_t new_child_id = num * ORDER + i;
 
-            uint64_t should_be = num * ORDER + static_cast<uint64_t>(i);
-            if (should_be != child_id) {
+        if (old_child_id == new_child_id) continue;
 
-                // load/delete child_node from cache/db
-                uint64_array raw_child_id = u64_to_array(child_id);
-                optional<Node> n = ledger.delete_node(raw_child_id);
-                if (n.has_value()) {
-                    Node node = n.value();
+        // Prevent accidental deletion of the root
+        if (old_child_id == 1) continue;
 
-                    // change its children recursively
-                    uint64_array new_child_id = u64_to_array(should_be);
-                    n->change_id(new_child_id, ledger);
+        // Remove the child node from cache/db safely
+        optional<Node_ptr> node = ledger.delete_node(u64_to_array(old_child_id));
+        assert(node.has_value() == true);
 
-                    // re-cache updated child once its children have been updated
-                    ledger.cache_node(should_be, node);
-                }
-            }
-        }
+
+        // Recursively update children safely
+        node.value().get()->change_id(u64_to_array(new_child_id), ledger);
+
+        // Re-cache the node
+        ledger.cache_node(std::move(node.value()));
     }
+
+    // Update this branch's own ID after all children are safe
+    id_ = new_id;
 }
+
+
+// void Branch::change_id(const NodeId &id, Ledger &ledger) {
+//     uint64_t num = u64_from_array(id);
+//     uint64_array raw_id(id_);
+//
+//     for (uint64_t i = 0; i < ORDER; i++) {
+//         if (Hash* child_hash = children_[i].get()) {
+//             uint64_t child_id = u64_from_array(id_) * ORDER + i;
+//
+//             uint64_t should_be = num * ORDER + static_cast<uint64_t>(i);
+//             if (should_be != child_id) {
+//
+//                 // load/delete child_node from cache/db
+//                 uint64_array raw_child_id = u64_to_array(child_id);
+//                 optional<Node_ptr> n = ledger.delete_node(raw_child_id);
+//                 if (n.has_value()) {
+//                     Node_ptr node = std::move(n.value());
+//
+//                     // change its children recursively
+//                     uint64_array new_child_id = u64_to_array(should_be);
+//                     node->change_id(new_child_id, ledger);
+//
+//                     // re-cache updated child once its children have been updated
+//                     ledger.cache_node(std::move(node));
+//                 }
+//             }
+//         }
+//     }
+// }
 
 Hash Branch::derive_hash() {
     blake3_hasher hasher;
@@ -144,16 +171,16 @@ Hash Branch::derive_hash() {
         reinterpret_cast<uint8_t*>(hash.data()), 
         hash.size());
 
-    std::ranges::copy(hash, hash_.begin());
+    hash_ = hash;
     return hash;
 }
 
 std::vector<byte> Branch::to_bytes() {
-    std::vector<byte> buffer;
+    std::vector<byte> buffer(BRANCH_SIZE);
     buffer.reserve(BRANCH_SIZE);
 
-    buffer[0] = BRANCH;
-    std::ranges::copy(hash_, buffer.begin() + 1);
+    buffer.push_back(BRANCH);
+    buffer.insert(buffer.end(), hash_.begin(), hash_.end());
 
     Hash zero_hash{};
 
@@ -161,10 +188,9 @@ std::vector<byte> Branch::to_bytes() {
 
     for (int i = 0; i < ORDER; i++) {
         if (Hash* child_hash = children_[i].get()) {
-            std::ranges::copy(*child_hash, start);
-
+            buffer.insert(buffer.end(), child_hash->begin(), child_hash->end());
         } else {
-            std::ranges::copy(zero_hash, start);
+            buffer.insert(buffer.end(), zero_hash.begin(), zero_hash.end());
         }
         start += 32;
     }
@@ -184,14 +210,14 @@ optional<Hash> Branch::search(Ledger &ledger, ByteSlice &nibbles) {
 optional<Hash> Branch::virtual_put(
     Ledger &ledger, 
     ByteSlice &nibbles,
-    ByteSlice &key, 
-    Hash &val_hash
+    const ByteSlice &key, 
+    const Hash &val_hash
 ) {
     Hash new_hash{};
     if (NodeId* next_id = get_next_id(nibbles)) {
         if (Node* n = ledger.load_node(*next_id)) {
             ByteSlice remaining_nibbles = nibbles.subspan(1);
-            optional<Hash> res = n->put(ledger, remaining_nibbles, key, val_hash);
+            optional<Hash> res = n->virtual_put(ledger, remaining_nibbles, key, val_hash);
             if (res.has_value()) {
                 new_hash = res.value();
             } else {
@@ -223,8 +249,8 @@ optional<Hash> Branch::virtual_put(
 optional<Hash> Branch::put(
     Ledger &ledger, 
     ByteSlice &nibbles, 
-    ByteSlice &key, 
-    Hash &val_hash
+    const ByteSlice &key, 
+    const Hash &val_hash
 ) {
     if (NodeId* next_id = get_next_id(nibbles)) {
         if (Node* n = ledger.load_node(*next_id)) {
@@ -232,6 +258,8 @@ optional<Hash> Branch::put(
 
             optional<Hash> res = n->put(ledger, remaining_nibbles, key, val_hash);
             if (res.has_value()) insert_child(nibbles[0], res.value());
+        } else {
+            return std::nullopt;
         }
     } else {
         // leaf is child
@@ -244,7 +272,7 @@ optional<Hash> Branch::put(
         leaf->set_value_hash(val_hash);
 
         // derive hash and insert into branch
-        Hash new_hash = leaf->derive_hash(key);
+        Hash new_hash = leaf->derive_real_hash(key);
         insert_child(nibbles[0], new_hash);
     }
     return derive_hash();
@@ -281,13 +309,14 @@ optional<std::tuple<Hash, ByteSlice>> Branch::remove(
                     // load last child as node
                     Node* child_node = ledger.load_node(child_id);
 
+
                     // initialize path to pass to parent on return
                     std::vector<byte> path_to_parent;
 
 
                     if (parent_node->get_type() == EXT) {
                         // delete self
-                        optional<Node> self = ledger.delete_node(id_);
+                        optional<Node_ptr> self = ledger.delete_node(id_);
 
                         // extend parent path by last child nibble
                         path_to_parent.push_back(nib);
@@ -295,13 +324,14 @@ optional<std::tuple<Hash, ByteSlice>> Branch::remove(
 
                         if (child_node->get_type() == EXT) {
                             // delete child to obtain ownership
-                            Node child = ledger.delete_node(child_id).value();
+                            Node_ptr child = ledger.delete_node(child_id).value();
                             // cast to extension type
-                            Extension* child_node = (Extension*)&child;
+                            Extension* child_node = static_cast<Extension*>(child.get());
 
                             // move child path to path to parent
-                            for (auto b: *child_node->get_path()) {
-                                path_to_parent.push_back(b);
+                            auto path = *child_node->get_path();
+                            while (path.size() > 0) {
+                                path_to_parent.push_back(path.pop_front().value());
                             }
 
                             // get grand child info
@@ -309,49 +339,53 @@ optional<std::tuple<Hash, ByteSlice>> Branch::remove(
                             NodeId* g_child_id = child_node->get_child_id();
 
                             // get ownership of grand child via deleting from cache
-                            Node g_child = ledger.delete_node(*g_child_id).value();
+                            Node_ptr g_child = ledger.delete_node(*g_child_id).value();
 
                             // reassign new id information to grandchild
-                            g_child.change_id(id_, ledger);
-                            hash_to_parent = g_child.derive_hash();
+                            g_child->change_id(id_, ledger);
+                            hash_to_parent = g_child->derive_hash();
 
                             // recache grandchild
-                            ledger.cache_node(u64_from_array(id_), g_child);
+                            ledger.cache_node(std::move(g_child));
 
                         } else {
                             // delete to obtain ownership and expire cache entry
-                            Node child_node = ledger.delete_node(child_id).value();
+                            Node_ptr child_node = ledger.delete_node(child_id).value();
 
                             // update fields
-                            child_node.change_id(id_, ledger);
-                            hash_to_parent = child_node.derive_hash();
+                            child_node->change_id(id_, ledger);
+                            hash_to_parent = child_node->derive_hash();
 
                             // recache child
-                            ledger.cache_node(u64_from_array(id_), child_node);
+                            ledger.cache_node(std::move(child_node));
                         }
 
                         // pass hash and path to parent
-                        return std::tuple(hash_to_parent, ByteSlice(path_to_parent));
+                        return std::make_tuple(hash_to_parent, ByteSlice(path_to_parent));
 
                     } else if (child_node->get_type() != BRANCH) {
                         // delete self
                         auto self = ledger.delete_node(id_);
 
                         // delete to obtain ownership and expire cache entry
-                        Node child_node = ledger.delete_node(child_id).value();
-                        child_node.change_id(id_, ledger);
+                        // of last remaining child
+                        Node_ptr child_node = ledger.delete_node(child_id).value();
+                        child_node->change_id(id_, ledger);
 
-                        if (Extension* child_ext = (Extension*)&child_node) {
-                            (*child_ext->get_path()).push_front(nib);
-                        } else if (Leaf* child_leaf = (Leaf*)&child_node) {
-                            (*child_leaf->get_path()).push_front(nib);
+
+                        if (child_node->get_type() == EXT) {
+                            if (Extension* child_ext = static_cast<Extension*>(child_node.get()))
+                                (*child_ext->get_path()).push_front(nib);
+                        } else {
+                            if (Leaf* child_leaf = static_cast<Leaf*>(child_node.get()))
+                                (*child_leaf->get_path()).push_front(nib);
                         }
 
-                        hash_to_parent = child_node.derive_hash();
+                        hash_to_parent = *child_node->get_hash();
 
-                        ledger.cache_node(u64_from_array(id_), child_node);
+                        ledger.cache_node(std::move(child_node));
 
-                        return std::tuple(hash_to_parent, ByteSlice{});
+                        return std::make_tuple(hash_to_parent, ByteSlice{});
                     }
                 }
 
@@ -361,16 +395,16 @@ optional<std::tuple<Hash, ByteSlice>> Branch::remove(
                     ledger.delete_node(id_);
                 }
 
-                return std::tuple(hash_to_parent, ByteSlice{});
+                return std::make_tuple(hash_to_parent, ByteSlice{});
 
             } else {
-                printf("ERROR::BRANCH::REMOVE::RECV_NONE");
+                //printf("ERROR::BRANCH::REMOVE::RECV_NONE\n");
             }
         } else {
-            printf("ERROR::BRANCH::REMOVE::FAIL_LOAD");
+            //printf("ERROR::BRANCH::REMOVE::FAIL_LOAD  ID::%zu\n", u64_from_array(*next_id));
         }
     } else {
-            printf("ERROR::BRANCH::REMOVE::NO_ID");
+            //printf("ERROR::BRANCH::REMOVE::NO_ID\n");
     }
     return std::nullopt;
 }
