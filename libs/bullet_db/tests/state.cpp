@@ -1,4 +1,7 @@
+#include "blst.h"
+#include "kzg.h"
 #include "nodes.h"
+#include "utils.h"
 #include <cassert>
 #include <cstdio>
 #include <filesystem>
@@ -27,7 +30,7 @@ void main_state_trie() {
     }
     fs::create_directory(path);
 
-    Ledger l(path, 128, 10 * 1024 * 1024);
+    Ledger l(path, 128, 10 * 1024 * 1024, new_scalar(13));
 
     vector<Hash> raw_hashes;
     raw_hashes.reserve(888);
@@ -43,15 +46,22 @@ void main_state_trie() {
         ByteSlice key(h.data(), h.size());
         ByteSlice value(h.data(), h.size());
 
-        Hash virt_root = l.virtual_put(key, value).value();
+        blst_scalar s;
+        blst_scalar_from_be_bytes(&s, h.data(), h.size());
 
-        Hash root = l.put(key, value).value();
+        blst_p1 val_c;
+        p1_mult(val_c, val_c, s);
 
-        assert(virt_root == root);
+        auto virt_root = l.virtual_put(key, val_c).value();
+
+        auto root = l.put(key, val_c).value();
+
+        auto virt = compress_p1(virt_root);
+        assert(std::equal(virt.begin(), virt.end(), compress_p1(root).begin()));
 
         ByteSlice got = l.get_value(key).value();
-
-        assert(std::equal(got.begin(), got.end(), value.begin()));
+        auto val_c_bytes = compress_p1(val_c);
+        assert(std::equal(got.begin(), got.end(), val_c_bytes.begin()));
         i++;
     }
 
@@ -59,11 +69,8 @@ void main_state_trie() {
     i = 0;
     for (Hash h: raw_hashes) {
         std::span<byte> key(h.data(), h.size());
-
         l.remove(key);
-
         auto got = l.get_value(key);
-
         assert(got.has_value() == false);
         i++;
     }

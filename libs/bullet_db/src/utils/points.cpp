@@ -22,6 +22,7 @@ blst_p1 new_p1() {
     memset(&p, 0, blst_p1_sizeof());
     return p;
 }
+
 std::array<uint8_t, 48> compress_p1(const blst_p1& pk) {
     std::array<uint8_t, 48> pk_comp;
     blst_p1_compress(pk_comp.data(), &pk);

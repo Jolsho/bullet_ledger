@@ -8,19 +8,6 @@
 #include <vector>
 #include <array>
 
-/*
- *  
- *  TODO -- 
- *      implement trie functionality...
- *      essentially just porting everything from rust to c++
- *      once that is working with regular hashing switch to KZG...
- *          somehow...
- *
- *      or maybe the kzg stuff goes in block production code?
- *
- *
-*/
-
 class BulletDB {
 public:
     MDB_env* env_;
