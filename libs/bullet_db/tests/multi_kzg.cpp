@@ -1,10 +1,7 @@
-#include <cstddef>
-#include <cstdio>
 #include <cassert>
 #include <iostream>
-#include "blst.h"
-#include "kzg.h"
-#include "utils.h"
+#include "../src/kzg/kzg.h"
+#include "../src/utils/utils.h"
 
 
 void test_multi_point() {

@@ -1,10 +1,4 @@
-#include "nodes.h"
-#include <algorithm>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <optional>
-#include <tuple>
+#include "verkle.h"
 
 Leaf::Leaf(optional<NodeId> id, optional<ByteSlice*> buffer) : path_(32){
     commit_ = new_p1();

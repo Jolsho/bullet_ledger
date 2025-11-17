@@ -1,9 +1,5 @@
 #include <cassert>
-#include <cstddef>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
-#include "utils.h"
+#include "../src/utils/utils.h"
 
 void test_single_key_sig() {
     bytes32 seed = gen_rand_32();

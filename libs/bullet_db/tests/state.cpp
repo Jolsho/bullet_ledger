@@ -1,9 +1,5 @@
-#include "blst.h"
-#include "kzg.h"
-#include "nodes.h"
-#include "utils.h"
+#include "../src/state/verkle.h"
 #include <cassert>
-#include <cstdio>
 #include <filesystem>
 #include <random>
 

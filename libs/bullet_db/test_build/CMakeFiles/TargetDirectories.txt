@@ -1,6 +1,0 @@
-/home/jolsho/Desktop/repos/bullet_ledger/libs/bullet_db/test_build/CMakeFiles/bullet_db.dir
-/home/jolsho/Desktop/repos/bullet_ledger/libs/bullet_db/test_build/CMakeFiles/edit_cache.dir
-/home/jolsho/Desktop/repos/bullet_ledger/libs/bullet_db/test_build/CMakeFiles/rebuild_cache.dir
-/home/jolsho/Desktop/repos/bullet_ledger/libs/bullet_db/test_build/tests/CMakeFiles/tests_exec.dir
-/home/jolsho/Desktop/repos/bullet_ledger/libs/bullet_db/test_build/tests/CMakeFiles/edit_cache.dir
-/home/jolsho/Desktop/repos/bullet_ledger/libs/bullet_db/test_build/tests/CMakeFiles/rebuild_cache.dir

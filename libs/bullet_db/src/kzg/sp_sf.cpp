@@ -1,5 +1,3 @@
-#include <cstdio>
-#include <cassert>
 #include "kzg.h"
 
 // ======================================================

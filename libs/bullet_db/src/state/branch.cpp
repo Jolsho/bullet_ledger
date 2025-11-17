@@ -1,10 +1,4 @@
-#include "blst.h"
-#include "nodes.h"
-#include <cstddef>
-#include <cstdio>
-#include <memory>
-#include <optional>
-#include <vector>
+#include "verkle.h"
 
 Branch::Branch(std::optional<NodeId> id, std::optional<ByteSlice*> buff) : 
     children_(ORDER), commit_{new_p1()}

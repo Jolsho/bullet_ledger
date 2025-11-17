@@ -1,11 +1,5 @@
-#include <cassert>
-#include <cstddef>
-#include <cstdlib>
-#include <cstring>
 #include <fstream>
 #include <iostream>
-#include <stdexcept>
-#include "blst.h"
 #include "utils.h"
 
 std::tuple<const byte*, size_t> str_to_bytes(const char* str) {

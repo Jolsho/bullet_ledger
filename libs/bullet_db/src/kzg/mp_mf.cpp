@@ -1,8 +1,5 @@
-#include "blst.h"
 #include "kzg.h"
 #include "blake3.h"
-#include <cstddef>
-#include <tuple>
 
 using std::array;
 

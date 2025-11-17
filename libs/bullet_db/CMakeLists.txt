@@ -47,8 +47,8 @@ prefix_list(BINDINGS "bindings/"
 set(HEADERS
     ${PROJECT_SOURCE_DIR}/src/kzg/kzg.h
 
-    ${PROJECT_SOURCE_DIR}/src/state/state.h
-    ${PROJECT_SOURCE_DIR}/src/state/nodes.h
+    ${PROJECT_SOURCE_DIR}/src/state/verkle.h
+    ${PROJECT_SOURCE_DIR}/src/state/db.h
 
     ${PROJECT_SOURCE_DIR}/src/utils/utils.h
     ${PROJECT_SOURCE_DIR}/bindings/extern.h

@@ -10,7 +10,7 @@
 #include "../utils/ring_buff.cpp"
 #include "../kzg/kzg.h"
 #include "lru.cpp"
-#include "state.h"
+#include "db.h"
 
 using std::optional;
 using std::tuple;

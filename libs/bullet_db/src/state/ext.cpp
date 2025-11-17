@@ -1,10 +1,4 @@
-#include "nodes.h"
-#include <cstdint>
-#include <cstdio>
-#include <optional>
-#include <tuple>
-#include <vector>
-
+#include "verkle.h"
 
 Extension::Extension(std::optional<NodeId> id, std::optional<ByteSlice*> buffer) : path_(32){
     commit_ = new_p1();

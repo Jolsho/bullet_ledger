@@ -1,9 +1,5 @@
-#include <bit>
-#include <cmath>
-#include <cstdlib>
 #include "blake3.h"
-#include "blst.h"
-#include "nodes.h"
+#include "verkle.h"
 
 bool iszero(const ByteSlice &slice) {
     byte zero_byte{0};
