@@ -1,13 +1,7 @@
-#include "nodes.h"
-#include <algorithm>
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <optional>
-#include <tuple>
+#include "verkle.h"
 
 Leaf::Leaf(optional<NodeId> id, optional<ByteSlice*> buffer) : path_(32){
+    commit_ = new_p1();
     if (!id.has_value()) return;
     id_ = id.value();
 
@@ -15,12 +9,9 @@ Leaf::Leaf(optional<NodeId> id, optional<ByteSlice*> buffer) : path_(32){
 
     std::span<byte>* buff = buffer.value();
 
-    auto cursor = buff->begin() + 1;
-    std::ranges::copy(cursor, cursor + 32, hash_.begin());
-    cursor += 32;
+    commit_from_bytes(buff->subspan(1,49).data(), commit_);
 
-    std::ranges::copy(cursor, cursor + 32, value_hash_.begin());
-    cursor += 32;
+    auto cursor = buff->begin() + 49;
 
     uint64_array path_len;
     std::ranges::copy(cursor, cursor+8, path_len.begin());
@@ -34,12 +25,13 @@ Leaf::Leaf(optional<NodeId> id, optional<ByteSlice*> buffer) : path_(32){
 Path* Leaf::get_path() { return &path_; }
 void Leaf::set_path(ByteSlice path) {
     path_.clear();
-    assert(path.size() <= path_.capacity());
     for (auto b : path) path_.push_back(b);
 }
 
-Hash* Leaf::get_value_hash() { return &value_hash_; }
-void Leaf::set_value_hash(const Hash &hash) { value_hash_ = hash; }
+void Leaf::set_commitment(const Commitment &c) { commit_ = c; }
+void Leaf::change_id(const NodeId &id, Ledger &ledger) { id_ = id; }
+Commitment* Leaf::derive_commitment(Ledger &ledger) { return &commit_; }
+NodeId* Leaf::get_next_id(ByteSlice &nibs) { return nullptr; }
 
 optional<size_t> Leaf::in_path(ByteSlice nibbles) {
     std::size_t matched = 0;
@@ -60,20 +52,15 @@ optional<size_t> Leaf::in_path(ByteSlice nibbles) {
     }
 }
 
-NodeId* Leaf::get_next_id(ByteSlice &nibs) { return nullptr; }
-void Leaf::change_id(const NodeId &id, Ledger &ledger) { id_ = id; }
-Hash Leaf::derive_hash() { return Hash(hash_); }
-Hash Leaf::derive_real_hash(const ByteSlice &key) {
-    return derive_leaf_hash(key, value_hash_);
-}
 
 std::vector<byte> Leaf::to_bytes() {
     std::vector<byte> buffer;
     buffer.reserve(LEAF_SIZE);
 
     buffer.push_back(LEAF);
-    buffer.insert(buffer.end(), hash_.begin(), hash_.end());
-    buffer.insert(buffer.end(), value_hash_.begin(), value_hash_.end());
+    auto commit_bytes = compress_p1(commit_);
+    buffer.insert(buffer.end(), commit_bytes.begin(), commit_bytes.end());
+
     uint64_array path_len = u64_to_array(path_.size());
     buffer.insert(buffer.end(), path_len.begin(), path_len.end());
 
@@ -84,23 +71,23 @@ std::vector<byte> Leaf::to_bytes() {
     return buffer;
 }
 
-optional<Hash> Leaf::search( 
+optional<Commitment> Leaf::search( 
     Ledger &ledger, 
-    ByteSlice &nibbles
+    ByteSlice nibbles
 ) {
     optional<size_t> res = in_path(nibbles);
     if (res.has_value()) return std::nullopt;
-    return Hash(value_hash_);
+    return commit_;
 }
 
-optional<Hash> Leaf::virtual_put(
+optional<Commitment> Leaf::virtual_put(
     Ledger &ledger, 
-    ByteSlice &nibbles,
+    ByteSlice nibbles,
     const ByteSlice &key, 
-    const Hash &val_hash
+    const Commitment &val_commitment
 ) {
     optional<size_t> is = in_path(nibbles);
-    if (!is.has_value()) return derive_leaf_hash(key, val_hash);
+    if (!is.has_value()) return Commitment(val_commitment);
 
     size_t shared_path = is.value();
 
@@ -108,27 +95,23 @@ optional<Hash> Leaf::virtual_put(
 
     Branch branch(std::nullopt, std::nullopt);
     byte self_nib = path_.get(shared_path).value();
-    branch.insert_child(self_nib, hash_);
+    branch.insert_child(self_nib, commit_);
 
-    Hash leaf_hash = derive_leaf_hash(key, val_hash);
-    branch.insert_child(nibbles[0], leaf_hash);
+    branch.insert_child(nibbles[0], val_commitment);
 
-    Hash res = branch.derive_hash();
-    if (shared_path > 0) res = derive_value_hash(res.data(), res.size());
-
-    return res;
+    return *branch.derive_commitment(ledger);
 }
 
-optional<Hash> Leaf::put(
+optional<Commitment*> Leaf::put(
     Ledger &ledger, 
-    ByteSlice &nibbles, 
+    ByteSlice nibbles,
     const ByteSlice &key, 
-    const Hash &val_hash
+    const Commitment &val_commitment
 ) {
     optional<size_t> is = in_path(nibbles);
     if (!is.has_value()) {
-        set_value_hash(val_hash);
-        return derive_real_hash(key);
+        set_commitment(val_commitment);
+        return &commit_;
     }
     size_t shared_path = is.value();
 
@@ -138,7 +121,6 @@ optional<Hash> Leaf::put(
 
     uint64_t branch_id = self_id;
 
-    optional<Extension*> ext_o = std::nullopt;
     if (shared_path > 0) {
 
         branch_id = self_id * ORDER;
@@ -154,7 +136,6 @@ optional<Hash> Leaf::put(
         ext->set_path(ext_path);
 
         nibbles = nibbles.subspan(shared_path);
-        ext_o = ext;
     }
 
     Branch* branch = ledger.new_cached_branch(branch_id);
@@ -166,7 +147,7 @@ optional<Hash> Leaf::put(
     // update self and insert into branch using nib and recache
     uint64_t new_self_id = (branch_id * ORDER) + nib_num;
     change_id(u64_to_array(new_self_id), ledger);
-    branch->insert_child(self_nib, hash_);
+    branch->insert_child(self_nib, commit_);
     ledger.cache_node(std::move(self));
 
     // derive a new leaf for new value and insert into branch
@@ -174,24 +155,18 @@ optional<Hash> Leaf::put(
     uint64_t new_leaf_id = (branch_id * ORDER) + nib_num1;
     Leaf* leaf = ledger.new_cached_leaf(new_leaf_id);
     leaf->set_path(nibbles.subspan(1));
-    leaf->set_value_hash(val_hash);
-    Hash leaf_hash = leaf->derive_real_hash(key);
-    branch->insert_child(nibbles[0], leaf_hash);
+    leaf->set_commitment(val_commitment);
+    branch->insert_child(nibbles[0], val_commitment);
 
 
     // return either branch hash or extension to branch hash
-    Hash res = branch->derive_hash();
-    if (ext_o.has_value()) {
-        ext_o.value()->set_child(res);
-        res = ext_o.value()->derive_hash();
-    }
-    return res;
+    return branch->derive_commitment(ledger);
 }
 
-optional<std::tuple<Hash, ByteSlice>> Leaf::remove(
+optional<std::tuple<Commitment, bool, ByteSlice>> Leaf::remove(
     Ledger &ledger, 
-    ByteSlice &nibbles
+    ByteSlice nibbles
 ) {
     Node_ptr self = ledger.delete_node(id_).value();
-    return std::make_tuple(Hash{}, ByteSlice{});
+    return std::make_tuple(Commitment{}, true, ByteSlice{});
 }

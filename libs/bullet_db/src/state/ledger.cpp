@@ -1,18 +1,24 @@
-#include "nodes.h"
-#include <cassert>
-#include <cstddef>
-#include <cstdint>
-#include <cstdio>
-#include <memory>
-#include <optional>
+#include "verkle.h"
 
-LedgerState::LedgerState(std::string path, size_t cache_size, size_t map_size) : 
+LedgerState::LedgerState(
+    std::string path, 
+    size_t cache_size, 
+    size_t map_size,
+    blst_scalar secret_sk
+) : 
     db_(path.data(), map_size), 
-    cache_(cache_size) {
-}
+    cache_(cache_size), 
+    srs_(ORDER, secret_sk)
+{ }
 
-Ledger::Ledger(std::string path, size_t cache_size, size_t map_size) : 
-    state_(path, cache_size, map_size) 
+
+Ledger::Ledger(
+    std::string path, 
+    size_t cache_size, 
+    size_t map_size,
+    blst_scalar secret_sk
+) : 
+    state_(path, cache_size, map_size, secret_sk) 
 {
     uint64_array root_id = u64_to_array(1);
     state_.db_.start_txn();
@@ -48,18 +54,18 @@ Ledger::~Ledger() {
     state_.db_.end_txn(rc);
 }
 
+SRS* Ledger::get_srs() { return &state_.srs_;}
 
-
-inline bool Ledger::value_exists(Hash &val_hash) {
-    state_.db_.start_txn();
-    int res = state_.db_.exists(val_hash.data(), val_hash.size());
-    state_.db_.end_txn();
-    return res == 0;
+bool Ledger::key_value_exists(ByteSlice &key, Commitment &val_c) {
+    Hash h = derive_k_vc_hash(key, val_c);
+    return value_exists(h);
 }
 
-bool Ledger::key_value_exists(ByteSlice &key, Hash &val_hash) {
-    Hash key_value = derive_leaf_hash(key, val_hash);
-    return value_exists(key_value);
+bool Ledger::value_exists(Hash &hash) {
+    state_.db_.start_txn();
+    int res = state_.db_.exists(hash.data(), hash.size());
+    state_.db_.end_txn();
+    return res == 0;
 }
 
 optional<ByteSlice> Ledger::get_value(ByteSlice &key) {
@@ -71,13 +77,13 @@ optional<ByteSlice> Ledger::get_value(ByteSlice &key) {
         auto search_res = state_.root_->search(*this, key);
         if (search_res.has_value()) {
 
-            Hash val_hash = search_res.value();
+            Hash hash = derive_k_vc_hash(key, search_res.value());
 
             void* ptr;
             size_t size;
 
             int rc = state_.db_.get(
-                val_hash.data(), val_hash.size(), 
+                hash.data(), hash.size(), 
                 &ptr, &size
             );
 
@@ -93,25 +99,25 @@ optional<ByteSlice> Ledger::get_value(ByteSlice &key) {
     return std::nullopt;
 }
 
-optional<Hash> Ledger::put(ByteSlice &key, ByteSlice &value) {
-    Hash val_hash = derive_value_hash(value.data(), value.size());
-    optional<Hash> root_hash = std::nullopt;
-
-    if (!value_exists(val_hash)) {
+optional<Commitment> Ledger::put(ByteSlice &key, Commitment &val_commitment) {
+    optional<Commitment> root_c = std::nullopt;
+    if (!key_value_exists(key, val_commitment)) {
         if (state_.root_) {
-
             state_.db_.start_txn();
             int rc;
 
             ByteSlice nibbles(key);
-            auto hash_opt = state_.root_->put(*this, nibbles, key, val_hash);
-            if (hash_opt.has_value()) {
-                root_hash = hash_opt.value();
+            auto c_opt = state_.root_->put(*this, nibbles, key, val_commitment);
+            if (c_opt.has_value()) {
+                root_c = *c_opt.value();
+
+                Hash k_v_hash = derive_k_vc_hash(key, val_commitment);
+                auto c_bytes = compress_p1(val_commitment);
 
                 // save new value
                 rc = state_.db_.put(
-                    val_hash.data(), val_hash.size(), 
-                    value.data(), value.size());
+                    k_v_hash.data(), k_v_hash.size(), 
+                    c_bytes.data(), c_bytes.size());
 
                 if (rc == 0) {
                     // save new root
@@ -128,41 +134,34 @@ optional<Hash> Ledger::put(ByteSlice &key, ByteSlice &value) {
             if (rc != 0) return std::nullopt;
         }
     }
-    return root_hash;
+    return root_c;
 }
 
-optional<Hash> Ledger::virtual_put(ByteSlice &key, ByteSlice &value) {
-    Hash val_hash = derive_value_hash(value.data(), value.size());
-    optional<Hash> root_hash = std::nullopt;
-    if (!value_exists(val_hash)) {
+optional<Commitment> Ledger::virtual_put(ByteSlice &key, Commitment &val_commitment) {
+    optional<Commitment> root_c = std::nullopt;
+    if (!key_value_exists(key, val_commitment)) {
         if (state_.root_) {
-
             state_.db_.start_txn();
-
-            ByteSlice nibbles(key);
-            auto hash_opt = state_.root_->virtual_put(*this, nibbles, key, val_hash);
-            if (hash_opt.has_value()) {
-                root_hash = hash_opt.value();
-            }
+            root_c = state_.root_->virtual_put(*this, ByteSlice(key), key, val_commitment);
             state_.db_.end_txn();
         }
     }
-    return root_hash;
+    return root_c;
 }
 
-optional<Hash> Ledger::remove(ByteSlice &key) {
-    optional<Hash> root_hash = std::nullopt;
+optional<Commitment> Ledger::remove(ByteSlice &key) {
+    optional<Commitment> root_c = std::nullopt;
     if (state_.root_) {
         state_.db_.start_txn();
-        auto hash_opt = state_.root_->remove(*this, key);
-        if (hash_opt.has_value()) {
-            auto [root_hash, path_ext] = hash_opt.value();
-            state_.db_.end_txn();
-        } else {
-            state_.db_.end_txn(1);
+        auto res = state_.root_->remove(*this, key);
+        int rc = 1;
+        if (res.has_value()) {
+            auto [root_c, removed, path_ext] = res.value();
+            rc = 0;
         }
+        state_.db_.end_txn(rc);
     }
-    return root_hash;
+    return root_c;
 }
 
 void Ledger::cache_node(std::unique_ptr<Node> node) {
@@ -179,10 +178,10 @@ void Ledger::cache_node(std::unique_ptr<Node> node) {
 
         uint64_array expired_key = u64_to_array(expired_id);
         auto node_bytes = expired_node->to_bytes();
-        assert(state_.db_.put(
+        state_.db_.put(
             expired_key.data(), expired_key.size(), 
             node_bytes.data(), node_bytes.size()
-        ) == 0);
+        );
     }
 }
 

@@ -1,6 +1,6 @@
 // extern.cpp
 #include <lmdb.h>
-#include "../src/state/state.h"
+#include "../src/state/db.h"
 #include "extern.h"
 
 extern "C" {

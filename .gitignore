@@ -2,6 +2,7 @@ target/
 Cargo.lock
 notes.txt
 
+test_build/
 build/
 deps/
 .cache/

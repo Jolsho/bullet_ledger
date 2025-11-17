@@ -1,9 +1,4 @@
-#include <cstdio>
-#include <stdexcept>
-#include <algorithm>
-#include <cassert>
 #include "kzg.h"
-#include "blst.h"
 
 // ---------------------------
 // Polynomial helpers

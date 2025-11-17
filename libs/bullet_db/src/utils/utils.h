@@ -54,7 +54,7 @@ blst_p2 p2_from_affine(const blst_p2_affine &aff);
 blst_p2_affine p2_to_affine(const blst_p2 &p2);
 void p1_mult(blst_p1& dst, const blst_p1 &a, const blst_scalar &b);
 
-std::array<uint8_t, 48> compress_p1(blst_p1* pk);
+std::array<uint8_t, 48> compress_p1(const blst_p1 &pk);
 void print_p1(const blst_p1& pk);
 void print_p1_affine(const blst_p1_affine& pk);
 

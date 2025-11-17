@@ -27,6 +27,7 @@ prefix_list(STATE "src/state/"
     ext
     leaf
     ledger
+    lru
     path
     utils
 )
@@ -35,6 +36,8 @@ prefix_list(UTILS "src/utils/"
     points
     scalar
     key_sig
+    result
+    ring_buff
 )
 
 prefix_list(BINDINGS "bindings/" 
@@ -44,8 +47,8 @@ prefix_list(BINDINGS "bindings/"
 set(HEADERS
     ${PROJECT_SOURCE_DIR}/src/kzg/kzg.h
 
-    ${PROJECT_SOURCE_DIR}/src/state/state.h
-    ${PROJECT_SOURCE_DIR}/src/state/nodes.h
+    ${PROJECT_SOURCE_DIR}/src/state/verkle.h
+    ${PROJECT_SOURCE_DIR}/src/state/db.h
 
     ${PROJECT_SOURCE_DIR}/src/utils/utils.h
     ${PROJECT_SOURCE_DIR}/bindings/extern.h
@@ -99,7 +102,8 @@ target_link_libraries(bullet_db PRIVATE ${LMDB_LIBRARY})
 ####################################################
 #                   TESTING
 ####################################################
-option(BUILD_TESTS "Build test executables" ON)
-if(BUILD_TESTS)
+option(TESTING "Build test executables" OFF)
+if(TESTING)
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -g -O0 -fno-inline -gdwarf-4")
     add_subdirectory(tests)
 endif()

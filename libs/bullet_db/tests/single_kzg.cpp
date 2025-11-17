@@ -1,10 +1,6 @@
-#include <blst.h>
 #include <cassert>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
 #include <iostream>
-#include "kzg.h"
+#include "../src/kzg/kzg.h"
 
 void test_commit_and_verify_pip(
     const SRS& S, 
