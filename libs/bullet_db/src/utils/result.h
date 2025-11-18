@@ -1,3 +1,4 @@
+#pragma once
 #include <variant>
 
 template <typename T, typename E>
@@ -15,4 +16,3 @@ public:
     T& unwrap() { return std::get<T>(data); }
     E& unwrap_err() { return std::get<E>(data); }
 };
-

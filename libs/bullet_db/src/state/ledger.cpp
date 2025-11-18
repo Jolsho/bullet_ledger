@@ -1,4 +1,12 @@
 #include "verkle.h"
+/*
+ *  TODO 
+ *  CEREBRA 
+ *  In blocks one aggregate(commit, proof) per level...
+ *      because every node on a given level has similar eval point counts
+ *          at least closer than the other levels...
+ *      also block producers can select transactions to minimize diffs
+*/
 
 LedgerState::LedgerState(
     std::string path, 
@@ -8,7 +16,8 @@ LedgerState::LedgerState(
 ) : 
     db_(path.data(), map_size), 
     cache_(cache_size), 
-    srs_(ORDER, secret_sk)
+    srs_(ORDER, secret_sk),
+    poly_(ORDER, new_scalar())
 { }
 
 
@@ -55,33 +64,51 @@ Ledger::~Ledger() {
 }
 
 SRS* Ledger::get_srs() { return &state_.srs_;}
+scalar_vec* Ledger::get_poly() {
+    // zeroize poly
+    for (blst_scalar &c: state_.poly_)
+        for (byte &b: c.b) 
+            b = 0;
 
-bool Ledger::key_value_exists(ByteSlice &key, Commitment &val_c) {
-    Hash h = derive_k_vc_hash(key, val_c);
+    return &state_.poly_;
+}
+
+bool Ledger::key_value_exists(
+    const ByteSlice &key, 
+    const Hash &val_hash,
+    uint8_t idx
+) {
+    Hash key_hash = derive_hash(key);
+    key_hash.back() = idx;
+
+    Hash h = derive_kv_hash(key_hash, val_hash);
     return value_exists(h);
 }
 
-bool Ledger::value_exists(Hash &hash) {
+bool Ledger::value_exists(const Hash &hash) {
     state_.db_.start_txn();
     int res = state_.db_.exists(hash.data(), hash.size());
     state_.db_.end_txn();
     return res == 0;
 }
 
-optional<ByteSlice> Ledger::get_value(ByteSlice &key) {
-    optional<ByteSlice> res;
+std::optional<ByteSlice> Ledger::get_value(
+    ByteSlice &key, 
+    uint8_t idx
+) {
+    std::optional<ByteSlice> res;
     if (state_.root_) {
 
-        state_.db_.start_txn();
+        Hash key_hash = derive_hash(key);
+        key_hash.back() = idx;
 
-        auto search_res = state_.root_->search(*this, key);
+        state_.db_.start_txn();
+        std::optional<Hash> search_res = state_.root_->search(*this, key_hash);
         if (search_res.has_value()) {
 
-            Hash hash = derive_k_vc_hash(key, search_res.value());
+            Hash hash = derive_kv_hash(key_hash, search_res.value());
 
-            void* ptr;
-            size_t size;
-
+            void* ptr; size_t size;
             int rc = state_.db_.get(
                 hash.data(), hash.size(), 
                 &ptr, &size
@@ -99,25 +126,89 @@ optional<ByteSlice> Ledger::get_value(ByteSlice &key) {
     return std::nullopt;
 }
 
-optional<Commitment> Ledger::put(ByteSlice &key, Commitment &val_commitment) {
-    optional<Commitment> root_c = std::nullopt;
-    if (!key_value_exists(key, val_commitment)) {
+
+/*
+ *  TODO 
+ *      a prover would need to derive the Y_scalar of val_commitment
+ *      and then make sure that that exists in Y_mat...
+*/
+
+std::optional<std::tuple<
+    Commitment, Proof, 
+    vector<Commitment>, 
+    vector<scalar_vec>, 
+    scalar_vec
+>> Ledger::get_existence_proof(
+    ByteSlice &key, 
+    uint8_t idx
+) {
+    const size_t MAX_LEVELS = 4; // over 4 billion accounts == 256^4
+    if (!state_.root_) return std::nullopt;
+
+    vector<scalar_vec> Fxs; Fxs.reserve(MAX_LEVELS);
+    Bitmap Zs;
+
+    Hash key_hash = derive_hash(key);
+    key_hash.back() = idx;
+
+    ByteSlice nibbles(key_hash.data(), key_hash.size());
+
+    state_.db_.start_txn();
+    int ok = state_.root_->build_commitment_path(*this, key_hash, nibbles, Fxs, Zs);
+    state_.db_.end_txn();
+    if (!ok) return std::nullopt;
+
+    // for each Fx solve at all Zs(deduplicated)
+    scalar_vec Zs_vec; Zs_vec.reserve(Zs.count());
+    vector<scalar_vec> Ys_mat{ Fxs.size(), scalar_vec{Zs.count()} }; 
+    for (auto i = 0; i > Fxs.size(); i++) {
+        for (auto k = 0; k < ORDER; k++) {
+            if (Zs.is_set(k)) {
+                Zs_vec.push_back(new_scalar(k));
+                Ys_mat[i][k] = eval_poly(Fxs[i], Zs_vec.back());
+            }
+        }
+    }
+
+    // Build Commits via Fxs
+    vector<Commitment> Cs; Cs.reserve(Fxs.size());
+    for (scalar_vec &f: Fxs) {
+        Cs.push_back(p1_from_affine(commit_g1(f, state_.srs_)));
+    }
+
+    // Build aggregate Commitment and Proof
+    auto [C, Pi] = multi_func_multi_point_prover(
+        Fxs, Cs, Zs_vec, Ys_mat, state_.srs_
+    );
+    return std::make_tuple(C, Pi, Cs, Ys_mat, Zs_vec);
+}
+
+
+std::optional<Commitment> Ledger::put(ByteSlice &key, ByteSlice &value, uint8_t idx) {
+    std::optional<Commitment> root_c = std::nullopt;
+
+
+    Hash val_hash = derive_hash(value);
+
+    if (!key_value_exists(key, val_hash, idx)) {
         if (state_.root_) {
+            Hash key_hash = derive_hash(key);
+            key_hash.back() = idx;
+
             state_.db_.start_txn();
             int rc;
 
-            ByteSlice nibbles(key);
-            auto c_opt = state_.root_->put(*this, nibbles, key, val_commitment);
+            ByteSlice nibbles(key_hash.data(), key_hash.size());
+            auto c_opt = state_.root_->put(*this, nibbles, key_hash, val_hash);
             if (c_opt.has_value()) {
                 root_c = *c_opt.value();
 
-                Hash k_v_hash = derive_k_vc_hash(key, val_commitment);
-                auto c_bytes = compress_p1(val_commitment);
+                Hash k_v_hash = derive_kv_hash(key_hash, val_hash);
 
                 // save new value
                 rc = state_.db_.put(
                     k_v_hash.data(), k_v_hash.size(), 
-                    c_bytes.data(), c_bytes.size());
+                    value.data(), value.size());
 
                 if (rc == 0) {
                     // save new root
@@ -137,29 +228,43 @@ optional<Commitment> Ledger::put(ByteSlice &key, Commitment &val_commitment) {
     return root_c;
 }
 
-optional<Commitment> Ledger::virtual_put(ByteSlice &key, Commitment &val_commitment) {
-    optional<Commitment> root_c = std::nullopt;
-    if (!key_value_exists(key, val_commitment)) {
+std::optional<Commitment> Ledger::virtual_put(
+    ByteSlice &key, 
+    ByteSlice &value, 
+    uint8_t idx
+) {
+    std::optional<Commitment> root_c = std::nullopt;
+    Hash val_hash = derive_hash(value);
+    if (!key_value_exists(key, val_hash, idx)) {
         if (state_.root_) {
+            Hash key_hash = derive_hash(key);
+            key_hash.back() = idx;
+
             state_.db_.start_txn();
-            root_c = state_.root_->virtual_put(*this, ByteSlice(key), key, val_commitment);
+            ByteSlice nibbles(key_hash.data(), key_hash.size());
+            root_c = state_.root_->virtual_put(*this, nibbles, key_hash, val_hash);
             state_.db_.end_txn();
         }
     }
     return root_c;
 }
 
-optional<Commitment> Ledger::remove(ByteSlice &key) {
-    optional<Commitment> root_c = std::nullopt;
+std::optional<Commitment> Ledger::remove(ByteSlice &key, uint8_t idx) {
+    std::optional<Commitment> root_c = std::nullopt;
     if (state_.root_) {
+
+        Hash key_hash = derive_hash(key);
+        key_hash.back() = idx;
+
+        ByteSlice nibbles(key_hash.data(), key_hash.size());
+
         state_.db_.start_txn();
-        auto res = state_.root_->remove(*this, key);
-        int rc = 1;
+        auto res = state_.root_->remove(*this, nibbles, key_hash);
         if (res.has_value()) {
-            auto [root_c, removed, path_ext] = res.value();
-            rc = 0;
-        }
-        state_.db_.end_txn(rc);
+            auto [root_c, removed] = res.value();
+            state_.db_.end_txn(0);
+
+        } else state_.db_.end_txn(1);
     }
     return root_c;
 }
@@ -198,8 +303,6 @@ Node* Ledger::load_node(const NodeId &id) {
 
         if (raw_node[0] == BRANCH)
             node_ptr = std::make_unique<Branch>(id, &raw_node);
-        else if (raw_node[0] == EXT)
-            node_ptr = std::make_unique<Extension>(id, &raw_node);
         else
             node_ptr = std::make_unique<Leaf>(id, &raw_node);
 
@@ -212,7 +315,7 @@ Node* Ledger::load_node(const NodeId &id) {
     return nullptr;
 }
 
-optional<Node_ptr> Ledger::delete_node(const NodeId &id) {
+std::optional<Node_ptr> Ledger::delete_node(const NodeId &id) {
     uint64_t num_id = u64_from_array(id);
     Node_ptr entry = state_.cache_.remove(num_id);
     if (!entry) {
@@ -225,16 +328,13 @@ optional<Node_ptr> Ledger::delete_node(const NodeId &id) {
     return entry;
 }
 
+bool Ledger::delete_value(const Hash &kv) {
+    return state_.db_.del(kv.data(), kv.size()) == 0;
+}
+
 Branch* Ledger::new_cached_branch(uint64_t id) {
     auto ptr = std::make_unique<Branch>(u64_to_array(id), std::nullopt);
     Branch* raw = ptr.get();
-    cache_node(std::move(ptr));
-    return raw;
-}
-
-Extension* Ledger::new_cached_extension(uint64_t id) {
-    auto ptr = std::make_unique<Extension>(u64_to_array(id), std::nullopt);
-    Extension* raw = ptr.get();
     cache_node(std::move(ptr));
     return raw;
 }
