@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::{io, os::fd::{AsRawFd, OwnedFd}, sync::{atomic::{AtomicUsize, Ordering}, Arc}};
 use std::cell::UnsafeCell;
 

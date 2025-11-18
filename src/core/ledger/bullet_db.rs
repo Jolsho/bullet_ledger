@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::{ffi::{c_void, CString}, fs, path::Path};
 
 #[repr(C)]

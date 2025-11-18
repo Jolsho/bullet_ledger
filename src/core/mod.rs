@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::{thread::JoinHandle, time::Duration};
 use mio::{Events, Poll, Token};
 use core::error;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #ifndef BITMAP_H
 #define BITMAP_H
 

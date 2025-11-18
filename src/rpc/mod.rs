@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::io;
 use std::net::SocketAddr;
 use std::{error, thread::JoinHandle };

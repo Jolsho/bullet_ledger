@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::cell::RefCell;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::rc::Rc;

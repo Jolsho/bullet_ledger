@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use chacha20poly1305::{aead::{AeadMutInPlace, OsRng}, AeadCore, ChaCha20Poly1305, Key, KeyInit};
 
 use crate::crypto::random_b2; 

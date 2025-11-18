@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #include <list>
 #include <unordered_map>
 #include <optional>

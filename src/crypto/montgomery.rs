@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::fs::OpenOptions;
 use std::io::{self, Read, Seek, SeekFrom, Write};
 

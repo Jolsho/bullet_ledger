@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::collections::{HashMap, VecDeque};
 use std::net::SocketAddr;
 use std::{io::{self, Read, Write},time::Instant};

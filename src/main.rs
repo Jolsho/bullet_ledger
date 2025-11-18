@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use mio::Token;
 
 use crate::config::load_config;

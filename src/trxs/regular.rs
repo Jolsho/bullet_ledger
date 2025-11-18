@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::{error, u64};
 
 use ed25519_dalek::{ed25519::signature::SignerMut, Signature, SigningKey, VerifyingKey};

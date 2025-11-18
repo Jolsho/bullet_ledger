@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #include <cassert>
 #include "../src/utils/utils.h"
 

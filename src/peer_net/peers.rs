@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::{collections::HashMap, fs, io::{self, Read, Seek, Write}, net::{Ipv4Addr, SocketAddr}, os::unix::fs::MetadataExt};
 
 use crate::utils::{NetError, NetResult};

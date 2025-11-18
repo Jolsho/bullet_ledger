@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #include <cassert>
 #include <iostream>
 #include "../src/kzg/kzg.h"

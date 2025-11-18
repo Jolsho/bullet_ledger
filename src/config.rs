@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use serde::Deserialize;
 use std::{fs, io};
 use toml;

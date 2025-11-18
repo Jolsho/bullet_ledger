@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #include "verkle.h"
 /*
  *  TODO 
@@ -184,9 +186,12 @@ std::optional<std::tuple<
 }
 
 
-std::optional<Commitment> Ledger::put(ByteSlice &key, ByteSlice &value, uint8_t idx) {
+std::optional<Commitment> Ledger::put(
+    ByteSlice &key, 
+    ByteSlice &value, 
+    uint8_t idx
+) {
     std::optional<Commitment> root_c = std::nullopt;
-
 
     Hash val_hash = derive_hash(value);
 
