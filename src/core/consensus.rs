@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use curve25519_dalek::ristretto::CompressedRistretto;
 use std::{cell::RefCell, collections::HashMap, rc::Rc, time::{Duration, SystemTime, UNIX_EPOCH}};
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint};
 
 use crate::{core::Core, crypto::schnorr::SchnorrProof, utils::NetMsg};

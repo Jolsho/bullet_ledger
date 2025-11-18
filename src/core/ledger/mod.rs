@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use lru::LruCache;
 
 use {bullet_db::DB, node::Node};

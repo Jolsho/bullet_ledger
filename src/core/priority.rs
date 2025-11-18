@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::collections::{BinaryHeap, HashMap};
 use std::hash::Hash;
 use std::usize;

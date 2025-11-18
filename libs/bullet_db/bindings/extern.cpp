@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 // extern.cpp
 #include <lmdb.h>
 #include "../src/state/db.h"

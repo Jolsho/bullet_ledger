@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #[test]
 fn schnorr() {
     use curve25519_dalek::Scalar;

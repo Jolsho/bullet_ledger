@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #[test]
 fn hidden() {
     use ed25519_dalek::SigningKey;

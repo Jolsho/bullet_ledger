@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::{cell::RefCell, rc::Rc };
 use super::{ Hash, branch::BranchNode, ext::ExtNode, leaf::Leaf, Ledger};
 

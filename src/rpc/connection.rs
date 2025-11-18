@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::{collections::VecDeque, io::{self, Read, Write}, net::SocketAddr, os::fd::AsRawFd, time::Instant, usize};
 use mio::{net::TcpStream, Interest, Poll, Token};
 use crate::{RPC, utils::{NetError, NetManCode, NetMsg, NetResult, WriteBuffer}};

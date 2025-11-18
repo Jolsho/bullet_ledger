@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::ops::{Deref, DerefMut};
 use std::time::{Duration, Instant};
 use crate::peer_net::header::{HEADER_LEN, PREFIX_LEN};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 use std::{cell::RefCell, rc::Rc, usize};
 use crate::core::ledger::derive_leaf_hash;
 

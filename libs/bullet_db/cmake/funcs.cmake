@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 # cmake/functions.cmake
 function(prefix_list out_var prefix)
     set(suffix ".cpp")

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-2.0-only
+
 #include "verkle.h"
 
 Branch::Branch(std::optional<NodeId> id, std::optional<ByteSlice*> buff) : 

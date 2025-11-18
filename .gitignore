@@ -8,3 +8,5 @@ deps/
 .cache/
 trash/
 
+fake_db/
+

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-only
+
 #!/bin/bash
 # build_and_run.sh
 set -e
@@ -16,7 +18,7 @@ case "$MODE" in
         LINK_FLAGS="-fsanitize=address"
         ;;
     fast)
-        CXX_FLAGS="-g -O1 -fno-omit-frame-pointer"
+        CXX_FLAGS="-g -O2"
         LINK_FLAGS=""
         ;;
     gdb)
