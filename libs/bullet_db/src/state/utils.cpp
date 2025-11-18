@@ -1,5 +1,7 @@
 #include "blake3.h"
 #include "verkle.h"
+#include <iomanip>
+#include <iostream>
 
 bool iszero(const ByteSlice &slice) {
     byte zero_byte{0};
@@ -10,21 +12,22 @@ bool iszero(const ByteSlice &slice) {
 uint64_array u64_to_array(uint64_t num) { return std::bit_cast<std::array<byte, 8>>(num); }
 uint64_t u64_from_array(uint64_array a) { return std::bit_cast<uint64_t>(a); }
 
-void commit_from_bytes(const byte* src, Commitment &dst) {
+void commit_from_bytes(const byte* src, Commitment* dst) {
     blst_p1_affine aff;
     blst_p1_uncompress(&aff, src);
-    blst_p1_from_affine(&dst, &aff);
+    blst_p1_from_affine(dst, &aff);
 }
 
-Hash derive_k_vc_hash(const ByteSlice &key, const Commitment &val_c) {
+Hash derive_kv_hash(const Hash &key_hash, const Hash &val_hash) {
     blake3_hasher hasher;
     blake3_hasher_init(&hasher);
-    blake3_hasher_update(&hasher, key.data(), key.size());
-
-    auto commit_bytes = compress_p1(val_c);
     blake3_hasher_update(&hasher, 
-                         commit_bytes.data(), 
-                         commit_bytes.size());
+                         key_hash.data(), 
+                         key_hash.size());
+    blake3_hasher_update(&hasher, 
+                         val_hash.data(), 
+                         val_hash.size());
+
     Hash hash;
     blake3_hasher_finalize(
         &hasher, 
@@ -32,4 +35,39 @@ Hash derive_k_vc_hash(const ByteSlice &key, const Commitment &val_c) {
         hash.size());
 
     return hash;
+}
+
+
+Hash derive_hash(const ByteSlice &value) {
+    blake3_hasher hasher;
+    blake3_hasher_init(&hasher);
+    blake3_hasher_update(&hasher, value.data(), value.size());
+    Hash hash;
+    blake3_hasher_finalize(
+        &hasher, 
+        reinterpret_cast<uint8_t*>(hash.data()), 
+        hash.size()
+    );
+    return hash;
+}
+
+Commitment derive_init_commit(
+    byte nib, 
+    const Commitment &c, 
+    Ledger &ledger
+) {
+    scalar_vec Fx(ORDER, new_scalar());
+    Fx[nib] = p1_to_scalar(&c);
+    return commit_g1_projective(Fx, *ledger.get_srs());
+}
+
+void print_hash(const Hash &hash)
+{
+    for (byte b : hash) {
+        std::cout << std::hex
+                  << std::setw(2)
+                  << std::setfill('0')
+                  << static_cast<unsigned>(b);
+    }
+    std::cout << std::dec << std::endl; // restore formatting
 }

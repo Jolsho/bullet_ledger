@@ -54,13 +54,14 @@ blst_p2 p2_from_affine(const blst_p2_affine &aff);
 blst_p2_affine p2_to_affine(const blst_p2 &p2);
 void p1_mult(blst_p1& dst, const blst_p1 &a, const blst_scalar &b);
 
-std::array<uint8_t, 48> compress_p1(const blst_p1 &pk);
-void print_p1(const blst_p1& pk);
-void print_p1_affine(const blst_p1_affine& pk);
+std::array<uint8_t, 48> compress_p1(const blst_p1 *pk);
+void print_p1(const blst_p1* pk);
+void print_p1_affine(const blst_p1_affine* pk);
+blst_scalar p1_to_scalar(const blst_p1 *p1);
 
 std::array<uint8_t, 96> compress_p2(const blst_p2& pk);
 void print_p2(const blst_p2& pk);
-void print_p1_affine(const blst_p1_affine& pk);
+void print_p2_affine(const blst_p1_affine& pk);
 void p2_mult(blst_p2& dst, const blst_p2 &a, const blst_scalar &b);
 
 
@@ -84,4 +85,3 @@ void scalar_pow(blst_scalar &out, const blst_scalar &base, uint64_t exp);
 blst_scalar neg_scalar(const blst_scalar &sk);
 blst_scalar inv_scalar(const blst_scalar &a);
 void inv_scalar_inplace(blst_scalar &a);
-

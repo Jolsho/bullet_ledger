@@ -1,3 +1,4 @@
+#pragma once
 #include <vector>
 #include <optional>
 
@@ -47,7 +48,7 @@ public:
 
         return buf_[head_];
     }
-    std::optional<T> back() {
+    std::optional<T> back() const {
         if (empty()) return std::nullopt;
         size_t idx = (head_ == 0 ? buf_.size() - 1 : head_ - 1);
         return buf_[idx];
@@ -78,12 +79,12 @@ public:
 
         return value;
     }
-    std::optional<T> front() {
+    std::optional<T> front() const {
         if (empty()) return std::nullopt;
         return buf_[tail_];
     }
 
-    std::optional<T> get(size_t idx) {
+    std::optional<T> get(size_t idx) const {
         if (idx >= size()) return std::nullopt;
         // Logical index -> physical index in buf_
         size_t physical_index = (tail_ + idx) % buf_.size();

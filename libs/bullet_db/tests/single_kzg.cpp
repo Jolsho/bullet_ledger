@@ -14,7 +14,7 @@ void test_commit_and_verify_pip(
     // Commit to f(x)
     blst_p1_affine PIP_C = pip.commit(Fx);
     std::cout << "PIP_Commitment to f(x):\n" << "    ";
-    print_p1_affine(PIP_C);
+    print_p1_affine(&PIP_C);
     printf("\n");
 
     // f(x) = q(x) + r(x)
@@ -23,7 +23,7 @@ void test_commit_and_verify_pip(
     // Commit to q(x)
     std::cout << "PIP_Commitment to Q(x) AKA Pi:\n" << "    ";
     blst_p1_affine Pi = pip.commit(Qx);
-    print_p1_affine(Pi);
+    print_p1_affine(&Pi);
 
     // validate q(x) = (f(x) - f(z))/(x-z)
     assert(verify_proof(PIP_C, Y, Z, Pi, S));
@@ -45,7 +45,7 @@ void test_commit_and_verify_reg(
     // Commit to f(x)
     blst_p1_affine C = commit_g1(Fx, S);
     std::cout << "Commitment to f(x):\n" << "    ";
-    print_p1_affine(C);
+    print_p1_affine(&C);
     printf("\n");
 
     // f(x) = q(x) + r(x)
@@ -55,7 +55,7 @@ void test_commit_and_verify_reg(
     // Commit to q(x)
     std::cout << "Commitment to Q(x) AKA Pi:\n" << "    ";
     blst_p1_affine Pi = commit_g1(Qx, S);
-    print_p1_affine(Pi);
+    print_p1_affine(&Pi);
 
     // validate q(x) = (f(x) - f(z))/(x-z)
     assert(verify_proof(C, Y, Z, Pi, S));
