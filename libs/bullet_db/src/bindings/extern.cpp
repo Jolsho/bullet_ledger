@@ -19,7 +19,7 @@
 
 // extern.cpp
 #include <lmdb.h>
-#include "../src/state/db.h"
+#include "../state/db.h"
 #include "extern.h"
 
 extern "C" {
@@ -93,4 +93,5 @@ int lmdb_exists(void* handle, const void* key_data, size_t key_size) {
     return static_cast<BulletDB*>(handle) 
         ->exists(key_data, key_size);
 }
+
 

@@ -17,7 +17,7 @@
  */
 
 #include <cassert>
-#include "../src/utils/utils.h"
+#include "utils.h"
 
 void test_single_key_sig() {
     bytes32 seed = gen_rand_32();

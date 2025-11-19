@@ -20,11 +20,11 @@
 #include <span>
 #include <string>
 
-#include "../utils/ring_buffer.h"
-#include "../kzg/kzg.h"
-#include "../utils/bitmap.h"
-#include "lru.cpp"
 #include "db.h"
+#include "kzg.h"
+#include "bitmap.h"
+#include "lru.h"
+#include "ring_buffer.h"
 
 const uint64_t ORDER = 256;
 const size_t BRANCH_SIZE = (ORDER + 1) * 49;

@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#pragma once
 #include <list>
 #include <unordered_map>
 #include <optional>

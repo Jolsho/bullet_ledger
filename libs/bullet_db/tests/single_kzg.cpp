@@ -18,7 +18,7 @@
 
 #include <cassert>
 #include <iostream>
-#include "../src/kzg/kzg.h"
+#include "kzg.h"
 
 void test_commit_and_verify_pip(
     const SRS& S, 

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 
 cmake_minimum_required(VERSION 3.9)
-include(cmake/funcs.cmake)
-include(FetchContent)
 
 project(bullet_lmdb)
 
@@ -13,62 +11,19 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(bullet_db STATIC)
 
-prefix_list(KZG "src/kzg/"
-    mp_mf
-    mp_sf
-    sp_mf
-    sp_sf
-    pippen
-    polynomial
-    srs
+target_include_directories(bullet_db PUBLIC
+    ${PROJECT_SOURCE_DIR}/bindings
+)
+target_include_directories(bullet_db PRIVATE
+    ${PROJECT_SOURCE_DIR}/src/kzg
+    ${PROJECT_SOURCE_DIR}/src/state
+    ${PROJECT_SOURCE_DIR}/src/utils
+    ${PROJECT_SOURCE_DIR}/src/bindings
 )
 
-prefix_list(STATE "src/state/"
-    branch
-    db
-    leaf
-    ledger
-    lru
-    path
-    utils
-)
-
-prefix_list(UTILS "src/utils/" 
-    bitmap
-    points
-    scalar
-    key_sig
-)
-
-prefix_list(BINDINGS "bindings/" 
-    extern
-)
-
-set(HEADERS
-    ${PROJECT_SOURCE_DIR}/src/kzg/kzg.h
-
-    ${PROJECT_SOURCE_DIR}/src/state/verkle.h
-    ${PROJECT_SOURCE_DIR}/src/state/db.h
-
-    ${PROJECT_SOURCE_DIR}/src/utils/utils.h
-    ${PROJECT_SOURCE_DIR}/src/utils/bitmap.h
-    ${PROJECT_SOURCE_DIR}/src/utils/result.h
-    ${PROJECT_SOURCE_DIR}/src/utils/ring_buffer.h
-
-    ${PROJECT_SOURCE_DIR}/bindings/extern.h
-)
-
-
-target_sources(bullet_db
-    PRIVATE
-        ${UTILS}
-        ${STATE}
-        ${KZG}
-        ${BINDINGS}
-    PUBLIC
-        ${HEADERS}
-)
-
+file(GLOB_RECURSE HEADERS "src/**/*.h")
+file(GLOB_RECURSE SRC "src/**/*.cpp")
+target_sources(bullet_db PRIVATE ${SRC} ${HEADERS})
 
 
 ####################################################
@@ -76,8 +31,13 @@ target_sources(bullet_db
 ####################################################
 set(BLST_SOURCE ${PROJECT_SOURCE_DIR}/deps/blst)
 set(BLST_INCLUDE ${BLST_SOURCE}/bindings)
-target_include_directories(bullet_db PUBLIC ${BLST_INCLUDE})
-target_link_libraries(bullet_db PUBLIC ${BLST_SOURCE}/libblst.a)
+if(TESTING)
+    target_include_directories(bullet_db PUBLIC ${BLST_INCLUDE})
+    target_link_libraries(bullet_db PUBLIC ${BLST_SOURCE}/libblst.a)
+else()
+    target_include_directories(bullet_db PRIVATE ${BLST_INCLUDE})
+    target_link_libraries(bullet_db PRIVATE ${BLST_SOURCE}/libblst.a)
+endif()
 
 
 ####################################################
@@ -85,8 +45,8 @@ target_link_libraries(bullet_db PUBLIC ${BLST_SOURCE}/libblst.a)
 ####################################################
 set(BLAKE3_SOURCE ${PROJECT_SOURCE_DIR}/deps/blake3)
 set(BLAKE3_INCLUDE ${BLAKE3_SOURCE}/c)
-target_include_directories(bullet_db PUBLIC ${BLAKE3_INCLUDE})
-target_link_libraries(bullet_db PUBLIC ${BLAKE3_SOURCE}/libblake3.a)
+target_include_directories(bullet_db PRIVATE ${BLAKE3_INCLUDE})
+target_link_libraries(bullet_db PRIVATE ${BLAKE3_SOURCE}/libblake3.a)
 
 
 ####################################################

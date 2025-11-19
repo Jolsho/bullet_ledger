@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "../src/state/verkle.h"
+#include "verkle.h"
 #include <cassert>
 #include <filesystem>
 #include <random>
