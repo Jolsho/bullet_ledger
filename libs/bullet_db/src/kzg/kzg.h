@@ -17,10 +17,7 @@
  */
 
 #pragma once
-#include "utils.h"
-#include <vector>
-
-using std::vector;
+#include "scalars.h"
 
 // =======================================
 // ============= SRS =====================
@@ -29,11 +26,11 @@ using std::vector;
 
 class SRS {
 public:
-    vector<blst_p1> g1_powers_jacob;
-    vector<blst_p1_affine> g1_powers_aff;
+    std::vector<blst_p1> g1_powers_jacob;
+    std::vector<blst_p1_affine> g1_powers_aff;
 
-    vector<blst_p2> g2_powers_jacob;
-    vector<blst_p2_affine> g2_powers_aff;
+    std::vector<blst_p2> g2_powers_jacob;
+    std::vector<blst_p2_affine> g2_powers_aff;
 
     blst_p2 h;  // generator in G2 (h == g2_powers[0])
     blst_p1 g;  // generator in G1 (g == g1_powers[0])
@@ -57,7 +54,7 @@ public:
     void mult_p1s(
         blst_p1 &agg,
         const scalar_vec& scalars,
-        const vector<blst_p1_affine>& points);
+        const std::vector<blst_p1_affine>& points);
 
     void mult_fixed_base(
         blst_p1 &agg,
@@ -66,13 +63,13 @@ public:
 
 private:
     limb_t *scratch_space;
-    vector<blst_p1_affine*> g1_powers_aff_ptrs;
-    vector<const byte*> scalar_ptrs;
-    vector<const blst_p1_affine*> point_ptrs;
+    std::vector<blst_p1_affine*> g1_powers_aff_ptrs;
+    std::vector<const byte*> scalar_ptrs;
+    std::vector<const blst_p1_affine*> point_ptrs;
     size_t scratch_size;
 
     void fill_scalars(const scalar_vec& scalars);
-    void fill_points(const vector<blst_p1_affine>& points);
+    void fill_points(const std::vector<blst_p1_affine>& points);
     void clear_scalars();
     void clear_points();
     void new_scratch_space(size_t n);
@@ -167,20 +164,20 @@ scalar_vec derive_Z(
 // =======================================
 
 scalar_vec fiat_shamir(
-    const vector<blst_p1> &Cs,
-    const vector<blst_scalar> &Ys,
+    const std::vector<blst_p1> &Cs,
+    const std::vector<blst_scalar> &Ys,
     const scalar_vec &Zs
 );
 
 scalar_vec derive_aggregate_polynomial(
-    vector<scalar_vec> &Fxs,
-    vector<blst_p1> &Cs,
+    std::vector<scalar_vec> &Fxs,
+    std::vector<blst_p1> &Cs,
     scalar_vec &Ys,
     blst_scalar &Z
 );
 
 bool verify_multi_func(
-    vector<blst_p1> &Cs,
+    std::vector<blst_p1> &Cs,
     scalar_vec &Ys,
     blst_scalar &Z,
     blst_p1_affine &Pi,
@@ -192,17 +189,17 @@ bool verify_multi_func(
 // ===================================================
 
 std::tuple<blst_p1, blst_p1_affine> multi_func_multi_point_prover(
-    const vector<scalar_vec> &funcs,
-    const vector<blst_p1> &Cs,
+    const std::vector<scalar_vec> &funcs,
+    const std::vector<blst_p1> &Cs,
     const scalar_vec &Zs,
-    const vector<scalar_vec> &Ys_mat,
+    const std::vector<scalar_vec> &Ys_mat,
     const SRS &S
 );
 
 bool multi_func_multi_point_verify(
-    const vector<blst_p1> &Cs,
+    const std::vector<blst_p1> &Cs,
     const scalar_vec &Zs,
-    const vector<scalar_vec> &Ys_mat,
+    const std::vector<scalar_vec> &Ys_mat,
     const blst_p1_affine &Pi,
     const SRS &S
 );

@@ -19,7 +19,7 @@
 
 // extern.cpp
 #include <lmdb.h>
-#include "../state/db.h"
+#include "db.h"
 #include "extern.h"
 
 extern "C" {

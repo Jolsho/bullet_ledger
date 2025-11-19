@@ -42,7 +42,11 @@ void main_state_trie() {
     if (fs::exists(path)) fs::remove_all(path);
     fs::create_directory(path);
 
-    Ledger l(path, 128, 10 * 1024 * 1024, "bullet", new_scalar(13));
+    Ledger l(path, 128, 
+        10 * 1024 * 1024, 
+        "bullet", 
+        new_scalar(13)
+    );
 
     vector<Hash> raw_hashes;
     raw_hashes.reserve(25);

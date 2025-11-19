@@ -16,13 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "utils.h"
-
-
-
-// =======================================
-// =============== SCALAR ================
-// =======================================
+#include "scalars.h"
+#include "key_sig.h"
 
 blst_scalar new_scalar(const uint64_t v) {
     blst_scalar s;

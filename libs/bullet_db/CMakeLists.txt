@@ -45,8 +45,13 @@ endif()
 ####################################################
 set(BLAKE3_SOURCE ${PROJECT_SOURCE_DIR}/deps/blake3)
 set(BLAKE3_INCLUDE ${BLAKE3_SOURCE}/c)
-target_include_directories(bullet_db PRIVATE ${BLAKE3_INCLUDE})
-target_link_libraries(bullet_db PRIVATE ${BLAKE3_SOURCE}/libblake3.a)
+if(TESTING)
+    target_include_directories(bullet_db PUBLIC ${BLAKE3_INCLUDE})
+    target_link_libraries(bullet_db PUBLIC ${BLAKE3_SOURCE}/libblake3.a)
+else()
+    target_include_directories(bullet_db PRIVATE ${BLAKE3_INCLUDE})
+    target_link_libraries(bullet_db PRIVATE ${BLAKE3_SOURCE}/libblake3.a)
+endif()
 
 
 ####################################################

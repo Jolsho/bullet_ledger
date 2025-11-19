@@ -16,9 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <cstring>
 #include <fstream>
-#include <iostream>
-#include "utils.h"
+#include "points.h"
+#include "key_sig.h"
 
 std::tuple<const byte*, size_t> str_to_bytes(const char* str) {
     const byte* bytes = reinterpret_cast<const byte*>(str);

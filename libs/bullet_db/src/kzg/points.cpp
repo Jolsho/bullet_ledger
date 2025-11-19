@@ -16,10 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include <cstring>
 #include <iostream>
 #include <iomanip>
-#include "utils.h"
-
+#include "points.h"
+#include <array>
 
 // =======================================
 // =============== POINTS ================
@@ -34,9 +35,17 @@ blst_p1 new_p1() {
     return p;
 }
 
-std::array<uint8_t, 48> compress_p1(const blst_p1* pk) {
-    std::array<uint8_t, 48> pk_comp;
-    blst_p1_compress(pk_comp.data(), pk);
+void p1_from_bytes(const byte* src, blst_p1* dst) {
+    blst_p1_affine aff;
+    blst_p1_uncompress(&aff, src);
+    blst_p1_from_affine(dst, &aff);
+}
+
+std::array<byte, 48> compress_p1(const blst_p1* pk) {
+    std::array<byte, 48> pk_comp;
+    blst_p1_compress(
+        reinterpret_cast<byte*>(pk_comp.data()), 
+        pk);
     return pk_comp;
 }
 
@@ -98,7 +107,10 @@ blst_p2 p2_from_affine(const blst_p2_affine &aff) {
 void print_p2(const blst_p2& pk) {
     auto pk_comp = compress_p2(pk);
     for (auto b : pk_comp)
-        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b;
+        std::cout << std::hex 
+        << std::setw(2) 
+        << std::setfill('0') 
+        << (int)b;
     std::cout << std::endl;
 }
 void print_p2_affine(const blst_p2_affine& pk) {

@@ -19,7 +19,6 @@
 #include <cassert>
 #include <iostream>
 #include "kzg.h"
-#include "utils.h"
 
 
 void test_multi_point() {

@@ -18,12 +18,13 @@
 
 #include "kzg.h"
 #include "blake3.h"
+#include "points.h"
+#include <array>
 
-using std::array;
 
 scalar_vec fiat_shamir_mm(
-    const vector<blst_p1> &Cs,
-    const vector<scalar_vec> &Ys_mat,
+    const std::vector<blst_p1> &Cs,
+    const std::vector<scalar_vec> &Ys_mat,
     const scalar_vec &Zs,
     const size_t m
 ) {
@@ -34,7 +35,7 @@ scalar_vec fiat_shamir_mm(
     blake3_hasher_update(&h, "KZG-multi-open", 15);
 
     // Hash commitments
-    array<uint8_t,48> buf;
+    std::array<uint8_t,48> buf;
     for (auto &C : Cs) {
         blst_p1_compress(buf.data(), &C);
         blake3_hasher_update(&h, buf.data(), buf.size());
@@ -52,7 +53,7 @@ scalar_vec fiat_shamir_mm(
         blake3_hasher_update(&h, z.b, 32);
 
     // Produce alpha
-    array<uint8_t,32> digest;
+    std::array<uint8_t,32> digest;
     blake3_hasher_finalize(&h, digest.data(), digest.size());
 
     blst_scalar alpha;
@@ -69,7 +70,7 @@ scalar_vec fiat_shamir_mm(
 }
 
 scalar_vec derive_aggregate_polynomial_mm(
-    const vector<scalar_vec> &funcs,    // m polynomials
+    const std::vector<scalar_vec> &funcs,    // m polynomials
     const scalar_vec &alphas            // length m
 ) {
     size_t m = funcs.size();
@@ -84,7 +85,7 @@ scalar_vec derive_aggregate_polynomial_mm(
 }
 
 scalar_vec derive_aggregate_evaluation(
-    const vector<scalar_vec> &Ys_mat,   // m x k matrix
+    const std::vector<scalar_vec> &Ys_mat,   // m x k matrix
     const scalar_vec &alphas,           // length m
     const size_t m
 ) {
@@ -105,10 +106,10 @@ scalar_vec derive_aggregate_evaluation(
 
 // return commit(funcs_aggregate) & Pi
 std::tuple<blst_p1, blst_p1_affine> multi_func_multi_point_prover(
-    const vector<scalar_vec> &funcs,
-    const vector<blst_p1> &Cs,
+    const std::vector<scalar_vec> &funcs,
+    const std::vector<blst_p1> &Cs,
     const scalar_vec &Zs,
-    const vector<scalar_vec> &Ys_mat,
+    const std::vector<scalar_vec> &Ys_mat,
     const SRS &S
 ) {
     size_t m = funcs.size();
@@ -140,9 +141,9 @@ std::tuple<blst_p1, blst_p1_affine> multi_func_multi_point_prover(
 
 // e(C_agg - g(I(s)), g2) == e( Pi, g2(Z(s)))
 bool multi_func_multi_point_verify(
-    const vector<blst_p1> &Cs,
+    const std::vector<blst_p1> &Cs,
     const scalar_vec &Zs,
-    const vector<scalar_vec> &Ys_mat,
+    const std::vector<scalar_vec> &Ys_mat,
     const blst_p1_affine &Pi,
     const SRS &S
 ) {

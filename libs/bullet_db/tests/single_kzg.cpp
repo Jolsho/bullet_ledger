@@ -19,6 +19,7 @@
 #include <cassert>
 #include <iostream>
 #include "kzg.h"
+#include "points.h"
 
 void test_commit_and_verify_pip(
     const SRS& S, 

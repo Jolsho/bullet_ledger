@@ -16,38 +16,61 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#ifndef BITMAP_H
-#define BITMAP_H
-
 #include <array>
-#include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 
 class Bitmap {
 public:
     static constexpr size_t BITMAP_SIZE = 32 * 8; // 32 bytes = 256 bits
 
-    Bitmap();
+    Bitmap() {
+        data.fill(0);
+    }
 
-    // Check if a bit is set
-    bool is_set(size_t bit) const;
+    bool is_set(size_t bit) const {
+        check_index(bit);
+        size_t byte_index = bit / 8;
+        size_t bit_index  = bit % 8;
+        return (data[byte_index] & (1 << bit_index)) != 0;
+    }
 
-    // Set a bit to 1
-    void set(size_t bit);
+    void set(size_t bit) {
+        check_index(bit);
+        size_t byte_index = bit / 8;
+        size_t bit_index  = bit % 8;
+        data[byte_index] |= (1 << bit_index);
+    }
 
-    // Clear a bit to 0
-    void clear(size_t bit);
+    void clear(size_t bit) {
+        check_index(bit);
+        size_t byte_index = bit / 8;
+        size_t bit_index  = bit % 8;
+        data[byte_index] &= ~(1 << bit_index);
+    }
 
-    size_t count();
+    size_t count() {
+        size_t count = 0;
+        for (auto i = 0; i < BITMAP_SIZE; i++) {
+            if (is_set(i)) count++;
+        }
+        return count;
+    }
 
-    // Optional: toggle a bit
-    void toggle(size_t bit);
+    void toggle(size_t bit) {
+        check_index(bit);
+        size_t byte_index = bit / 8;
+        size_t bit_index  = bit % 8;
+        data[byte_index] ^= (1 << bit_index);
+    }
+
 
 private:
     std::array<uint8_t, 32> data;
 
-    void check_index(size_t bit) const;
+    void check_index(size_t bit) const {
+        if (bit >= BITMAP_SIZE) {
+            throw std::out_of_range("Bit index out of range");
+        }
+    }
 };
-
-#endif // BITMAP_H
-

@@ -17,14 +17,15 @@
  */
 
 #pragma once
-#include <span>
-#include <string>
-
-#include "db.h"
-#include "kzg.h"
+#include <memory>
 #include "bitmap.h"
-#include "lru.h"
 #include "ring_buffer.h"
+#include "hashing.h"
+#include "points.h"
+#include "kzg.h"
+#include "scalars.h"
+#include "db.h"
+#include "lru.h"
 
 const uint64_t ORDER = 256;
 const size_t BRANCH_SIZE = (ORDER + 1) * 49;
@@ -32,30 +33,19 @@ const size_t LEAF_SIZE = 1 + 48 + 2 + 32 + (ORDER * 33);
 const byte BRANCH = static_cast<const byte>(69);
 const byte LEAF = static_cast<const byte>(71);
 
-using Commitment = blst_p1;
-using Proof = blst_p1_affine;
 using Path = RingBuffer<byte>;
-using ByteSlice = std::span<byte>;
-using Hash = std::array<byte, 32>;
 using NodeId = std::array<byte, 8>;
 
 class Ledger; // forward declared and only used via reference
 
-//////////////////////////////////////////////
-//////////////    UTILS   ///////////////////
-////////////////////////////////////////////
-
+/// ID CONVERSIONS
 using uint64_array = std::array<byte, 8>;
-uint64_array u64_to_array(uint64_t num);
-uint64_t u64_from_array(uint64_array a);
-void commit_from_bytes(const byte* src, Commitment* dst);
-Hash derive_kv_hash(const Hash &key_hash, const Hash &val_hash);
-Hash derive_hash(const ByteSlice &value);
-bool iszero(const ByteSlice &slice);
-Commitment derive_init_commit(byte nib, const Commitment &c, Ledger &ledger);
-void print_hash(const Hash& hash);
-void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag);
-
+inline uint64_array u64_to_array(uint64_t num) { 
+    return std::bit_cast<std::array<byte, 8>>(num); 
+}
+inline uint64_t u64_from_array(uint64_array a) { 
+    return std::bit_cast<uint64_t>(a); 
+}
 
 /////////////////////////////////////////////////
 //////////    NODE VIRTUAL CLASS    ////////////
@@ -77,7 +67,7 @@ public:
         Ledger &ledger, 
         const Hash &key,
         ByteSlice nibbles,
-        vector<scalar_vec> &Fxs, 
+        std::vector<scalar_vec> &Fxs, 
         Bitmap &Zs
     ) = 0;
     virtual std::optional<Commitment> virtual_put(
@@ -102,134 +92,38 @@ public:
 
 using Node_ptr = std::unique_ptr<Node>;
 
-/////////////////////////////////////////////////
-///////////////    BRANCH    ///////////////////
-///////////////////////////////////////////////
-class Branch : public Node {
-private:
-    NodeId id_;
-    Commitment commit_;
-    std::vector<std::unique_ptr<Commitment>> children_;
-    uint16_t count_;
-    NodeId tmp_id_;
-
+///////////////////////////////////////////
+//////    NODE VIRTUAL SUBCLASSES   //////
+/////////////////////////////////////////
+class Branch_i : public Node {
 public:
-    Branch(std::optional<NodeId> id, std::optional<ByteSlice*> buff);
-    const std::optional<Commitment*> get_child(const byte &nib) const;
-    void insert_child(const byte &nib, const Commitment* new_commit);
-    void delete_child(const byte &nib);
-    const std::tuple<byte, Commitment, NodeId> get_last_remaining_child() const;
-
-
-    // NODE IMPLEMENTATION
-    const NodeId* get_id() const override { return &id_; };
-    const Commitment* get_commitment() const override { return &commit_; };
-    const byte get_type() const override { return BRANCH; };
-    NodeId* get_next_id(ByteSlice &nibs) override;
-    void change_id(const NodeId &id, Ledger &ledger) override;
-    const Commitment* derive_commitment(Ledger &ledger) override;
-    std::vector<byte> to_bytes() const override;
-    std::optional<Hash> search( 
-        Ledger &ledger, 
-        ByteSlice nibbles
-    ) override;
-
-    int build_commitment_path(
-        Ledger &ledger, 
-        const Hash &key,
-        ByteSlice nibbles,
-        vector<scalar_vec> &Fxs, 
-        Bitmap &Zs
-    ) override;
-
-    std::optional<Commitment> virtual_put(
-        Ledger &ledger, 
-        ByteSlice nibbles,
-        const Hash &key,
-        const Hash &val_hash
-    ) override;
-
-    std::optional<const Commitment*> put(
-        Ledger &ledger, 
-        ByteSlice nibbles, 
-        const Hash &key,
-        const Hash &val_hash
-    ) override;
-
-    std::optional<std::tuple<Commitment, bool>> remove(
-        Ledger &ledger, 
-        ByteSlice nibbles,
-        const Hash &key
-    ) override;
+    virtual void insert_child(
+        const byte &nib, 
+        const Commitment* new_commit
+    ) = 0;
 };
-
-//////////////////////////////////////////////
-///////////////    LEAF    //////////////////
-////////////////////////////////////////////
-class Leaf : public Node {
-private:
-    NodeId id_;
-    Commitment commit_;
-    vector<std::unique_ptr<Hash>> children_;
-    Path path_;
-    uint8_t count_;
-
+class Leaf_i : public Node {
 public:
-    Leaf(std::optional<NodeId> id, std::optional<ByteSlice*> buffer);
-
-    Path* get_path();
-    void set_path(ByteSlice path);
-    void insert_child(const byte &nib, const Hash &val_hash);
-    std::optional<size_t> in_path(const ByteSlice nibbles);
-
-    // NODE IMPLEMENTATION
-    const NodeId* get_id() const override { return &id_; };
-    void change_id(const NodeId &id, Ledger &ledger) override;
-    const byte get_type() const override { return LEAF; };
-    NodeId* get_next_id(ByteSlice &nibs) override;
-    std::vector<byte> to_bytes() const override;
-    const Commitment* get_commitment() const override { return &commit_; };
-    const Commitment* derive_commitment(Ledger &ledger) override;
-    std::optional<Hash> search( 
-        Ledger &ledger, 
-        ByteSlice nibbles
-    ) override;
-
-    int build_commitment_path(
-        Ledger &ledger, 
-        const Hash &key,
-        ByteSlice nibbles,
-        vector<scalar_vec> &Fxs, 
-        Bitmap &Zs
-    ) override;
-
-    std::optional<Commitment> virtual_put(
-        Ledger &ledger, 
-        ByteSlice nibbles,
-        const Hash &key, 
+    virtual void insert_child(
+        const byte &nib, 
         const Hash &val_hash
-    ) override;
-
-    std::optional<const Commitment*> put(
-        Ledger &ledger, 
-        ByteSlice nibbles, 
-        const Hash &key, 
-        const Hash &val_hash
-    ) override;
-
-    std::optional<std::tuple<Commitment, bool>> remove(
-        Ledger &ledger, 
-        ByteSlice nibbles,
-        const Hash &key
-    ) override;
+    ) = 0;
+    virtual void set_path( ByteSlice path) = 0;
 };
-
+std::unique_ptr<Branch_i> create_branch(
+    std::optional<NodeId> id, 
+    std::optional<ByteSlice*> buff
+);
+std::unique_ptr<Leaf_i> create_leaf(
+    std::optional<NodeId> id, 
+    std::optional<ByteSlice*> buff
+);
 
 /////////////////////////////////////////////////
-//////////    MAIN LEDGER CLASS    /////////////
+//////////    VIRTUAL LEDGER CLASS    //////////
 ///////////////////////////////////////////////
 
-class LedgerState {
+class Ledger {
 private:
     std::unique_ptr<Node> root_;
     BulletDB db_;
@@ -237,33 +131,6 @@ private:
     SRS srs_;
     scalar_vec poly_;
     std::string tag_;
-
-    LedgerState(
-        std::string path, 
-        size_t cache_size, 
-        size_t map_size,
-        std::string tag,
-        blst_scalar secret_sk
-    );
-    ~LedgerState() = default;
-
-    // only Ledger can access
-    friend class Ledger;   
-};
-
-class Ledger {
-private:
-    LedgerState state_;
-
-    Node* load_node(const NodeId &id);
-    void cache_node(std::unique_ptr<Node> node);
-    std::optional<Node_ptr> delete_node(const NodeId &id);
-    bool delete_value(const Hash &kv);
-    Branch* new_cached_branch(uint64_t id);
-    Leaf* new_cached_leaf(uint64_t id);
-    scalar_vec* get_poly();
-    friend class Branch;
-    friend class Leaf;
 
 public:
     Ledger(
@@ -274,22 +141,50 @@ public:
         blst_scalar secret_sk
     );
     ~Ledger();
+    const SRS* get_srs() const;
+    const std::string* get_tag() const;
+    void set_srs(scalar_vec &coeffs);
+    void set_tag(std::string &tag);
+    scalar_vec* get_poly();
 
-    SRS* get_srs();
-    std::string* get_tag();
-    bool value_exists(const Hash &hash);
     bool key_value_exists(
         const Hash &key_hash,
         const Hash &val_hash
     );
-    std::optional<ByteSlice> get_value(ByteSlice &key, uint8_t idx);
+    bool value_exists(const Hash &hash);
+    std::optional<ByteSlice> get_value(
+        ByteSlice &key, 
+        byte idx
+    );
     std::optional<std::tuple<
         Commitment, Proof, 
-        vector<Commitment>, 
-        vector<scalar_vec>, 
+        std::vector<Commitment>, 
+        std::vector<scalar_vec>, 
         scalar_vec
-    >> get_existence_proof(ByteSlice &key, uint8_t idx);
-    std::optional<Commitment> put(ByteSlice &key, ByteSlice &value, uint8_t idx);
-    std::optional<Commitment> virtual_put(ByteSlice &key, ByteSlice &value, uint8_t idx);
-    std::optional<Commitment> remove(ByteSlice &key, uint8_t idx);
+    >> get_existence_proof(
+        ByteSlice &key, 
+        uint8_t idx
+    );
+    std::optional<Commitment> put(
+        ByteSlice &key, 
+        ByteSlice &value, 
+        uint8_t idx
+    );
+    std::optional<Commitment> virtual_put(
+        ByteSlice &key, 
+        ByteSlice &value, 
+        uint8_t idx
+    );
+    std::optional<Commitment> remove(
+        ByteSlice &key, 
+        uint8_t idx
+    );
+
+    // STATE RELATED
+    Node* load_node(const NodeId &id);
+    void cache_node(std::unique_ptr<Node> node);
+    std::optional<Node_ptr> delete_node(const NodeId &id);
+    bool delete_value(const Hash &kv);
+    Branch_i* new_cached_branch(uint64_t id);
+    Leaf_i* new_cached_leaf(uint64_t id);
 };

@@ -17,28 +17,43 @@
  */
 
 #pragma once
-#include <lmdb.h>
-#include <cstdint>
+#include "blst.h"
 #include <vector>
+#include <array>
 
-class BulletDB {
-public:
-    MDB_env* env_;
-    MDB_txn* txn_;
-    MDB_dbi dbi_;
+using bytes32 = std::array<byte, 32>;
 
-    BulletDB(const char* path, size_t map_size);
-    ~BulletDB();
-    void start_txn();
-    void end_txn(int rc = 0);
-    int put(const void* key_data, size_t key_size, 
-            const void* value_data, size_t value_size);
-    int get(const void* key_data, size_t key_size, 
-            void** value_data, size_t* value_size);
-    void* mut_get(const void* key, size_t key_size, 
-                  size_t value_size);
-    int del(const void* key_data, size_t key_size);
-    int exists(const void* key_data, size_t key_size);
-    std::vector<uint64_t> flatten_sort_l2();
-
+struct key_pair {
+    blst_p1 pk;
+    blst_scalar sk;
 };
+
+std::tuple<const byte*, size_t> str_to_bytes(const char* str);
+
+bytes32 gen_rand_32();
+
+key_pair gen_key_pair(
+    const char* tag, 
+    bytes32 &seed
+);
+
+bool verify_sig(
+    const blst_p1 &PK,
+    blst_p2 &signature, 
+    const byte* msg,
+    size_t msg_len,
+    const byte* tag,
+    size_t tag_len
+);
+
+bool verify_aggregate_signature(
+    std::vector<blst_p1>& pks,
+    const blst_p2& agg_sig,
+    const byte* msg,
+    size_t msg_len,
+    const uint8_t* tag,
+    size_t tag_len
+);
+
+
+

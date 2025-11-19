@@ -17,28 +17,30 @@
  */
 
 #pragma once
-#include <lmdb.h>
-#include <cstdint>
-#include <vector>
+#include "blake3.h"
+#include "bytes.h"
 
-class BulletDB {
+using Hash = std::array<byte, 32>;
+class BlakeHasher {
+private: blake3_hasher h_;
 public:
-    MDB_env* env_;
-    MDB_txn* txn_;
-    MDB_dbi dbi_;
+    BlakeHasher() { blake3_hasher_init(&h_); }
+    ~BlakeHasher() = default;
 
-    BulletDB(const char* path, size_t map_size);
-    ~BulletDB();
-    void start_txn();
-    void end_txn(int rc = 0);
-    int put(const void* key_data, size_t key_size, 
-            const void* value_data, size_t value_size);
-    int get(const void* key_data, size_t key_size, 
-            void** value_data, size_t* value_size);
-    void* mut_get(const void* key, size_t key_size, 
-                  size_t value_size);
-    int del(const void* key_data, size_t key_size);
-    int exists(const void* key_data, size_t key_size);
-    std::vector<uint64_t> flatten_sort_l2();
-
+    void update(const byte* data, const size_t size) {
+        blake3_hasher_update(&h_, data, size);
+    }
+    Hash finalize() {
+        Hash hash;
+        blake3_hasher_finalize(&h_, 
+            reinterpret_cast<uint8_t*>(hash.data()), 
+            hash.size());
+        return hash;
+    }
 };
+
+Hash derive_kv_hash(const Hash &key_hash, const Hash &val_hash);
+
+Hash derive_hash(const ByteSlice &value);
+
+void print_hash(const Hash &hash);

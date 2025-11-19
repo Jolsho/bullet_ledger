@@ -16,48 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "blake3.h"
-#include "verkle.h"
-#include <cstddef>
+#include "hashing.h"
+#include "points.h"
 #include <iomanip>
 #include <iostream>
-
-bool iszero(const ByteSlice &slice) {
-    byte zero_byte{0};
-    for (auto &b: slice) if (b != zero_byte) return false;
-    return true;
-}
-
-uint64_array u64_to_array(uint64_t num) { return std::bit_cast<std::array<byte, 8>>(num); }
-uint64_t u64_from_array(uint64_array a) { return std::bit_cast<uint64_t>(a); }
-
-void commit_from_bytes(const byte* src, Commitment* dst) {
-    blst_p1_affine aff;
-    blst_p1_uncompress(&aff, src);
-    blst_p1_from_affine(dst, &aff);
-}
-
-class BlakeHasher {
-private:
-    blake3_hasher h_;
-public:
-    BlakeHasher() {
-        blake3_hasher_init(&h_);
-    }
-    ~BlakeHasher() = default;
-
-    void update(const byte* data, const size_t size) {
-        blake3_hasher_update(&h_, data, size);
-    }
-    Hash finalize() {
-        Hash hash;
-        blake3_hasher_finalize(
-            &h_, 
-            reinterpret_cast<uint8_t*>(hash.data()), 
-            hash.size());
-        return hash;
-    }
-};
 
 Hash derive_kv_hash(const Hash &key_hash, const Hash &val_hash) {
     BlakeHasher hasher;
@@ -77,21 +39,14 @@ void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag
     hasher.update(reinterpret_cast<const byte*>(tag->data()), tag->size());
 
     auto c_bytes = compress_p1(p1);
-    hasher.update(c_bytes.data(), c_bytes.size());
+    hasher.update(
+        c_bytes.data(), 
+        c_bytes.size());
 
     Hash h = hasher.finalize();
 
-    blst_scalar_from_be_bytes(s, h.data(), h.size());
-}
-
-Commitment derive_init_commit(
-    byte nib, 
-    const Commitment &c, 
-    Ledger &ledger
-) {
-    scalar_vec Fx(ORDER, new_scalar());
-    hash_p1_to_scalar(&c, &Fx[nib], ledger.get_tag());
-    return commit_g1_projective(Fx, *ledger.get_srs());
+    blst_scalar_from_be_bytes(
+        s, reinterpret_cast<const byte*>(h.data()), h.size());
 }
 
 void print_hash(const Hash &hash) {
@@ -103,4 +58,3 @@ void print_hash(const Hash &hash) {
     }
     std::cout << std::dec << std::endl; // restore formatting
 }
-

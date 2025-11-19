@@ -16,8 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "blst.h"
 #include "kzg.h"
+#include "points.h"
 
 // ======================================================
 // ========== SINGLE POINT SINGLE FUNCTION ==============

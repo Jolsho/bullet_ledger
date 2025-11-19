@@ -18,6 +18,8 @@
 
 #include "kzg.h"
 #include "blake3.h"
+#include "points.h"
+#include <array>
 
 // ======================================================
 // ========== SINGLE POINT MULTI_FUNCTION ===============
@@ -26,8 +28,8 @@
 using std::array;
 
 scalar_vec fiat_shamir(
-    const vector<blst_p1> &Cs,
-    const vector<blst_scalar> &Ys,
+    const std::vector<blst_p1> &Cs,
+    const std::vector<blst_scalar> &Ys,
     const scalar_vec &Zs
 ) {
     blake3_hasher h;
@@ -37,7 +39,7 @@ scalar_vec fiat_shamir(
     blake3_hasher_update(&h, "KZG-multi-open", 15);
 
     // Hash commitments
-    array<uint8_t,48> buf;
+    std::array<uint8_t,48> buf;
     for (auto &C : Cs) {
         blst_p1_compress(buf.data(), &C);
         blake3_hasher_update(&h, buf.data(), buf.size());
@@ -52,7 +54,7 @@ scalar_vec fiat_shamir(
         blake3_hasher_update(&h, z.b, 32);
 
     // Produce alpha
-    array<uint8_t,32> digest;
+    std::array<uint8_t,32> digest;
     blake3_hasher_finalize(&h, digest.data(), digest.size());
 
     blst_scalar alpha;
@@ -71,8 +73,8 @@ scalar_vec fiat_shamir(
 
 
 scalar_vec derive_aggregate_polynomial(
-    vector<scalar_vec> &Fxs,
-    vector<blst_p1> &Cs,
+    std::vector<scalar_vec> &Fxs,
+    std::vector<blst_p1> &Cs,
     scalar_vec &Ys,
     blst_scalar &Z
 ) {
@@ -87,7 +89,7 @@ scalar_vec derive_aggregate_polynomial(
 }
 
 bool verify_multi_func(
-    vector<blst_p1> &Cs,
+    std::vector<blst_p1> &Cs,
     scalar_vec &Ys,
     blst_scalar &Z,
     blst_p1_affine &Pi,
