@@ -158,10 +158,10 @@ std::optional<std::tuple<
 
 
     // Z bitmap to scalar_vec
-    scalar_vec Zs_vec(Zs.count(), new_scalar());
+    scalar_vec Zs_vec; Zs_vec.reserve(Zs.count());
     for (uint64_t k = 0; k < ORDER; k++)
-        if (Zs.is_set(k)) 
-            blst_scalar_from_uint64(&Zs_vec[k], &k);
+        if (Zs.is_set(k))
+            Zs_vec.push_back(new_scalar(k));
 
 
     // for each Fx solve at all Zs

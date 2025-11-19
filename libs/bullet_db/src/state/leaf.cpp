@@ -134,13 +134,11 @@ int Leaf::build_commitment_path(
 ) { 
     // build Fx
     scalar_vec fx(ORDER, new_scalar());
-    for (auto i = 0; i < ORDER; i++) {
-        if (children_[i]) {
+    for (auto i = 0; i < ORDER; i++)
+        if (Hash* c = children_[i].get())
             blst_scalar_from_le_bytes(
-                &fx[i], children_[i].get()->data(), 256
+                &fx[i], c->data(), c->size()
             );
-        }
-    }
 
     Fxs.push_back(fx);
     Zs.set(nibbles.back());

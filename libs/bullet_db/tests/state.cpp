@@ -72,10 +72,15 @@ void main_state_trie() {
     }
 
     // --- GETTING EXISTENCE PROOFS
-    Hash h = raw_hashes[13];
-    ByteSlice key(h.data(), h.size());
-    auto [C, Pi, Ws, Ys, Zs] = l.get_existence_proof(key, 1).value();
-    assert(multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
+    i = 0;
+    for (Hash h: raw_hashes) {
+        ByteSlice key(h.data(), h.size());
+        print_hash(h);
+        auto [C, Pi, Ws, Ys, Zs] = l.get_existence_proof(key, 1).value();
+        assert(multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
+        printf("PROVED %d\n", i);
+        i++;
+    }
 
     // --- Remove phase ---
     i = 0;
@@ -84,7 +89,7 @@ void main_state_trie() {
         l.remove(key, 1);
         auto got = l.get_value(key, 1);
         assert(got.has_value() == false);
-        printf("DELTED %d\n", i);
+        printf("DELETED %d\n", i);
         i++;
     }
     

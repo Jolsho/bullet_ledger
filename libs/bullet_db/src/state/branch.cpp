@@ -177,11 +177,9 @@ int Branch::build_commitment_path(
 
     // build Fx
     scalar_vec fx(ORDER, new_scalar());
-    for (auto i = 0; i < ORDER; i++) {
-        if (children_[i]) {
-            p1_to_scalar(children_[i].get(), &fx[i]);
-        }
-    }
+    for (auto i = 0; i < ORDER; i++)
+        if (Commitment* c = children_[i].get())
+            p1_to_scalar(c, &fx[i]);
 
     Fxs.push_back(fx);
     Zs.set(nibbles.front());
