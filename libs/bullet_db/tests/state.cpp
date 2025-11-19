@@ -42,7 +42,7 @@ void main_state_trie() {
     if (fs::exists(path)) fs::remove_all(path);
     fs::create_directory(path);
 
-    Ledger l(path, 128, 10 * 1024 * 1024, new_scalar(13));
+    Ledger l(path, 128, 10 * 1024 * 1024, "bullet", new_scalar(13));
 
     vector<Hash> raw_hashes;
     raw_hashes.reserve(25);
@@ -71,13 +71,17 @@ void main_state_trie() {
         i++;
     }
 
-    // --- GETTING EXISTENCE PROOFS
+    // --- Proving phase ---
     i = 0;
     for (Hash h: raw_hashes) {
         ByteSlice key(h.data(), h.size());
         print_hash(h);
         auto [C, Pi, Ws, Ys, Zs] = l.get_existence_proof(key, 1).value();
         assert(multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
+
+        if (*Zs[0].b != 0) *Zs[0].b = 0;
+        else *Zs[0].b = 1;
+        assert(!multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
         printf("PROVED %d\n", i);
         i++;
     }

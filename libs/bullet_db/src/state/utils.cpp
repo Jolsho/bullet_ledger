@@ -18,6 +18,7 @@
 
 #include "blake3.h"
 #include "verkle.h"
+#include <cstddef>
 #include <iomanip>
 #include <iostream>
 
@@ -36,37 +37,51 @@ void commit_from_bytes(const byte* src, Commitment* dst) {
     blst_p1_from_affine(dst, &aff);
 }
 
+class BlakeHasher {
+private:
+    blake3_hasher h_;
+public:
+    BlakeHasher() {
+        blake3_hasher_init(&h_);
+    }
+    ~BlakeHasher() = default;
+
+    void update(const byte* data, const size_t size) {
+        blake3_hasher_update(&h_, data, size);
+    }
+    Hash finalize() {
+        Hash hash;
+        blake3_hasher_finalize(
+            &h_, 
+            reinterpret_cast<uint8_t*>(hash.data()), 
+            hash.size());
+        return hash;
+    }
+};
+
 Hash derive_kv_hash(const Hash &key_hash, const Hash &val_hash) {
-    blake3_hasher hasher;
-    blake3_hasher_init(&hasher);
-    blake3_hasher_update(&hasher, 
-                         key_hash.data(), 
-                         key_hash.size());
-    blake3_hasher_update(&hasher, 
-                         val_hash.data(), 
-                         val_hash.size());
-
-    Hash hash;
-    blake3_hasher_finalize(
-        &hasher, 
-        reinterpret_cast<uint8_t*>(hash.data()), 
-        hash.size());
-
-    return hash;
+    BlakeHasher hasher;
+    hasher.update(key_hash.data(), key_hash.size());
+    hasher.update(val_hash.data(), val_hash.size());
+    return hasher.finalize();
 }
 
-
 Hash derive_hash(const ByteSlice &value) {
-    blake3_hasher hasher;
-    blake3_hasher_init(&hasher);
-    blake3_hasher_update(&hasher, value.data(), value.size());
-    Hash hash;
-    blake3_hasher_finalize(
-        &hasher, 
-        reinterpret_cast<uint8_t*>(hash.data()), 
-        hash.size()
-    );
-    return hash;
+    BlakeHasher hasher;
+    hasher.update(value.data(), value.size());
+    return hasher.finalize();
+}
+
+void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag) {
+    BlakeHasher hasher;
+    hasher.update(reinterpret_cast<const byte*>(tag->data()), tag->size());
+
+    auto c_bytes = compress_p1(p1);
+    hasher.update(c_bytes.data(), c_bytes.size());
+
+    Hash h = hasher.finalize();
+
+    blst_scalar_from_be_bytes(s, h.data(), h.size());
 }
 
 Commitment derive_init_commit(
@@ -75,7 +90,7 @@ Commitment derive_init_commit(
     Ledger &ledger
 ) {
     scalar_vec Fx(ORDER, new_scalar());
-    p1_to_scalar(&c, &Fx[nib]);
+    hash_p1_to_scalar(&c, &Fx[nib], ledger.get_tag());
     return commit_g1_projective(Fx, *ledger.get_srs());
 }
 
@@ -88,3 +103,4 @@ void print_hash(const Hash &hash) {
     }
     std::cout << std::dec << std::endl; // restore formatting
 }
+

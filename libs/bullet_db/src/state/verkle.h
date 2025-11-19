@@ -18,6 +18,7 @@
 
 #pragma once
 #include <span>
+#include <string>
 
 #include "../utils/ring_buffer.h"
 #include "../kzg/kzg.h"
@@ -53,6 +54,7 @@ Hash derive_hash(const ByteSlice &value);
 bool iszero(const ByteSlice &slice);
 Commitment derive_init_commit(byte nib, const Commitment &c, Ledger &ledger);
 void print_hash(const Hash& hash);
+void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag);
 
 
 /////////////////////////////////////////////////
@@ -234,11 +236,13 @@ private:
     LRUCache<uint64_t, Node> cache_;
     SRS srs_;
     scalar_vec poly_;
+    std::string tag_;
 
     LedgerState(
         std::string path, 
         size_t cache_size, 
         size_t map_size,
+        std::string tag,
         blst_scalar secret_sk
     );
     ~LedgerState() = default;
@@ -266,11 +270,13 @@ public:
         std::string path, 
         size_t cache_size, 
         size_t map_size,
+        std::string tag,
         blst_scalar secret_sk
     );
     ~Ledger();
 
     SRS* get_srs();
+    std::string* get_tag();
     bool value_exists(const Hash &hash);
     bool key_value_exists(
         const Hash &key_hash,

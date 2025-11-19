@@ -16,7 +16,6 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "blst.h"
 #include "verkle.h"
 #include <future>
 
@@ -24,12 +23,14 @@ LedgerState::LedgerState(
     std::string path, 
     size_t cache_size, 
     size_t map_size,
+    std::string tag,
     blst_scalar secret_sk
 ) : 
     db_(path.data(), map_size), 
     cache_(cache_size), 
     srs_(ORDER, secret_sk),
-    poly_(ORDER, new_scalar())
+    poly_(ORDER, new_scalar()), 
+    tag_(tag)
 { }
 
 
@@ -37,9 +38,10 @@ Ledger::Ledger(
     std::string path, 
     size_t cache_size, 
     size_t map_size,
+    std::string tag,
     blst_scalar secret_sk
 ) : 
-    state_(path, cache_size, map_size, secret_sk) 
+    state_(path, cache_size, map_size, tag, secret_sk) 
 {
     uint64_array root_id = u64_to_array(1);
     state_.db_.start_txn();
@@ -76,6 +78,7 @@ Ledger::~Ledger() {
 }
 
 SRS* Ledger::get_srs() { return &state_.srs_;}
+std::string* Ledger::get_tag() { return &state_.tag_; }
 
 scalar_vec* Ledger::get_poly() {
     for (blst_scalar &c: state_.poly_)

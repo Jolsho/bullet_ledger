@@ -119,7 +119,7 @@ const Commitment* Branch::derive_commitment(Ledger &ledger) {
     scalar_vec* Fx = ledger.get_poly();
     for (auto i = 0; i < ORDER; i++) {
         if (Commitment* c = children_[i].get())
-            p1_to_scalar(c, &Fx->at(i));
+            hash_p1_to_scalar(c, &Fx->at(i), ledger.get_tag());
     }
     commit_g1_projective_in_place(*Fx, *ledger.get_srs(), &commit_);
     return &commit_;
@@ -179,7 +179,7 @@ int Branch::build_commitment_path(
     scalar_vec fx(ORDER, new_scalar());
     for (auto i = 0; i < ORDER; i++)
         if (Commitment* c = children_[i].get())
-            p1_to_scalar(c, &fx[i]);
+            hash_p1_to_scalar(c, &fx[i], ledger.get_tag());
 
     Fxs.push_back(fx);
     Zs.set(nibbles.front());

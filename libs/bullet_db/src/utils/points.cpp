@@ -72,12 +72,6 @@ void p2_mult(blst_p2& dst, const blst_p2 &a, const blst_scalar &b) {
     blst_p2_mult(&dst, &a, b.b, SCALAR_BITS);
 }
 
-void p1_to_scalar(const blst_p1* p1, blst_scalar* s) {
-    // TODO -- should hash and include Domain Seperation Tag
-    auto c_bytes = compress_p1(p1);
-    blst_scalar_from_be_bytes(s, c_bytes.data(), c_bytes.size());
-}
-
 // -------------------- P2 ---------------------------
 
 blst_p2 new_p2() {
