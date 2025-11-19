@@ -39,15 +39,13 @@ Hash pseudo_random_hash(int i) {
 void main_state_trie() {
     namespace fs = std::filesystem;
     const char* path = "./fake_db";
-    if (fs::exists(path)) {
-        fs::remove_all(path);
-    }
+    if (fs::exists(path)) fs::remove_all(path);
     fs::create_directory(path);
 
     Ledger l(path, 128, 10 * 1024 * 1024, new_scalar(13));
 
     vector<Hash> raw_hashes;
-    raw_hashes.reserve(100);
+    raw_hashes.reserve(25);
     for (int i = 0; i < raw_hashes.capacity(); i++) {
         Hash rnd = pseudo_random_hash(i);
         raw_hashes.push_back(rnd);
@@ -73,6 +71,12 @@ void main_state_trie() {
         i++;
     }
 
+    // --- GETTING EXISTENCE PROOFS
+    Hash h = raw_hashes[13];
+    ByteSlice key(h.data(), h.size());
+    auto [C, Pi, Ws, Ys, Zs] = l.get_existence_proof(key, 1).value();
+    assert(multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
+
     // --- Remove phase ---
     i = 0;
     for (Hash h: raw_hashes) {
@@ -83,6 +87,7 @@ void main_state_trie() {
         printf("DELTED %d\n", i);
         i++;
     }
+    
 
     fs::remove_all("./fake_db");
 

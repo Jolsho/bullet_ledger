@@ -75,12 +75,11 @@ Commitment derive_init_commit(
     Ledger &ledger
 ) {
     scalar_vec Fx(ORDER, new_scalar());
-    Fx[nib] = p1_to_scalar(&c);
+    p1_to_scalar(&c, &Fx[nib]);
     return commit_g1_projective(Fx, *ledger.get_srs());
 }
 
-void print_hash(const Hash &hash)
-{
+void print_hash(const Hash &hash) {
     for (byte b : hash) {
         std::cout << std::hex
                   << std::setw(2)

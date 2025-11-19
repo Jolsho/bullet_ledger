@@ -75,7 +75,7 @@ void p1_mult(blst_p1& dst, const blst_p1 &a, const blst_scalar &b);
 std::array<uint8_t, 48> compress_p1(const blst_p1 *pk);
 void print_p1(const blst_p1* pk);
 void print_p1_affine(const blst_p1_affine* pk);
-blst_scalar p1_to_scalar(const blst_p1 *p1);
+void p1_to_scalar(const blst_p1* p1, blst_scalar* s);
 
 std::array<uint8_t, 96> compress_p2(const blst_p2& pk);
 void print_p2(const blst_p2& pk);

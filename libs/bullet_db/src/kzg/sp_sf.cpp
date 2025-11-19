@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "blst.h"
 #include "kzg.h"
 
 // ======================================================
@@ -53,6 +54,18 @@ blst_p1 commit_g1_projective(
         blst_p1_add_or_double(&C, &C, &tmp);
     }
     return C;
+}
+
+void commit_g1_projective_in_place(
+    const scalar_vec& coeffs, 
+    const SRS& srs,
+    blst_p1* C
+) {
+    blst_p1 tmp;
+    for (size_t i = 0; i < coeffs.size(); i++) {
+        p1_mult(tmp, srs.g1_powers_jacob[i], coeffs[i]);
+        blst_p1_add_or_double(C, C, &tmp);
+    }
 }
 
 blst_p1_affine commit_g1(

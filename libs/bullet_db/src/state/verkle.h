@@ -272,7 +272,10 @@ public:
 
     SRS* get_srs();
     bool value_exists(const Hash &hash);
-    bool key_value_exists(const ByteSlice &key, const Hash &val_hash, uint8_t idx);
+    bool key_value_exists(
+        const Hash &key_hash,
+        const Hash &val_hash
+    );
     std::optional<ByteSlice> get_value(ByteSlice &key, uint8_t idx);
     std::optional<std::tuple<
         Commitment, Proof, 

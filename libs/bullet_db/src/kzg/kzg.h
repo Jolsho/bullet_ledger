@@ -95,6 +95,12 @@ blst_p1 commit_g1_projective(
     const scalar_vec& coeffs, 
     const SRS& srs
 );
+void commit_g1_projective_in_place(
+    const scalar_vec& coeffs, 
+    const SRS& srs,
+    blst_p1* C
+);
+
 blst_p1_affine commit_g1(
     const scalar_vec& coeffs, 
     const SRS& srs);
