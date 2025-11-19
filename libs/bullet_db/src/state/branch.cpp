@@ -119,9 +119,9 @@ const Commitment* Branch::derive_commitment(Ledger &ledger) {
     scalar_vec* Fx = ledger.get_poly();
     for (auto i = 0; i < ORDER; i++) {
         if (Commitment* c = children_[i].get())
-            Fx->at(i) = p1_to_scalar(c);
+            hash_p1_to_scalar(c, &Fx->at(i), ledger.get_tag());
     }
-    commit_ = commit_g1_projective(*Fx, *ledger.get_srs());
+    commit_g1_projective_in_place(*Fx, *ledger.get_srs(), &commit_);
     return &commit_;
 }
 
@@ -169,23 +169,20 @@ int Branch::build_commitment_path(
 ) {
     if (NodeId* next_id = get_next_id(nibbles)) {
         if (Node* n = ledger.load_node(*next_id)) {
-            ByteSlice remaining = nibbles.subspan(1);
-            int ok = n->build_commitment_path(ledger, key, remaining, Fxs, Zs);
-            if (!ok) return false;
+            if (!n->build_commitment_path(
+                ledger, key, nibbles.subspan(1), Fxs, Zs
+            )) return false;
         } else return false;
     } else return false;
 
     // build Fx
     scalar_vec fx(ORDER, new_scalar());
-    for (auto i = 0; i < ORDER; i++) {
-        if (children_[i]) {
-            auto c = children_[i].get();
-            fx[i] = p1_to_scalar(c);
-        }
-    }
+    for (auto i = 0; i < ORDER; i++)
+        if (Commitment* c = children_[i].get())
+            hash_p1_to_scalar(c, &fx[i], ledger.get_tag());
 
     Fxs.push_back(fx);
-    Zs.set(key[0]);
+    Zs.set(nibbles.front());
     return true;
 }
 

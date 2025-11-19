@@ -16,7 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "../src/state/verkle.h"
+#include "verkle.h"
 #include <cassert>
 #include <filesystem>
 #include <random>
@@ -39,15 +39,13 @@ Hash pseudo_random_hash(int i) {
 void main_state_trie() {
     namespace fs = std::filesystem;
     const char* path = "./fake_db";
-    if (fs::exists(path)) {
-        fs::remove_all(path);
-    }
+    if (fs::exists(path)) fs::remove_all(path);
     fs::create_directory(path);
 
-    Ledger l(path, 128, 10 * 1024 * 1024, new_scalar(13));
+    Ledger l(path, 128, 10 * 1024 * 1024, "bullet", new_scalar(13));
 
     vector<Hash> raw_hashes;
-    raw_hashes.reserve(100);
+    raw_hashes.reserve(25);
     for (int i = 0; i < raw_hashes.capacity(); i++) {
         Hash rnd = pseudo_random_hash(i);
         raw_hashes.push_back(rnd);
@@ -73,6 +71,21 @@ void main_state_trie() {
         i++;
     }
 
+    // --- Proving phase ---
+    i = 0;
+    for (Hash h: raw_hashes) {
+        ByteSlice key(h.data(), h.size());
+        print_hash(h);
+        auto [C, Pi, Ws, Ys, Zs] = l.get_existence_proof(key, 1).value();
+        assert(multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
+
+        if (*Zs[0].b != 0) *Zs[0].b = 0;
+        else *Zs[0].b = 1;
+        assert(!multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
+        printf("PROVED %d\n", i);
+        i++;
+    }
+
     // --- Remove phase ---
     i = 0;
     for (Hash h: raw_hashes) {
@@ -80,9 +93,10 @@ void main_state_trie() {
         l.remove(key, 1);
         auto got = l.get_value(key, 1);
         assert(got.has_value() == false);
-        printf("DELTED %d\n", i);
+        printf("DELETED %d\n", i);
         i++;
     }
+    
 
     fs::remove_all("./fake_db");
 

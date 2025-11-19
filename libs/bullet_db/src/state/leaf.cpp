@@ -17,9 +17,6 @@
  */
 
 #include "verkle.h"
-#include <cstdint>
-#include <cstdio>
-#include <optional>
 
 Leaf::Leaf(std::optional<NodeId> id, std::optional<ByteSlice*> buffer) : 
     path_(32), children_(ORDER), commit_{new_p1()}, count_{0}
@@ -75,7 +72,7 @@ const Commitment* Leaf::derive_commitment(Ledger &ledger) {
                 &Fx->at(i), h->data(), h->size()
             );
     }
-    commit_ = commit_g1_projective(*Fx, *ledger.get_srs());
+    commit_g1_projective_in_place(*Fx, *ledger.get_srs(), &commit_);
     return &commit_; 
 }
 
@@ -134,7 +131,19 @@ int Leaf::build_commitment_path(
     ByteSlice nibbles,
     vector<scalar_vec> &Fxs, 
     Bitmap &Zs
-) { return true; }
+) { 
+    // build Fx
+    scalar_vec fx(ORDER, new_scalar());
+    for (auto i = 0; i < ORDER; i++)
+        if (Hash* c = children_[i].get())
+            blst_scalar_from_le_bytes(
+                &fx[i], c->data(), c->size()
+            );
+
+    Fxs.push_back(fx);
+    Zs.set(nibbles.back());
+    return true; 
+}
 
 std::optional<Commitment> Leaf::virtual_put(
     Ledger &ledger, 
