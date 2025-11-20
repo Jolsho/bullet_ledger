@@ -19,7 +19,6 @@
 #pragma once
 #include <memory>
 #include "bitmap.h"
-#include "ring_buffer.h"
 #include "hashing.h"
 #include "points.h"
 #include "kzg.h"
@@ -28,22 +27,17 @@
 #include "lru.h"
 
 const uint64_t ORDER = 256;
-const size_t BRANCH_SIZE = (ORDER + 1) * 49;
-const size_t LEAF_SIZE = 1 + 48 + 2 + 32 + (ORDER * 33);
 const byte BRANCH = static_cast<const byte>(69);
 const byte LEAF = static_cast<const byte>(71);
-
-using Path = RingBuffer<byte>;
-using NodeId = std::array<byte, 8>;
 
 class Ledger; // forward declared and only used via reference
 
 /// ID CONVERSIONS
-using uint64_array = std::array<byte, 8>;
-inline uint64_array u64_to_array(uint64_t num) { 
-    return std::bit_cast<std::array<byte, 8>>(num); 
+using NodeId = std::array<byte, 8>;
+inline NodeId u64_to_id(uint64_t num) { 
+    return std::bit_cast<NodeId>(num); 
 }
-inline uint64_t u64_from_array(uint64_array a) { 
+inline uint64_t u64_from_id(NodeId a) { 
     return std::bit_cast<uint64_t>(a); 
 }
 
@@ -119,10 +113,9 @@ std::unique_ptr<Leaf_i> create_leaf(
     std::optional<ByteSlice*> buff
 );
 
-/////////////////////////////////////////////////
-//////////    VIRTUAL LEDGER CLASS    //////////
-///////////////////////////////////////////////
-
+///////////////////////////////////////
+//////////      LEDGER      //////////
+/////////////////////////////////////
 class Ledger {
 private:
     std::unique_ptr<Node> root_;
@@ -143,7 +136,10 @@ public:
     ~Ledger();
     const SRS* get_srs() const;
     const std::string* get_tag() const;
-    void set_srs(scalar_vec &coeffs);
+    void set_srs(
+        std::vector<blst_p1> &g1s,
+        std::vector<blst_p2> &g2s
+    );
     void set_tag(std::string &tag);
     scalar_vec* get_poly();
 

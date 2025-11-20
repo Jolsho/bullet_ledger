@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "blst.h"
 #include "verkle.h"
 
 
@@ -24,7 +25,7 @@ private:
     NodeId id_;
     Commitment commit_;
     std::vector<std::unique_ptr<Commitment>> children_;
-    uint16_t count_;
+    uint8_t count_;
     NodeId tmp_id_;
 public:
 
@@ -50,72 +51,65 @@ public:
 
     NodeId* get_next_id(ByteSlice &nibs) override {
         if (get_child(nibs.front())) {
-            uint64_t id = u64_from_array(id_) * ORDER + nibs.front();
-            tmp_id_ = u64_to_array(id);
+            uint64_t id = u64_from_id(id_) * ORDER + nibs.front();
+            tmp_id_ = u64_to_id(id);
             return &tmp_id_;
         } else {
             return nullptr;
         }
     }
 
-    Branch(std::optional<NodeId> id, std::optional<ByteSlice*> buff) :
-        children_(ORDER), commit_{new_p1()}, count_{0}
+    Branch(
+        std::optional<NodeId> id, 
+        std::optional<ByteSlice*> buff
+    ) :
+        children_(ORDER), 
+        commit_{new_p1()}, 
+        count_{0}
     {
         if (id.has_value()) id_ = id.value();
 
         for (auto &c: children_) c = nullptr;
         if (!buff.has_value()) { return; }
 
-        ByteSlice* buffer = buff.value();
+        byte* cursor = buff.value()->data(); cursor++;
 
-        auto current = buffer->subspan(1,48);
-        p1_from_bytes(current.data(), &commit_);
+        p1_from_bytes(cursor, &commit_); cursor += 48;
 
-        auto cursor = buffer->begin() + 51;
-        while (cursor < buffer->end()) {
-            byte nib(*cursor);
-            cursor += 1;
+        count_ = *cursor; cursor++;
+        for (auto i = 0; i < count_; i++) {
+            byte nib(*cursor); cursor++;
             children_[nib] = std::make_unique<Commitment>(new_p1());
-            p1_from_bytes((cursor).base(), children_[nib].get());
-            cursor += 48;
-            count_++;
+            p1_from_bytes(cursor, children_[nib].get()); cursor += 48;
         }
     }
 
     std::vector<byte> to_bytes() const override {
-        std::vector<byte> buffer;
-        buffer.reserve(BRANCH_SIZE);
+        std::vector<byte> buffer(1 + 48 + 1 + (count_ * 49));
+        byte* cursor = buffer.data();
 
-        buffer.push_back(BRANCH);
+        *cursor = BRANCH; cursor++;
 
-        std::array<byte, 48> commit_bytes;
-        commit_bytes = compress_p1(&commit_);
-        buffer.insert(buffer.end(), commit_bytes.begin(), commit_bytes.end());
+        blst_p1_compress(cursor, &commit_); cursor += 48;
 
-        auto count_bytes = std::bit_cast<std::array<byte,2>>(count_);
-        buffer.insert(buffer.end(), count_bytes.begin(), count_bytes.end());
-
+        *cursor = count_; cursor++;
         for (auto i = 0; i < ORDER; i++) {
             if (Commitment* c = children_[i].get()) {
-                buffer.push_back(i);
-                commit_bytes = compress_p1(c);
-                buffer.insert(buffer.end(), 
-                              commit_bytes.begin(), 
-                              commit_bytes.end());
+                *cursor = static_cast<uint8_t>(i); cursor++;
+                blst_p1_compress(cursor, c); cursor += 48;
             }
         }
-
         return buffer;
     }
 
     void change_id(const NodeId &new_id, Ledger &ledger) override {
-        uint64_t num = u64_from_array(new_id);
+        uint64_t num = u64_from_id(new_id);
 
         for (uint64_t i = 0; i < ORDER; i++) {
             if (!children_[i]) continue;  // no child here, skip
 
             // Compute old and new IDs
-            uint64_t old_child_id = u64_from_array(id_) * ORDER + i;
+            uint64_t old_child_id = u64_from_id(id_) * ORDER + i;
             uint64_t new_child_id = num * ORDER + i;
 
             if (old_child_id == new_child_id) continue;
@@ -124,10 +118,10 @@ public:
             if (old_child_id == 1) continue;
 
             // Remove the child node from cache/db safely
-            std::optional<Node_ptr> node = ledger.delete_node(u64_to_array(old_child_id));
+            std::optional<Node_ptr> node = ledger.delete_node(u64_to_id(old_child_id));
 
             // Recursively update children safely
-            node.value().get()->change_id(u64_to_array(new_child_id), ledger);
+            node.value().get()->change_id(u64_to_id(new_child_id), ledger);
 
             // Re-cache the node
             ledger.cache_node(std::move(node.value()));
@@ -237,7 +231,7 @@ public:
             }
         } else {
             // leaf is child
-            uint64_t child_id = (u64_from_array(id_) * ORDER) + nibbles.front();
+            uint64_t child_id = (u64_from_id(id_) * ORDER) + nibbles.front();
 
             // create and fill leaf
             Leaf_i* leaf = ledger.new_cached_leaf(child_id);
@@ -254,11 +248,11 @@ public:
         for (size_t i = 0; i < ORDER; i++) {
             auto child = get_child(static_cast<byte>(i));
             if (child.has_value()) {
-                uint64_t id = u64_from_array(id_) * ORDER + i;
+                uint64_t id = u64_from_id(id_) * ORDER + i;
                 return std::make_tuple(
                     static_cast<byte>(i), 
                     *child.value(),
-                    u64_to_array(id)
+                    u64_to_id(id)
                 );
             }
         }

@@ -17,6 +17,10 @@
  */
 
 #include "verkle.h"
+#include "ring_buffer.h"
+#include <cstring>
+
+using Path = RingBuffer<byte>;
 
 class Leaf : public Leaf_i {
 private:
@@ -53,53 +57,51 @@ public:
         for (auto &c: children_) c = nullptr;
         if (!buffer.has_value()) { return; }
 
-        std::span<byte>* buff = buffer.value();
+        byte* cursor = buffer.value()->data();
+        cursor++;
 
-        p1_from_bytes(buff->subspan(1,48).data(), &commit_);
+        p1_from_bytes(cursor, &commit_);
+        cursor += 48;
 
-        auto cursor = buff->begin() + 49;
-
-        std::array<byte, 2> len{};
-        std::ranges::copy(cursor, cursor+2, len.begin());
-        cursor += 2;
-
-        uint16_t path_len = std::bit_cast<uint16_t>(len);
-        for (auto i = cursor; i < cursor + path_len; i++) {
-            path_.push_back(*i);
+        uint8_t path_len = *cursor; cursor++;
+        for (auto i = 0; i < path_len; i++, cursor++) {
+            path_.push_back(*cursor);
         }
-        cursor += path_len;
-        while (cursor < buff->end()) {
-            byte nib(*cursor);
-            cursor += 1;
-            Hash h;
-            std::ranges::copy(cursor, cursor + 32, h.begin());
-            children_[nib] = std::make_unique<Hash>(h);
+
+        uint8_t child_len = *cursor; cursor++;
+        for (auto i = 0; i < child_len; i++) {
+            byte nib(*cursor); cursor++;
+            children_[nib] = std::make_unique<Hash>(Hash());
+            std::memcpy(children_[nib].get()->data(), cursor, 32);
             cursor += 32;
             count_++;
         }
     }
 
     std::vector<byte> to_bytes() const override {
-        std::vector<byte> buffer;
-        buffer.reserve(LEAF_SIZE);
+        std::vector<byte> buffer(
+            1 + 48 + 1 + path_.size() + 1 + (count_ * 33)
+        );
+        byte* cursor = buffer.data();
 
-        buffer.push_back(LEAF);
-        auto commit_bytes = compress_p1(&commit_);
-        buffer.insert(buffer.end(), commit_bytes.begin(), commit_bytes.end());
+        *cursor = LEAF; cursor++;
 
-        auto path_len = std::bit_cast<std::array<byte, 2>>(static_cast<uint16_t>(path_.size()));
-        buffer.insert(buffer.end(), path_len.begin(), path_len.end());
+        blst_p1_compress(cursor, &commit_); cursor += 48;
 
-        for (auto i = 0; i < path_.size(); i++)
-            buffer.push_back(path_.get(i).value());
+        auto path_len = static_cast<uint8_t>(path_.size());
+        *cursor = path_len; cursor++;
 
+        for (auto i = 0; i < path_.size(); i++, cursor++)
+            *cursor = path_.get(i).value();
+
+        *cursor = count_; cursor++;
         for (auto i = 0; i < ORDER; i++) {
             if (Hash* h = children_[i].get()) {
-                buffer.push_back(i);
-                buffer.insert(buffer.end(), h->begin(), h->end());
+                *cursor = static_cast<uint8_t>(i); cursor++;
+                std::memcpy(cursor, h->data(), h->size());
+                cursor += 32;
             }
         }
-
         return buffer;
     }
 
@@ -227,7 +229,7 @@ public:
 
         Node_ptr self = ledger.delete_node(id_).value();
 
-        uint64_t new_id = u64_from_array(id_);
+        uint64_t new_id = u64_from_id(id_);
 
         std::vector<std::tuple<Branch_i*, byte>> branches; 
         branches.reserve(shared_path);
@@ -245,7 +247,7 @@ public:
         // pop off nibble to act as key for parent
         // insert existing leaf into branch
         byte nib = path_.pop_front().value();
-        change_id(u64_to_array(new_id + nib), ledger);
+        change_id(u64_to_id(new_id + nib), ledger);
         branch->insert_child(nib, &commit_);
         ledger.cache_node(std::move(self));
 

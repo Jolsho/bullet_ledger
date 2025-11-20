@@ -43,9 +43,7 @@ void p1_from_bytes(const byte* src, blst_p1* dst) {
 
 std::array<byte, 48> compress_p1(const blst_p1* pk) {
     std::array<byte, 48> pk_comp;
-    blst_p1_compress(
-        reinterpret_cast<byte*>(pk_comp.data()), 
-        pk);
+    blst_p1_compress(pk_comp.data(), pk);
     return pk_comp;
 }
 

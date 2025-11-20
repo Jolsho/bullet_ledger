@@ -72,10 +72,10 @@ void test_multi_function() {
     SRS S(degree, s);
     blst_scalar Z = new_scalar(2);
 
-    vector<scalar_vec> Fxs;
+    std::vector<scalar_vec> Fxs;
     Fxs.reserve(10);
 
-    vector<blst_p1> Cs;
+    std::vector<blst_p1> Cs;
     Cs.reserve(10);
 
     scalar_vec Ys;
@@ -113,11 +113,11 @@ void test_full_multi_square() {
     blst_scalar s = rand_scalar();
     SRS S(degree, s);
     scalar_vec Zs = { new_scalar(2), new_scalar(4), new_scalar(6) };
-    vector<scalar_vec> Fxs;
+    std::vector<scalar_vec> Fxs;
     Fxs.reserve(funcs_num);
-    vector<blst_p1> Cs;
+    std::vector<blst_p1> Cs;
     Cs.reserve(funcs_num);
-    vector<scalar_vec> Ys_mat(funcs_num);
+    std::vector<scalar_vec> Ys_mat(funcs_num);
 
     for (int i = 0; i < funcs_num; i++) {
 
