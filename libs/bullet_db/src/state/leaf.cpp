@@ -16,8 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "points.h"
 #include "verkle.h"
 #include "ring_buffer.h"
+#include <cstdio>
 #include <cstring>
 
 using Path = RingBuffer<byte>;
@@ -146,7 +148,7 @@ public:
         const Hash &key,
         ByteSlice nibbles,
         std::vector<scalar_vec> &Fxs, 
-        Bitmap &Zs
+        Bitmap<32> &Zs
     ) override { 
         // build Fx
         scalar_vec fx(ORDER, new_scalar());
@@ -157,7 +159,8 @@ public:
                 );
 
         Fxs.push_back(fx);
-        Zs.set(nibbles.back());
+        // index of nibble within key
+        Zs.set(32 - 1);
         return true; 
     }
 
@@ -169,15 +172,27 @@ public:
     ) override {
         std::optional<size_t> is = in_path(nibbles);
         if (!is.has_value()) {
-            auto original_child(std::move(children_[nibbles.front()]));
+
+            blst_scalar tmp_sk = new_scalar();
+            blst_p1 old_c = ledger.get_srs()->g1_powers_jacob[nibbles.back()];
+            blst_p1 new_c = old_c;
+
+            blst_scalar_from_le_bytes(&tmp_sk, val_hash.data(), val_hash.size());
+            p1_mult(new_c, new_c, tmp_sk);
+
+            if (Hash* prev = children_[nibbles.back()].get()) {
+                blst_scalar_from_le_bytes(&tmp_sk, prev->data(), prev->size());
+                p1_mult(old_c, old_c, tmp_sk);
+            }
 
             insert_child(nibbles.back(), val_hash);
-            auto new_commit(*derive_commitment(ledger));
 
-            children_[nibbles.front()] = std::move(original_child);
-            count_--;
+            // new_c = c + (new_c - old_c)
+            blst_p1_cneg(&old_c, true);
+            blst_p1_add_or_double(&new_c, &new_c, &old_c);
+            blst_p1_add_or_double(&new_c, &commit_, &new_c);
 
-            return new_commit;
+            return new_c;
         }
 
         size_t shared_path = is.value();
@@ -203,13 +218,13 @@ public:
         branch->insert_child(nibbles.front(), new_commit);
 
         // work up the tree inserting children and passing commitment upward
-        Commitment child_commit = *branch->derive_commitment(ledger);
+        Commitment c = *branch->derive_commitment(ledger);
         for (size_t i = shared_nibs.size(); i-- > 0;) {
             scalar_vec Fx(ORDER, new_scalar());
-            hash_p1_to_scalar(&child_commit, &Fx[shared_nibs[i]], ledger.get_tag());
-            commit_g1_projective_in_place(Fx, *ledger.get_srs(), &child_commit);
+            hash_p1_to_scalar(&c, &Fx[shared_nibs[i]], ledger.get_tag());
+            commit_g1_projective_in_place(Fx, *ledger.get_srs(), &c);
         }
-        return child_commit;
+        return c;
     }
 
     std::optional<const Commitment*> put(
@@ -221,8 +236,27 @@ public:
 
         std::optional<size_t> is = in_path(nibbles);
         if (!is.has_value()) {
+
+            blst_scalar tmp_sk = new_scalar();
+            blst_p1 old_c = ledger.get_srs()->g1_powers_jacob[nibbles.back()];
+            blst_p1 new_c = old_c;
+
+            blst_scalar_from_le_bytes(&tmp_sk, val_hash.data(), val_hash.size());
+            p1_mult(new_c, new_c, tmp_sk);
+
+            if (Hash* prev = children_[nibbles.back()].get()) {
+                blst_scalar_from_le_bytes(&tmp_sk, prev->data(), prev->size());
+                p1_mult(old_c, old_c, tmp_sk);
+            }
+
             insert_child(nibbles.back(), val_hash);
-            return derive_commitment(ledger);
+
+            // c += (new_c - old_c)
+            blst_p1_cneg(&old_c, true);
+            blst_p1_add_or_double(&new_c, &new_c, &old_c);
+            blst_p1_add_or_double(&commit_, &commit_, &new_c);
+
+            return &commit_;
         }
 
         size_t shared_path = is.value();
@@ -255,8 +289,7 @@ public:
         Leaf_i* leaf = ledger.new_cached_leaf(new_id + nibbles.front());
         leaf->set_path(nibbles.subspan(1, nibbles.size() - 2));
         leaf->insert_child(nibbles.back(), val_hash);
-        const Commitment* new_commit = leaf->derive_commitment(ledger);
-        branch->insert_child(nibbles.front(), new_commit);
+        branch->insert_child(nibbles.front(), leaf->derive_commitment(ledger));
 
         // work up the tree inserting children and passing commitment upward
         const Commitment* child_commit = branch->derive_commitment(ledger);
@@ -280,16 +313,29 @@ public:
         std::optional<size_t> is = in_path(nibbles);
         if (is.has_value()) return std::nullopt;
 
-        Commitment c = new_p1();
-        if (children_[nibbles.back()]) {
-            Hash v_hash(*children_[nibbles.back()].get());
-            Hash kv = derive_kv_hash(key, v_hash);
-            ledger.delete_value(kv);
+        Commitment c = ledger.get_srs()->g1_powers_jacob[nibbles.back()];
+        if (Hash* v_hash = children_[nibbles.back()].get()) {
 
+            // delete value
+            ledger.delete_value(derive_kv_hash(key, *v_hash));
+
+            // derive negative child term
+            blst_scalar child_neg = new_scalar();
+            blst_scalar zero_sk = new_scalar();
+            blst_scalar_from_le_bytes(&child_neg, v_hash->data(), v_hash->size());
+            blst_sk_sub_n_check(&child_neg, &zero_sk, &child_neg);
+
+            // commit to neg child
+            p1_mult(c, c, child_neg);
+
+            // subtract child from commitment
+            blst_p1_add_or_double(&commit_, &commit_, &c);
+
+            // remove child
             children_[nibbles.back()] = nullptr;
             count_--;
-            c = *derive_commitment(ledger);
         }
+
         bool destroyed = count_ == 0;
         if (destroyed) ledger.delete_node(id_);
 

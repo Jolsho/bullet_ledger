@@ -17,6 +17,7 @@
  */
 
 #include "blst.h"
+#include "points.h"
 #include "verkle.h"
 
 
@@ -155,8 +156,9 @@ public:
         const Hash &key,
         ByteSlice nibbles,
         std::vector<scalar_vec> &Fxs, 
-        Bitmap &Zs
+        Bitmap<32> &Zs
     ) override {
+
         if (NodeId* next_id = get_next_id(nibbles)) {
             if (Node* n = ledger.load_node(*next_id)) {
                 if (!n->build_commitment_path(
@@ -172,7 +174,8 @@ public:
                 hash_p1_to_scalar(c, &fx[i], ledger.get_tag());
 
         Fxs.push_back(fx);
-        Zs.set(nibbles.front());
+        // index of nibble within key
+        Zs.set(key.size() - nibbles.size());
         return true;
     }
 
@@ -182,13 +185,23 @@ public:
         const Hash &key, 
         const Hash &val_hash
     ) override {
-        Commitment new_commit = new_p1();
+
+        blst_scalar tmp_sk = new_scalar();
+        blst_p1 old_c = ledger.get_srs()->g1_powers_jacob[nibbles.front()];
+        blst_p1 new_c = old_c;
+
         if (NodeId* next_id = get_next_id(nibbles)) {
             if (Node* n = ledger.load_node(*next_id)) {
                 auto res = n->virtual_put(ledger, nibbles.subspan(1), key, val_hash);
                 if (!res.has_value()) return std::nullopt;
 
-                new_commit = res.value();
+                // hash new child commitment and commit
+                hash_p1_to_scalar(&res.value(), &tmp_sk, ledger.get_tag());
+                p1_mult(new_c, new_c, tmp_sk);
+
+                // hash old child commitment and commit
+                hash_p1_to_scalar(n->get_commitment(), &tmp_sk, ledger.get_tag());
+                p1_mult(old_c, old_c, tmp_sk);
 
             } else return std::nullopt;
         } else {
@@ -196,22 +209,17 @@ public:
             // commit to hash via last bit of key to emulate leaf commitment
             scalar_vec Fx(ORDER, new_scalar());
             blst_scalar_from_lendian(&Fx[nibbles.back()], val_hash.data());
-            new_commit = commit_g1_projective(Fx, *ledger.get_srs());
+            Commitment new_commit = commit_g1_projective(Fx, *ledger.get_srs());
+
+            hash_p1_to_scalar(&new_commit, &tmp_sk, ledger.get_tag());
+            p1_mult(new_c, new_c, tmp_sk);
         }
 
-        Commitment original_commit(commit_);
-        std::unique_ptr<Commitment> original_child(std::move(children_[nibbles.front()]));
-
-        // derive virtual commit
-        insert_child(nibbles.front(), &new_commit);
-        Commitment virtual_commit(*derive_commitment(ledger));
-
-        // return original state
-        commit_ = original_commit;
-        children_[nibbles.front()].swap(original_child);
-        count_--;
-
-        return virtual_commit;
+        // new_c = c + (new_c - old_c)
+        blst_p1_cneg(&old_c, true);
+        blst_p1_add_or_double(&new_c, &new_c, &old_c);
+        blst_p1_add_or_double(&new_c, &commit_, &new_c);
+        return new_c;
     }
 
     std::optional<const Commitment*> put(
@@ -220,15 +228,30 @@ public:
         const Hash &key, 
         const Hash &val_hash
     ) override {
+
+        blst_scalar tmp_sk = new_scalar();
+        blst_p1 old_c = ledger.get_srs()->g1_powers_jacob[nibbles.front()];
+        blst_p1 new_c = old_c;
+
         if (NodeId* next_id = get_next_id(nibbles)) {
             if (Node* n = ledger.load_node(*next_id)) {
 
                 auto res = n->put(ledger, nibbles.subspan(1), key, val_hash);
                 if (res.has_value()) {
+
+                    // hash new child commitment and commit
+                    hash_p1_to_scalar(res.value(), &tmp_sk, ledger.get_tag());
+                    p1_mult(new_c, new_c, tmp_sk);
+
+                    // hash old child commitment and commit
+                    Commitment* old_child = children_[nibbles.front()].get();
+                    hash_p1_to_scalar(old_child, &tmp_sk, ledger.get_tag());
+                    p1_mult(old_c, old_c, tmp_sk);
+
                     insert_child(nibbles.front(), res.value());
-                    return derive_commitment(ledger);
-                }
-            }
+
+                } else return std::nullopt;
+            } else return std::nullopt;
         } else {
             // leaf is child
             uint64_t child_id = (u64_from_id(id_) * ORDER) + nibbles.front();
@@ -239,9 +262,16 @@ public:
             leaf->insert_child(nibbles.back(), val_hash);
             const Commitment* leaf_commit = leaf->derive_commitment(ledger);
             insert_child(nibbles.front(), leaf_commit);
-            return derive_commitment(ledger);
+
+            hash_p1_to_scalar(leaf_commit, &tmp_sk, ledger.get_tag());
+            p1_mult(new_c, new_c, tmp_sk);
         }
-        return std::nullopt;
+
+        // c += (new_c - old_c)
+        blst_p1_cneg(&old_c, true);
+        blst_p1_add_or_double(&new_c, &new_c, &old_c);
+        blst_p1_add_or_double(&commit_, &commit_, &new_c);
+        return &commit_;
     }
 
     const std::tuple<byte, Commitment, NodeId> get_last_remaining_child() const {

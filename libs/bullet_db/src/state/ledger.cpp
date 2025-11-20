@@ -171,7 +171,7 @@ std::optional<std::tuple<
     if (!root_) return std::nullopt;
 
     std::vector<scalar_vec> Fxs; Fxs.reserve(MAX_LEVELS);
-    Bitmap Zs;
+    Bitmap<32> Zs;
 
     Hash key_hash = derive_hash(key);
     key_hash.back() = idx;
@@ -185,9 +185,9 @@ std::optional<std::tuple<
 
     // Z bitmap to scalar_vec
     scalar_vec Zs_vec; Zs_vec.reserve(Zs.count());
-    for (uint64_t k = 0; k < ORDER; k++)
+    for (uint64_t k = 0; k < Zs.BIT_SIZE; k++)
         if (Zs.is_set(k))
-            Zs_vec.push_back(new_scalar(k));
+            Zs_vec.push_back(new_scalar(key_hash[k]));
 
 
     // for each Fx solve at all Zs

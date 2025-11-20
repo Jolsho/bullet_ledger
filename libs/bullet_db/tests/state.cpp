@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "hashing.h"
 #include "verkle.h"
 #include <cassert>
 #include <filesystem>
@@ -61,6 +62,7 @@ void main_state_trie() {
     for (Hash h: raw_hashes) {
         ByteSlice key(h.data(), h.size());
         ByteSlice value(h.data(), h.size());
+        print_hash(h);
 
         auto virt_root = l.virtual_put(key, value, 1).value();
 

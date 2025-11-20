@@ -41,6 +41,7 @@ inline uint64_t u64_from_id(NodeId a) {
     return std::bit_cast<uint64_t>(a); 
 }
 
+
 /////////////////////////////////////////////////
 //////////    NODE VIRTUAL CLASS    ////////////
 ///////////////////////////////////////////////
@@ -62,7 +63,7 @@ public:
         const Hash &key,
         ByteSlice nibbles,
         std::vector<scalar_vec> &Fxs, 
-        Bitmap &Zs
+        Bitmap<32> &Zs
     ) = 0;
     virtual std::optional<Commitment> virtual_put(
         Ledger &ledger, 
