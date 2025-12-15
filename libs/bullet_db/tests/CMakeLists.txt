@@ -2,8 +2,7 @@
 set(TEST_SOURCES
     main.cpp
     key_sig.cpp
-    multi_kzg.cpp
-    single_kzg.cpp
+    kzg.cpp
     state.cpp
     tests.h
 )

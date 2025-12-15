@@ -16,11 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "points.h"
+#include "helpers.h"
 #include "verkle.h"
+#include "polynomial.h"
 #include "ring_buffer.h"
-#include <cstdio>
-#include <cstring>
+#include <memory>
 
 using Path = RingBuffer<byte>;
 
@@ -52,7 +52,7 @@ public:
 
 
     Leaf(std::optional<NodeId> id, std::optional<ByteSlice*> buffer) : 
-        path_(32), children_(ORDER), commit_{new_p1()}, count_{0} 
+        path_(32), children_(ORDER), commit_{blst_p1()}, count_{0} 
     {
         if (id.has_value()) id_ = id.value();
 
@@ -62,8 +62,7 @@ public:
         byte* cursor = buffer.value()->data();
         cursor++;
 
-        p1_from_bytes(cursor, &commit_);
-        cursor += 48;
+        commit_ = p1_from_bytes(cursor); cursor += 48;
 
         uint8_t path_len = *cursor; cursor++;
         for (auto i = 0; i < path_len; i++, cursor++) {
@@ -108,14 +107,12 @@ public:
     }
 
     const Commitment* derive_commitment(Ledger &ledger) override { 
-        scalar_vec* Fx = ledger.get_poly();
+        Scalar_vec* Fx = ledger.get_poly();
         for (auto i = 0; i < ORDER; i++) {
             if (Hash* h = children_[i].get())
-                blst_scalar_from_le_bytes(
-                    &Fx->at(i), h->data(), h->size()
-                );
+                blst_scalar_from_le_bytes(&Fx->at(i), h->data(), h->size());
         }
-        commit_g1_projective_in_place(*Fx, *ledger.get_srs(), &commit_);
+        commit_g1(&commit_, *Fx, *ledger.get_srs());
         return &commit_; 
     }
 
@@ -147,16 +144,14 @@ public:
         Ledger &ledger, 
         const Hash &key,
         ByteSlice nibbles,
-        std::vector<scalar_vec> &Fxs, 
+        std::vector<Scalar_vec> &Fxs, 
         Bitmap<32> &Zs
     ) override { 
         // build Fx
-        scalar_vec fx(ORDER, new_scalar());
+        Scalar_vec fx(ORDER);
         for (auto i = 0; i < ORDER; i++)
             if (Hash* c = children_[i].get())
-                blst_scalar_from_le_bytes(
-                    &fx[i], c->data(), c->size()
-                );
+             blst_scalar_from_le_bytes(&fx[i], c->data(), c->size());
 
         Fxs.push_back(fx);
         // index of nibble within key
@@ -173,24 +168,24 @@ public:
         std::optional<size_t> is = in_path(nibbles);
         if (!is.has_value()) {
 
-            blst_scalar tmp_sk = new_scalar();
             blst_p1 old_c = ledger.get_srs()->g1_powers_jacob[nibbles.back()];
             blst_p1 new_c = old_c;
 
+            blst_scalar tmp_sk;
             blst_scalar_from_le_bytes(&tmp_sk, val_hash.data(), val_hash.size());
-            p1_mult(new_c, new_c, tmp_sk);
+            blst_p1_mult(&new_c, &new_c, tmp_sk.b, 256);
 
             if (Hash* prev = children_[nibbles.back()].get()) {
                 blst_scalar_from_le_bytes(&tmp_sk, prev->data(), prev->size());
-                p1_mult(old_c, old_c, tmp_sk);
+                blst_p1_mult(&old_c, &old_c, tmp_sk.b, 256);
             }
 
             insert_child(nibbles.back(), val_hash);
 
             // new_c = c + (new_c - old_c)
             blst_p1_cneg(&old_c, true);
-            blst_p1_add_or_double(&new_c, &new_c, &old_c);
-            blst_p1_add_or_double(&new_c, &commit_, &new_c);
+            blst_p1_add(&new_c, &new_c, &old_c);
+            blst_p1_add(&new_c, &new_c, &commit_);
 
             return new_c;
         }
@@ -206,7 +201,7 @@ public:
         if (shared_path > 0) nibbles = nibbles.subspan(shared_path);
         
         // create lowest branch
-        auto branch = create_branch(std::nullopt, std::nullopt);
+        Branch_i* branch = create_branch(std::nullopt, std::nullopt);
 
         // insert current
         branch->insert_child(path_.get(shared_path).value(), &commit_);
@@ -219,11 +214,19 @@ public:
 
         // work up the tree inserting children and passing commitment upward
         Commitment c = *branch->derive_commitment(ledger);
+        std::array<byte, 48> buff;
+        auto tag = ledger.get_tag();
         for (size_t i = shared_nibs.size(); i-- > 0;) {
-            scalar_vec Fx(ORDER, new_scalar());
-            hash_p1_to_scalar(&c, &Fx[shared_nibs[i]], ledger.get_tag());
-            commit_g1_projective_in_place(Fx, *ledger.get_srs(), &c);
+            Scalar_vec Fx(ORDER);
+            blst_p1_compress(buff.data(), &c);
+            BlakeHasher h;
+            h.update(buff.data(), buff.size());
+            h.update(reinterpret_cast<const byte*>(tag->data()), tag->size());
+            Hash hash = h.finalize();
+            blst_scalar_from_le_bytes(&Fx[shared_nibs[i]], hash.data(), hash.size());
+            commit_g1(&c, Fx, *ledger.get_srs());
         }
+        delete branch;
         return c;
     }
 
@@ -237,31 +240,29 @@ public:
         std::optional<size_t> is = in_path(nibbles);
         if (!is.has_value()) {
 
-            blst_scalar tmp_sk = new_scalar();
+            blst_scalar tmp_sk;
+            blst_scalar_from_le_bytes(&tmp_sk, val_hash.data(), val_hash.size());
             blst_p1 old_c = ledger.get_srs()->g1_powers_jacob[nibbles.back()];
             blst_p1 new_c = old_c;
 
-            blst_scalar_from_le_bytes(&tmp_sk, val_hash.data(), val_hash.size());
-            p1_mult(new_c, new_c, tmp_sk);
+            blst_p1_mult(&new_c, &new_c, tmp_sk.b, 256);
 
             if (Hash* prev = children_[nibbles.back()].get()) {
                 blst_scalar_from_le_bytes(&tmp_sk, prev->data(), prev->size());
-                p1_mult(old_c, old_c, tmp_sk);
+                blst_p1_mult(&old_c, &old_c, tmp_sk.b, 256);
             }
 
             insert_child(nibbles.back(), val_hash);
 
             // c += (new_c - old_c)
-            blst_p1_cneg(&old_c, true);
-            blst_p1_add_or_double(&new_c, &new_c, &old_c);
-            blst_p1_add_or_double(&commit_, &commit_, &new_c);
-
+            blst_p1_add(&new_c, &new_c, &old_c);
+            blst_p1_add(&commit_, &commit_, &new_c);
             return &commit_;
         }
 
         size_t shared_path = is.value();
 
-        Node_ptr self = ledger.delete_node(id_).value();
+        Node* self = ledger.delete_node(id_);
 
         uint64_t new_id = u64_from_id(id_);
 
@@ -283,7 +284,7 @@ public:
         byte nib = path_.pop_front().value();
         change_id(u64_to_id(new_id + nib), ledger);
         branch->insert_child(nib, &commit_);
-        ledger.cache_node(std::move(self));
+        ledger.cache_node(self);
 
         // derive a new leaf for new value and insert into branch
         Leaf_i* leaf = ledger.new_cached_leaf(new_id + nibbles.front());
@@ -320,16 +321,15 @@ public:
             ledger.delete_value(derive_kv_hash(key, *v_hash));
 
             // derive negative child term
-            blst_scalar child_neg = new_scalar();
-            blst_scalar zero_sk = new_scalar();
-            blst_scalar_from_le_bytes(&child_neg, v_hash->data(), v_hash->size());
-            blst_sk_sub_n_check(&child_neg, &zero_sk, &child_neg);
+            blst_scalar child;
+            blst_scalar_from_le_bytes(&child, v_hash->data(), v_hash->size());
 
-            // commit to neg child
-            p1_mult(c, c, child_neg);
+            blst_p1_mult(&c, &c, child.b, 256);
+            blst_p1_cneg(&c, true);
 
-            // subtract child from commitment
-            blst_p1_add_or_double(&commit_, &commit_, &c);
+
+            // add neg_child to commitment
+            blst_p1_add(&commit_, &commit_, &c);
 
             // remove child
             children_[nibbles.back()] = nullptr;
@@ -337,12 +337,12 @@ public:
         }
 
         bool destroyed = count_ == 0;
-        if (destroyed) ledger.delete_node(id_);
+        if (destroyed) delete ledger.delete_node(id_);
 
         return std::make_tuple(c, destroyed);
     }
 };
 
-std::unique_ptr<Leaf_i> create_leaf(std::optional<NodeId> id, std::optional<ByteSlice*> buff) {
-    return std::make_unique<Leaf>(id, buff);
+Leaf_i* create_leaf(std::optional<NodeId> id, std::optional<ByteSlice*> buff) {
+    return new Leaf(id, buff);
 }

@@ -16,6 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#pragma once
 #include "blst.h"
 #include <span>
+#include <vector>
+
 using ByteSlice = std::span<byte>;
+using Polynomial = std::vector<blst_scalar>;
+using Scalar_vec = std::vector<blst_scalar>;
+

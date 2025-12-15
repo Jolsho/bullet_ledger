@@ -18,7 +18,7 @@
 
 #pragma once
 #include "blake3.h"
-#include "bytes.h"
+#include "types.h"
 
 using Hash = std::array<byte, 32>;
 class BlakeHasher {
@@ -44,3 +44,4 @@ Hash derive_kv_hash(const Hash &key_hash, const Hash &val_hash);
 Hash derive_hash(const ByteSlice &value);
 
 void print_hash(const Hash &hash);
+Hash seeded_hash(int i);

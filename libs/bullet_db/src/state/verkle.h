@@ -17,14 +17,14 @@
  */
 
 #pragma once
-#include <memory>
 #include "bitmap.h"
 #include "hashing.h"
-#include "points.h"
-#include "kzg.h"
-#include "scalars.h"
 #include "db.h"
 #include "lru.h"
+#include "settings.h"
+
+using Commitment = blst_p1;
+using Proof = blst_p1;
 
 const uint64_t ORDER = 256;
 const byte BRANCH = static_cast<const byte>(69);
@@ -62,7 +62,7 @@ public:
         Ledger &ledger, 
         const Hash &key,
         ByteSlice nibbles,
-        std::vector<scalar_vec> &Fxs, 
+        std::vector<Polynomial> &Fxs, 
         Bitmap<32> &Zs
     ) = 0;
     virtual std::optional<Commitment> virtual_put(
@@ -85,7 +85,6 @@ public:
     virtual ~Node() {};
 };
 
-using Node_ptr = std::unique_ptr<Node>;
 
 ///////////////////////////////////////////
 //////    NODE VIRTUAL SUBCLASSES   //////
@@ -105,11 +104,11 @@ public:
     ) = 0;
     virtual void set_path( ByteSlice path) = 0;
 };
-std::unique_ptr<Branch_i> create_branch(
+Branch_i* create_branch(
     std::optional<NodeId> id, 
     std::optional<ByteSlice*> buff
 );
-std::unique_ptr<Leaf_i> create_leaf(
+Leaf_i* create_leaf(
     std::optional<NodeId> id, 
     std::optional<ByteSlice*> buff
 );
@@ -119,11 +118,11 @@ std::unique_ptr<Leaf_i> create_leaf(
 /////////////////////////////////////
 class Ledger {
 private:
-    std::unique_ptr<Node> root_;
+    Node* root_;
     BulletDB db_;
-    LRUCache<uint64_t, Node> cache_;
+    LRUCache<uint64_t, Node*> cache_;
     SRS srs_;
-    scalar_vec poly_;
+    Polynomial poly_;
     std::string tag_;
 
 public:
@@ -142,7 +141,7 @@ public:
         std::vector<blst_p2> &g2s
     );
     void set_tag(std::string &tag);
-    scalar_vec* get_poly();
+    Polynomial* get_poly();
 
     bool key_value_exists(
         const Hash &key_hash,
@@ -156,8 +155,8 @@ public:
     std::optional<std::tuple<
         Commitment, Proof, 
         std::vector<Commitment>, 
-        std::vector<scalar_vec>, 
-        scalar_vec
+        std::vector<Scalar_vec>, 
+        Scalar_vec
     >> get_existence_proof(
         ByteSlice &key, 
         uint8_t idx
@@ -179,8 +178,8 @@ public:
 
     // STATE RELATED
     Node* load_node(const NodeId &id);
-    void cache_node(std::unique_ptr<Node> node);
-    std::optional<Node_ptr> delete_node(const NodeId &id);
+    void cache_node(Node* node);
+    Node* delete_node(const NodeId &id);
     bool delete_value(const Hash &kv);
     Branch_i* new_cached_branch(uint64_t id);
     Leaf_i* new_cached_leaf(uint64_t id);

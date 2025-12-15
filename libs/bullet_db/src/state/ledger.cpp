@@ -16,19 +16,31 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-//  =======================================================
-//  |             META STRUCTURE OF STATE TRIE            |
-//  |=====================================================|
-//  |    root_  = 256^0 == 1                BRANCH        |
-//  |    l1_    = 256^1 == 256              BRANCHES      |
-//  |    l2_    = 256^2 == 65,536           BRANCHES      |
-//  |    l3_    = 256^3 == 16,777,216       LEAVES        |
-//  |    l4_    = 256^4 == 4,294,967,296    VALUE HASHES  |
-//  =======================================================
+/*  =======================================================
+ *  |             META STRUCTURE OF STATE TRIE            |
+ *  |=====================================================|
+ *  |    root_  = 256^0 == 1                BRANCH        |
+ *  |    l1_    = 256^1 == 256              BRANCHES      |
+ *  |    l2_    = 256^2 == 65,536           BRANCHES      |
+ *  |    l3_    = 256^3 == 16,777,216       LEAVES        |
+ *  |    l4_    = 256^4 == 4,294,967,296    VALUE HASHES  |
+ *  =======================================================
+ *
+ *  root + l1 = (1 + 256) * (256 * 32 + 48 + 2) = 2.12GB
+ *      - full child hash array
+ *      - commit + meta
+ *
+ *  l2 = 65,536 * (48 + 2) = 3.3GB
+ *      - commit + meta
+ *
+ *  TOTAL min = 5.42GB
+*/
 
-
+#include "helpers.h"
 #include "verkle.h"
+#include "polynomial.h"
 #include <future>
+#include <unordered_set>
 
 
 //////////////////////////////////
@@ -45,7 +57,7 @@ Ledger::Ledger(
     db_(path.data(), map_size),
     cache_(cache_size),
     srs_(ORDER, secret_sk),
-    poly_(ORDER, new_scalar()),
+    poly_(ORDER),
     tag_(tag)
 {
     NodeId root_id = u64_to_id(1);
@@ -64,7 +76,7 @@ Ledger::Ledger(
             root_bytes.data(), root_bytes.size()
         );
 
-        root_ = std::move(root);
+        root_ = root;
     }
     db_.end_txn(rc);
 }
@@ -85,10 +97,14 @@ Ledger::~Ledger() {
 ///////// GETTERS /////////////
 //////////////////////////////
 
-scalar_vec* Ledger::get_poly() {
-    for (blst_scalar &c: poly_) for (byte &b: c.b) b = 0;
+Polynomial* Ledger::get_poly() {
+    std::array<byte, 32> zero{};
+    for (blst_scalar &c: poly_) {
+        blst_scalar_from_le_bytes(&c, zero.data(), zero.size());
+    }
     return &poly_;
 }
+
 const SRS* Ledger::get_srs() const { return &srs_;}
 void Ledger::set_srs(
     std::vector<blst_p1> &g1s,
@@ -161,8 +177,8 @@ std::optional<ByteSlice> Ledger::get_value(
 std::optional<std::tuple<
     Commitment, Proof, 
     std::vector<Commitment>, 
-    std::vector<scalar_vec>, 
-    scalar_vec
+    std::vector<Scalar_vec>, 
+    Scalar_vec
 >> Ledger::get_existence_proof(
     ByteSlice &key, 
     uint8_t idx
@@ -170,7 +186,8 @@ std::optional<std::tuple<
     const size_t MAX_LEVELS = 4; // over 4 billion accounts == 256^4
     if (!root_) return std::nullopt;
 
-    std::vector<scalar_vec> Fxs; Fxs.reserve(MAX_LEVELS);
+    std::vector<Scalar_vec> Fxs; 
+    Fxs.reserve(MAX_LEVELS);
     Bitmap<32> Zs;
 
     Hash key_hash = derive_hash(key);
@@ -184,33 +201,48 @@ std::optional<std::tuple<
 
 
     // Z bitmap to scalar_vec
-    scalar_vec Zs_vec; Zs_vec.reserve(Zs.count());
-    for (uint64_t k = 0; k < Zs.BIT_SIZE; k++)
-        if (Zs.is_set(k))
-            Zs_vec.push_back(new_scalar(key_hash[k]));
+    Scalar_vec Zs_vec; 
+    Zs_vec.reserve(Zs.count());
+    std::unordered_set<byte> raw_zs(Zs.count());
+    for (uint64_t k = 0; k < Zs.BIT_SIZE; k++) {
+        if (Zs.is_set(k) && !raw_zs.contains(key_hash[k])) {
+            raw_zs.insert(key_hash[k]);
+            // TODO --wrong but just avoiding error
+            blst_scalar s;
+            blst_scalar_from_le_bytes(&s, &key_hash[k], 1);
+            Zs_vec.push_back(s);
+
+            if (scalar_is_zero(Zs_vec.back()))
+                throw std::runtime_error("ISSUE RIGHT HERE");
+        }
+    }
 
 
     // for each Fx solve at all Zs
-    std::vector<scalar_vec> Ys_mat(Fxs.size(), scalar_vec(Zs.count(), new_scalar())); 
+    std::vector<Scalar_vec> Ys_mat(Fxs.size(), Scalar_vec(Zs_vec.size())); 
     for (uint64_t i = 0; i < Fxs.size(); i++)
-        for (auto k = 0; k < Zs_vec.size(); k++) 
-            Ys_mat[i][k] = eval_poly(Fxs[i], Zs_vec[k]);
+        for (auto k = 0; k < Zs_vec.size(); k++) {
+            // TODO Ys_mat[i][k] = eval_poly(Fxs[i], Zs_vec[k]);
+        }
 
 
     // Build Commits via Fxs in parrallel
-    std::vector<Commitment> Cs(Fxs.size(), new_p1());
+    std::vector<Commitment> Cs(Fxs.size());
     std::vector<std::future<void>> futures; futures.reserve(Fxs.size());
     for (size_t i = 0; i < Fxs.size(); i++) {
         futures.push_back(std::async(std::launch::async, [&, i] {
-            commit_g1_projective_in_place(Fxs[i], srs_, &Cs[i]);
+            commit_g1(&Cs[i], Fxs[i], srs_);
         }));
     }
     for (auto& f : futures) f.get();
 
     // Build aggregate Commitment and Proof
-    auto [C, Pi] = multi_func_multi_point_prover(
-        Fxs, Cs, Zs_vec, Ys_mat, srs_
-    );
+    // auto [C, Pi] = multi_func_multi_point_prover(
+    //     Fxs, Cs, Zs_vec, Ys_mat, srs_
+    // );
+
+    Commitment C;
+    Proof Pi;
     return std::make_tuple(C, Pi, Cs, Ys_mat, Zs_vec);
 }
 
@@ -243,9 +275,8 @@ std::optional<Commitment> Ledger::put(
                 Hash k_v_hash = derive_kv_hash(key_hash, val_hash);
 
                 // save new value
-                rc = db_.put(
-                    k_v_hash.data(), k_v_hash.size(), 
-                    value.data(), value.size());
+                rc = db_.put(k_v_hash.data(), k_v_hash.size(), 
+                            value.data(), value.size());
 
                 if (rc == 0) {
                     // save new root
@@ -312,39 +343,36 @@ std::optional<Commitment> Ledger::remove(
 ///////    STATE / NODE RELATED FUNCTIONS    //////////
 //////////////////////////////////////////////////////
 
-void Ledger::cache_node(std::unique_ptr<Node> node) {
+void Ledger::cache_node(Node* node) {
 
     uint64_t id = u64_from_id(*node->get_id());
-    auto put_res = cache_.put(id, std::move(node));
+    auto put_res = cache_.put(id, node);
     if (put_res.has_value()) {
 
         // move the tuple
-        auto expired = std::move(put_res.value());
-        auto& expired_id = std::get<0>(expired);
+        auto [id, node] = put_res.value();
 
-        // move out the unique_ptrA
-        Node_ptr expired_node = std::move(std::get<1>(expired)); 
-
-        NodeId expired_key = u64_to_id(expired_id);
-        auto node_bytes = expired_node->to_bytes();
+        NodeId expired_key = u64_to_id(id);
+        auto node_bytes = node->to_bytes();
         db_.put(
             expired_key.data(), expired_key.size(), 
             node_bytes.data(), node_bytes.size()
         );
+        delete node;
     }
 }
 
 Node* Ledger::load_node(const NodeId &id) {
 
     uint64_t id_num = u64_from_id(id);
-    if (Node* node = cache_.get(id_num)) return node;
+    if (Node** node = cache_.get(id_num)) return *node;
 
     void* ptr; size_t size;
     int rc = db_.get(id.data(), id.size(), &ptr, &size);
     if (rc == 0) {
         ByteSlice raw_node(reinterpret_cast<byte*>(ptr), size);
 
-        std::unique_ptr<Node> node_ptr;
+        Node* node_ptr;
 
         if (raw_node[0] == BRANCH)
             node_ptr = create_branch(id, &raw_node);
@@ -352,18 +380,17 @@ Node* Ledger::load_node(const NodeId &id) {
             node_ptr = create_leaf(id, &raw_node);
 
         // Insert into cache (cache now owns the unique_ptr)
-        Node* raw = node_ptr.get(); // temporary raw pointer for return
-        cache_node(std::move(node_ptr));
+        cache_node(node_ptr);
 
-        return raw;
+        return node_ptr;
     }
     return nullptr;
 }
 
-std::optional<Node_ptr> Ledger::delete_node(const NodeId &id) {
+Node* Ledger::delete_node(const NodeId &id) {
 
     uint64_t num_id = u64_from_id(id);
-    Node_ptr entry = cache_.remove(num_id);
+    Node* entry = cache_.remove(num_id);
     if (!entry) {
         if (load_node(id)) 
             entry = cache_.remove(num_id);
@@ -379,15 +406,13 @@ bool Ledger::delete_value(const Hash &kv) {
 }
 
 Branch_i* Ledger::new_cached_branch(uint64_t id) {
-    auto ptr = create_branch(u64_to_id(id), std::nullopt);
-    Branch_i* raw = ptr.get();
-    cache_node(std::move(ptr));
-    return raw;
+    Branch_i* ptr = create_branch(u64_to_id(id), std::nullopt);
+    cache_node(ptr);
+    return ptr;
 }
 
 Leaf_i* Ledger::new_cached_leaf(uint64_t id) {
-    auto ptr = create_leaf(u64_to_id(id), std::nullopt);
-    Leaf_i* raw = ptr.get();
-    cache_node(std::move(ptr));
-    return raw;
+    Leaf_i* ptr = create_leaf(u64_to_id(id), std::nullopt);
+    cache_node(ptr);
+    return ptr;
 }

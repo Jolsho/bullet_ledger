@@ -16,103 +16,135 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "kzg.h"
+#include "helpers.h"
+#include "polynomial.h"
 
-// ---------------------------
-// Polynomial helpers
-// ---------------------------
-// Polynomials represented as scalar_vec coeffs, low-to-high: a0 + a1*X + a2*X^2 + ...
-
-void poly_normalize(scalar_vec &p) {
-    while (!p.empty() && scalar_is_zero(p.back())) p.pop_back();
-}
-
-// Polynomial addition: c = a + b
-scalar_vec poly_add(const scalar_vec &a, const scalar_vec &b) {
-    size_t n = std::max(a.size(), b.size());
-    scalar_vec c(n, new_scalar());
-    for (size_t i = 0; i < n; i++) {
-        blst_scalar ai = (i < a.size()) ? a[i] : new_scalar();
-        blst_scalar bi = (i < b.size()) ? b[i] : new_scalar();
-        blst_sk_add_n_check(&c[i], &ai, &bi);
+// ================== COMMIT POLYNOMIAL ==================
+// commits to f(x) via evaluating f(r)
+void commit_g1(
+    blst_p1* C,
+    const Polynomial& coeffs, 
+    const SRS& srs
+) {
+    blst_p1 tmp;
+    for (size_t i = 0; i < coeffs.size(); i++) {
+        blst_p1_mult(&tmp, &srs.g1_powers_jacob[i], coeffs[i].b, 256);
+        blst_p1_add_or_double(C, C, &tmp);
     }
-    poly_normalize(c);
-    return c;
 }
 
-// Polynomial subtraction: c = a - b
-scalar_vec poly_sub(const scalar_vec &a, const scalar_vec &b) {
-    size_t n = std::max(a.size(), b.size());
-    scalar_vec c(n, new_scalar());
-    for (size_t i = 0; i < n; i++) {
-        blst_scalar ai = (i < a.size()) ? a[i] : new_scalar();
-        blst_scalar bi = (i < b.size()) ? b[i] : new_scalar();
-        blst_sk_sub_n_check(&c[i], &ai, &bi);
+
+Polynomial multiply_binomial(const Polynomial &P, const blst_scalar &w) {
+    size_t d = P.size();
+    Polynomial Q(d + 1, num_scalar(0));
+
+    // Q[i+1] = P[i] (shift)
+    // Q[i]   = P[i] * w (added to existing term)
+    for (size_t i = 0; i < d; i++) {
+        blst_scalar tmp;
+        // P[i] * w
+        blst_sk_mul_n_check(&tmp, &P[i], &w);  
+
+        // add to Q[i] (coefficient of x^i)
+        blst_sk_add_n_check(&Q[i], &Q[i], &tmp);   
+
+        // add to Q[i+1] (coefficient of x^(i+1))
+        blst_sk_add_n_check(&Q[i+1], &Q[i+1], &P[i]); 
     }
-    poly_normalize(c);
-    return c;
+
+    return Q;
 }
 
-// Scalar multiplication of polynomial: c = a * scalar
-scalar_vec poly_scale(const scalar_vec &a, const blst_scalar &s) {
-    scalar_vec c(a.size());
-    for (size_t i = 0; i < a.size(); i++) 
-        blst_sk_mul_n_check(&c[i], &a[i], &s);
-    poly_normalize(c);
-    return c;
+
+Polynomial differentiate_polynomial(const Polynomial &f) {
+    if (f.size() == 0) return {};
+    Polynomial df(f.size() - 1);
+
+    for (auto i = 0; i < df.size(); i++) {
+        blst_scalar pow = num_scalar(i + 1);
+        blst_sk_mul_n_check(&df[i], &f[i + 1], &pow);
+    }
+
+    return df;
 }
 
-// Polynomial multiplication (naive O(n^2))
-scalar_vec poly_mul(const scalar_vec &a, const scalar_vec &b) {
-    if (a.empty() || b.empty()) return {};
-    scalar_vec c(a.size() + b.size() - 1, new_scalar());
+bool batch_inv(Scalar_vec &out, const Scalar_vec &in) {
+    int i;
+    blst_scalar accumulator = ONE_SK;
+    for (i = 0; i < out.size(); i++) {
+        out[i] = accumulator;
+        blst_sk_mul_n_check(&accumulator, &accumulator, &in[i]);
+    }
 
-    // c[i+j] += a[i] * b[j]
-    for (size_t i = 0; i < a.size(); i++) {
-        for (size_t j = 0; j < b.size(); j++) {
-            scalar_add_inplace(c[i + j], scalar_mul(a[i], b[j]));
+    if (scalar_is_zero(accumulator)) return false;
+
+    blst_sk_inverse(&accumulator, &accumulator);
+
+    for (i = out.size() - 1; i >= 0; i--) {
+        blst_sk_mul_n_check(&out[i], &out[i], &accumulator);
+        blst_sk_mul_n_check(&accumulator, &accumulator, &in[i]);
+    }
+
+    return true;
+}
+
+std::optional<Polynomial> derive_quotient(
+    const Scalar_vec &poly_eval,
+    const blst_scalar &z,
+    const blst_scalar &y,
+    const NTTRoots &roots
+) {
+    int i;
+    uint64_t m = 0;
+    size_t len = poly_eval.size();
+
+    Scalar_vec inverses(len, ZERO_SK);
+    Scalar_vec inverses_in(len);
+    Scalar_vec q_poly(len);
+
+    for (i = 0; i < len; i++) {
+        if (equal_scalars(z, roots.roots[i])) {
+            m = i + 1;
+            inverses_in[i] = ONE_SK;
+            continue;
+        }
+
+        // (p_i - y) / (w_i - z)
+        blst_sk_sub_n_check(&q_poly[i], &poly_eval[i], &y);
+        blst_sk_sub_n_check(&inverses_in[i], &roots.roots[i], &z);
+    }
+
+    if (!batch_inv(inverses, inverses_in)) return std::nullopt;
+
+    for (i = 0; i < len; i++) {
+        blst_sk_mul_n_check(&q_poly[i], &q_poly[i], &inverses[i]);
+    }
+
+    blst_scalar tmp;
+    if (m != 0) {
+        q_poly[--m] = ZERO_SK;
+        for (i = 0; i < len; i++) {
+            if (i == m) continue;
+
+            // Build denominator: z * (z - w_i) 
+            blst_sk_sub_n_check(&tmp, &z, &roots.roots[i]);
+            blst_sk_mul_n_check(&inverses_in[i], &tmp, &z);
+        }
+
+        if (!batch_inv(inverses, inverses_in)) return std::nullopt;
+
+        for (i = 0; i < len; i++) {
+            if (i == m) continue;
+
+            // Build Numerator: w_i * (p_i - y)
+            blst_sk_sub_n_check(&tmp, &poly_eval[i], &y);
+            blst_sk_mul_n_check(&tmp, &tmp, &roots.roots[i]);
+
+            // Do the division: (p_i - y) * w_i / (z * (z - w_i))
+            blst_sk_mul_n_check(&tmp, &tmp, &inverses[i]);
+            blst_sk_add_n_check(&q_poly[m], &q_poly[m], &tmp);
         }
     }
-    poly_normalize(c);
-    return c;
-}
 
-// Polynomial long division: divide A by B -> quotient Q and remainder R such that A = B*Q + R
-// Assumes B != 0 and deg(B) >= 0
-void poly_divmod(const scalar_vec &A, const scalar_vec &B, scalar_vec &Q, scalar_vec &R) {
-    if (B.empty()) throw std::runtime_error("poly_divmod: divide by zero polynomial");
-
-    R = A;
-    poly_normalize(R);
-    scalar_vec divisor = B;
-    poly_normalize(divisor);
-
-    if (R.size() < divisor.size()) {
-        Q.clear();
-        poly_normalize(R);
-        return;
-    }
-
-    // Initialize Q
-    size_t n = R.size() - divisor.size() + 1;
-    Q.assign(n, new_scalar());
-
-    // Get inverse off last term in divisor
-    blst_scalar inv_leading_divisor = inv_scalar(divisor.back());
-
-    for (size_t k = 0; k < n; k++) {
-        // process from high degree down
-        size_t i = n - 1 - k; 
-
-        // Q[i] = R[R_n - 1 + i] * inv_divisor_lead
-        blst_sk_mul_n_check(&Q[i], &R[divisor.size() - 1 + i], &inv_leading_divisor);
-
-        // R -= (coeff * x^i) * b
-        for (size_t j = 0; j < divisor.size(); j++) 
-            scalar_sub_inplace(R[i + j], scalar_mul(Q[i], divisor[j]));
-    }
-
-    // normalize remainder
-    poly_normalize(Q);
-    poly_normalize(R);
+    return q_poly;
 }

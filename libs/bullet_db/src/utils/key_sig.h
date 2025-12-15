@@ -18,8 +18,8 @@
 
 #pragma once
 #include "blst.h"
-#include <vector>
 #include <array>
+#include <vector>
 
 using bytes32 = std::array<byte, 32>;
 
@@ -30,10 +30,9 @@ struct key_pair {
 
 std::tuple<const byte*, size_t> str_to_bytes(const char* str);
 
-bytes32 gen_rand_32();
-
 key_pair gen_key_pair(
-    const char* tag, 
+    const byte* tag, 
+    size_t tag_len,
     bytes32 &seed
 );
 
@@ -42,8 +41,8 @@ bool verify_sig(
     blst_p2 &signature, 
     const byte* msg,
     size_t msg_len,
-    const byte* tag,
-    size_t tag_len
+    const byte* dst,
+    size_t dst_len
 );
 
 bool verify_aggregate_signature(
@@ -51,8 +50,8 @@ bool verify_aggregate_signature(
     const blst_p2& agg_sig,
     const byte* msg,
     size_t msg_len,
-    const uint8_t* tag,
-    size_t tag_len
+    const byte* dst,
+    size_t dst_len
 );
 
 
