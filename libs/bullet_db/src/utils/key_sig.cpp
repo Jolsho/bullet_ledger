@@ -19,7 +19,6 @@
 #include <cstdlib>
 #include <cstring>
 #include "key_sig.h"
-#include "blst.h"
 
 std::tuple<const byte*, size_t> str_to_bytes(const char* str) {
     const byte* bytes = reinterpret_cast<const byte*>(str);
@@ -29,10 +28,10 @@ std::tuple<const byte*, size_t> str_to_bytes(const char* str) {
 key_pair gen_key_pair(
     const byte* tag, 
     size_t tag_len,
-    bytes32 &seed
+    Hash seed
 ) {
     key_pair keys;
-    blst_keygen(&keys.sk, seed.data(), seed.size(), tag, tag_len);
+    blst_keygen(&keys.sk, seed.h, sizeof(seed.h), tag, tag_len);
     blst_sk_to_pk_in_g1(&keys.pk, &keys.sk);
     return keys;
 }

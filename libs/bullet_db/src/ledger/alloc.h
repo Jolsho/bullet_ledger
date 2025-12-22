@@ -17,43 +17,29 @@
  */
 
 #pragma once
-#include "blst.h"
-#include "hashing.h"
-#include <array>
-#include <vector>
+#include "node.h"
+#include "db.h"
+#include "lru.h"
+#include <string>
 
-using bytes32 = std::array<byte, 32>;
+class NodeAllocator {
+public:
+    NodeAllocator(
+        std::string path,
+        size_t cache_size,
+        size_t map_size
+    );
+    ~NodeAllocator();
 
-struct key_pair {
-    blst_p1 pk;
-    blst_scalar sk;
+    Node* root_;
+    LRUCache<NodeId, Node*, NodeIdHash> cache_;
+    BulletDB db_;
+
+    Result<Node*, int> load_node(const NodeId* id);
+    int recache(const NodeId& old_id, Node* node);
+    int cache_node(Node* node);
+    Result<Node*, int> delete_node(const NodeId& id);
+
+    int rename_value(const NodeId& old_id, const NodeId& new_id);
 };
-
-std::tuple<const byte*, size_t> str_to_bytes(const char* str);
-
-key_pair gen_key_pair(
-    const byte* tag, 
-    size_t tag_len,
-    Hash seed
-);
-
-bool verify_sig(
-    const blst_p1 &PK,
-    blst_p2 &signature, 
-    const byte* msg,
-    size_t msg_len,
-    const byte* dst,
-    size_t dst_len
-);
-
-bool verify_aggregate_signature(
-    std::vector<blst_p1>& pks,
-    const blst_p2& agg_sig,
-    const byte* msg,
-    size_t msg_len,
-    const byte* dst,
-    size_t dst_len
-);
-
-
 

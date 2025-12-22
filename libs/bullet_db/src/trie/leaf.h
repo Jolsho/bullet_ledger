@@ -17,11 +17,17 @@
  */
 
 #pragma once
-#include "blst.h"
-#include <span>
-#include <vector>
+#include "node.h"
 
-using ByteSlice = std::span<byte>;
-using Polynomial = std::vector<blst_scalar>;
-using Scalar_vec = std::vector<blst_scalar>;
+class Leaf_i : public Node {
+public:
+    virtual void insert_child(
+        const byte& nib,
+        const Hash& val_hash,
+        const uint16_t block_id
+    ) = 0;
 
+    virtual void set_path(ByteSlice path) = 0;
+};
+
+Leaf_i* create_leaf(const NodeId* id, const ByteSlice* buff);

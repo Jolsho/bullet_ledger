@@ -17,7 +17,27 @@
  */
 
 #include "helpers.h"
-#include "verkle.h"
+#include "proofs.h"
+
+/* 
+ *  each node has up to l2 commitment
+ *
+ *  1/2 trx::
+ *      p1 = l2 evals to hash of c2 @ z1
+ *      c2 = l3 commitment
+ *      p2 = l3 evals to hash of trx_value @ z2
+ *      ---------------------------------------
+ *      (48 + 2) * 3 = 150 = 300 / TRX
+ *
+ *      additional layer == +c +p = +(48+2) +(48+2) = +100
+ *
+ *
+ *  ORDERING::
+ *      n = 1 byte
+ *      proof_i -> commit_i+1
+ *      proof_n -> value_hash
+ *
+ */
 
 
 // TODO --

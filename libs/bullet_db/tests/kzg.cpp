@@ -23,7 +23,6 @@
 #include "helpers.h"
 #include "polynomial.h"
 #include "settings.h"
-#include "types.h"
 #include "kzg.h"
 
 void test_fft() {
@@ -40,9 +39,10 @@ void test_fft() {
 
     Scalar_vec evals(DEGREE, blst_scalar());
 
+    Hash hash = new_hash();
     for (auto i = 0; i < DEGREE; i++) {
-        hash_to_sk(&evals[i], seeded_hash(i));
-        //assert(blst_sk_check(&evals[i]));
+        seeded_hash(&hash, i);
+        hash_to_sk(&evals[i], hash.h);
     }
 
     // evals from coeff to eval form
@@ -96,7 +96,7 @@ void main_kzg() {
     printf("TESTING KZG SINGLE & BATCH \n");
 
     const size_t DEGREE = 256;
-    KZGSettings settings = init_settings(DEGREE, num_scalar(69));
+    KZGSettings settings = init_settings(DEGREE, num_scalar(69), "TAG");
 
     int count = 10;
     std::vector<blst_p1> Pis; Pis.reserve(count);
@@ -105,10 +105,12 @@ void main_kzg() {
     std::vector<size_t> Z_idxs; Z_idxs.reserve(count);
 
     Scalar_vec evals(DEGREE, blst_scalar());
+    Hash hash = new_hash();
     for (int k = 0; k < count; k++) {
         int n = k * DEGREE;
         for (auto i = n; i < n + DEGREE; i++) {
-            hash_to_sk(&evals[i - n], seeded_hash(i));
+            seeded_hash(&hash, i);
+            hash_to_sk(&evals[i - n], hash.h);
         }
 
         // evals from eval to coeff form in fx
@@ -116,11 +118,12 @@ void main_kzg() {
         inverse_fft_in_place(fx, settings.roots.inv_roots);
 
         size_t idx = k;
-        blst_scalar z = settings.roots.roots[idx];
-        blst_scalar y = evals[idx];
 
         // PROVE AND VERIFY f(3)
-        auto [C, Pi] = prove_kzg(evals, z, y, settings).value();
+        auto [C, Pi] = prove_kzg(evals, idx, settings).value();
+
+        blst_scalar z = settings.roots.roots[idx];
+        blst_scalar y = evals[idx];
 
         Cs.push_back(C);
         Pis.push_back(Pi);
@@ -132,43 +135,18 @@ void main_kzg() {
         assert(!verify_kzg(C, z, evals[idx+1], Pi, settings.setup));
     }
 
-    Hash h = seeded_hash(2);
-    assert(batch_verify(Pis, Cs, Z_idxs, Ys, h, settings));
+    seeded_hash(&hash, 2);
+    assert(batch_verify(Pis, Cs, Z_idxs, Ys, hash, settings));
     
     Z_idxs[0]++;
-    assert(!batch_verify(Pis, Cs, Z_idxs, Ys, h, settings));
+    assert(!batch_verify(Pis, Cs, Z_idxs, Ys, hash, settings));
     Z_idxs[0]--;
 
     blst_scalar tmp = Ys[0];
     Ys[0] = num_scalar(2);
-    assert(!batch_verify(Pis, Cs, Z_idxs, Ys, h, settings));
+    assert(!batch_verify(Pis, Cs, Z_idxs, Ys, hash, settings));
     Ys[0] = tmp;
 
     printf("SUCCESSFUL KZG \n\n");
 
-    /* 
-     *  AGGREGATE ->
-     *
-     *  e(SUM(Pi_r_i), g2(s)) == 
-     *  e(SUM(r_i * (C_i - g1(y_i)) + (z_i * Pi_r_i)) , g2)
-     *
-     *
-     *  each node has up to l2 commitment
-     *
-     *  1/2 trx::
-     *      p1 = l2 evals to hash of c2 @ z1
-     *      c2 = l3 commitment
-     *      p2 = l3 evals to hash of trx_value @ z2
-     *      ---------------------------------------
-     *      (48 + 2) * 3 = 150 = 300 / TRX
-     *
-     *      additional layer == +c +p = +(48+2) +(48+2) = +100
-     *
-     *
-     *  ORDERING::
-     *      n = 1 byte
-     *      proof_i -> commit_i+1
-     *      proof_n -> value_hash
-     *
-     */
 }

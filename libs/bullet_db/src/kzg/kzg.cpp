@@ -17,16 +17,19 @@
  */
 
 #include "fft.h"
+#include "kzg.h"
 #include "helpers.h"
 #include "polynomial.h"
 
 // Returns C, Pi
 std::optional<std::tuple<blst_p1, blst_p1>> prove_kzg(
     const Scalar_vec &evals,
-    const blst_scalar &z,
-    const blst_scalar &y,
+    const size_t eval_idx,
     const KZGSettings &s
 ) {
+
+    blst_scalar z = s.roots.roots[eval_idx];
+    blst_scalar y = evals[eval_idx];
 
     auto q_opt = derive_quotient(evals, z, y, s.roots);
     if (!q_opt.has_value()) return std::nullopt;
@@ -90,7 +93,8 @@ bool verify_kzg(
     return blst_fp12_finalverify(&lhs, &rhs);
 }
 
-Hash fiat_shamir(
+void fiat_shamir(
+    Hash* out,
     const blst_p1 &C,
     const blst_p1 &Pi,
     const blst_scalar &Z,
@@ -99,7 +103,7 @@ Hash fiat_shamir(
     byte buff[48]
 ) {
     BlakeHasher hasher;
-    hasher.update(base_r.data(), base_r.size());
+    hasher.update(base_r.h, 32);
     hasher.update(Z.b, 32);
     hasher.update(Y.b, 32);
 
@@ -109,7 +113,7 @@ Hash fiat_shamir(
     blst_p1_compress(buff, &Pi);
     hasher.update(buff, 48);
 
-    return hasher.finalize();
+    hasher.finalize(out->h);
 }
 
 bool batch_verify(
@@ -117,7 +121,7 @@ bool batch_verify(
     std::vector<blst_p1> &Cs,
     std::vector<size_t> &Z_idxs,
     Scalar_vec &Ys,
-    Hash &base_r,
+    Hash base_r,
     KZGSettings &kzg
 ) {
     blst_p1 agg_left = new_inf_p1();
@@ -125,13 +129,15 @@ bool batch_verify(
     blst_p1 tmp;
     blst_scalar Z, r;
     byte buff[48];
+    Hash hash = new_hash();
 
     for(int i = 0; i < Pis.size(); i++) {
 
         Z = kzg.roots.roots[Z_idxs[i]];
 
         // derive random scalar r via fiat-shamir
-        hash_to_sk(&r, fiat_shamir(Cs[i], Pis[i], Z, Ys[i], base_r, buff));
+        fiat_shamir(&hash, Cs[i], Pis[i], Z, Ys[i], base_r, buff);
+        hash_to_sk(&r, hash.h);
         if (scalar_is_zero(r)) return false;
 
         // tmp = - g1(Y)
@@ -172,6 +178,7 @@ bool batch_verify(
 
     blst_final_exp(&lhs, &lhs);
     blst_final_exp(&rhs, &rhs);
+
 
     return blst_fp12_finalverify(&lhs, &rhs);
 }

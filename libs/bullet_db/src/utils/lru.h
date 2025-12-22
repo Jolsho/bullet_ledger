@@ -15,47 +15,40 @@
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
-
 #pragma once
 #include <list>
 #include <unordered_map>
 #include <optional>
 
-template <typename Key, typename Value>
+template <typename Key, typename Value, typename Hash = std::hash<Key>>
 class LRUCache {
 public:
     explicit LRUCache(size_t capacity) : cap(capacity) {}
 
-    // Get returns a raw pointer to the value, or nullptr if not found
     Value* get(const Key& key) {
         auto it = map.find(key);
         if (it == map.end())
             return nullptr;
 
-        // Move to front (MRU)
         order.splice(order.begin(), order, it->second);
         return &it->second->second;
     }
 
-    // Put a new value (wrapped automatically in unique_ptr)
     std::optional<std::tuple<Key, Value>> put(const Key& key, Value value) {
         auto it = map.find(key);
         if (it != map.end()) {
-            // Update existing
             it->second->second = value;
             order.splice(order.begin(), order, it->second);
             return std::nullopt;
         }
 
-        // New entry
         order.emplace_front(key, value);
-        map[key] = order.begin();
+        map.emplace(key, order.begin());
 
-        // Evict if above capacity
         if (map.size() > cap) {
-            auto last = --order.end();
+            auto last = std::prev(order.end());
             map.erase(last->first);
-            std::tuple<Key, Value> evicted {last->first, last->second};
+            auto evicted = std::tuple<Key, Value>{last->first, last->second};
             order.pop_back();
             return evicted;
         }
@@ -63,10 +56,10 @@ public:
         return std::nullopt;
     }
 
-    // Remove and take ownership
     Value remove(const Key& key) {
         auto it = map.find(key);
-        if (it == map.end()) return nullptr;
+        if (it == map.end())
+            return Value{};
 
         Value val = it->second->second;
         order.erase(it->second);
@@ -76,9 +69,9 @@ public:
 
 private:
     size_t cap;
-
-    // Most-recently-used at front
     std::list<std::pair<Key, Value>> order;
-    std::unordered_map<Key, typename std::list<std::pair<Key, Value>>::iterator> map;
+    std::unordered_map<Key,
+        typename std::list<std::pair<Key, Value>>::iterator,
+        Hash> map;
 };
 

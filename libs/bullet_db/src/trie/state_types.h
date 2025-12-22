@@ -17,43 +17,37 @@
  */
 
 #pragma once
-#include "blst.h"
 #include "hashing.h"
-#include <array>
-#include <vector>
+#include "blst.h"
+#include <cstdint>
 
-using bytes32 = std::array<byte, 32>;
+using Commitment = blst_p1;
+using Proof = blst_p1;
 
-struct key_pair {
-    blst_p1 pk;
-    blst_scalar sk;
+constexpr uint64_t BRANCH_ORDER = 256;
+constexpr uint64_t LEAF_ORDER   = 128;
+
+constexpr byte BRANCH = static_cast<byte>(69);
+constexpr byte LEAF   = static_cast<byte>(71);
+constexpr byte EDGE   = static_cast<byte>(73);
+
+extern const Hash ZERO_HASH;
+inline bool hash_is_zero(const Hash& h) {
+    return std::memcmp(h.h, ZERO_HASH.h, 32) == 0;
+}
+
+enum LedgerCodes {
+    OK = 0,
+    EXISTS = 0,
+
+    NOT_EXIST = 1,
+    NOT_IN_SHARD = 2,
+    ROOT_ERR = 3,
+    DB_ERR = 4,
+    LOAD_NODE_ERR = 5,
+    KZG_PROOF_ERR = 6,
+    DELETED = 7,
+    ALREADY_DELETED = 8,
+    DELETE_VALUE_ERR= 9,
+    REPLACE_VALUE_ERR= 10 
 };
-
-std::tuple<const byte*, size_t> str_to_bytes(const char* str);
-
-key_pair gen_key_pair(
-    const byte* tag, 
-    size_t tag_len,
-    Hash seed
-);
-
-bool verify_sig(
-    const blst_p1 &PK,
-    blst_p2 &signature, 
-    const byte* msg,
-    size_t msg_len,
-    const byte* dst,
-    size_t dst_len
-);
-
-bool verify_aggregate_signature(
-    std::vector<blst_p1>& pks,
-    const blst_p2& agg_sig,
-    const byte* msg,
-    size_t msg_len,
-    const byte* dst,
-    size_t dst_len
-);
-
-
-

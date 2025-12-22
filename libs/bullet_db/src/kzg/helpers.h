@@ -18,7 +18,7 @@
 
 #pragma once
 #include "bigint.h"
-#include "hashing.h"
+#include "blst.h"
 
 blst_scalar num_scalar(const uint64_t v);
 
@@ -34,10 +34,9 @@ blst_scalar modular_pow(const blst_scalar &base, const BigInt &exp);
 void hash_p1_to_sk(
     blst_scalar &out,
     const blst_p1 &p, 
-    const std::vector<byte> &buffer, 
     const std::string* tag
 );
-void hash_to_sk(blst_scalar* dst, const Hash hash);
+void hash_to_sk(blst_scalar* dst, const byte* hash);
 blst_p1 new_p1();
 blst_p1 new_inf_p1();
 blst_p2 new_p2();

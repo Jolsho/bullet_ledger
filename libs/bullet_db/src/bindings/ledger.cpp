@@ -17,7 +17,7 @@
  */
 
 #include <cstddef>
-#include "verkle.h"
+#include "ledger.h"
 
 extern "C" {
 extern const int SECRET_SIZE = 32;

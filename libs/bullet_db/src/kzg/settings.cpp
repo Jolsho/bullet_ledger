@@ -94,8 +94,8 @@ SRS::SRS(size_t degree, const blst_scalar &s) {
     }
 }
 
-KZGSettings init_settings(size_t degree, const blst_scalar &s) {
+KZGSettings init_settings(size_t degree, const blst_scalar &s, std::string tag) {
     NTTRoots roots = build_roots(degree);
     SRS setup(degree, s);
-    return { roots, setup };
+    return { roots, setup , tag};
 }

@@ -20,6 +20,8 @@
 #include <iomanip>
 #include <iostream>
 #include "helpers.h"
+#include "blst.h"
+#include "hashing.h"
 
 
 blst_scalar num_scalar(const uint64_t v) {
@@ -103,15 +105,14 @@ blst_scalar modular_pow(const blst_scalar &base, const BigInt &exp) {
     return result;
 }
 
-void hash_to_sk(blst_scalar* dst, const Hash hash) {
-    blst_scalar_from_le_bytes(dst, hash.data(), 32);
+void hash_to_sk(blst_scalar* dst, const byte* hash) {
+    blst_scalar_from_le_bytes(dst, hash, 32);
     assert(blst_sk_check(dst));
 }
 
 void hash_p1_to_sk(
     blst_scalar &out,
     const blst_p1 &p, 
-    const std::vector<byte> &buffer, 
     const std::string* tag
 ) {
     byte buff[48];
@@ -119,7 +120,9 @@ void hash_p1_to_sk(
 
     BlakeHasher h;
     h.update(buff, 48);
-    hash_to_sk(&out, h.finalize());
+    Hash hash = new_hash();
+    h.finalize(hash.h);
+    hash_to_sk(&out, hash.h);
 }
 
 

@@ -17,7 +17,10 @@
  */
 
 #pragma once
-#include "verkle.h"
+#include "bitmap.h"
+#include "state_types.h"
+#include "kzg.h"
+#include <optional>
 
 size_t calculate_proof_size(
     Commitment &C, Proof &Pi,

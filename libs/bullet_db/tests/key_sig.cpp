@@ -24,7 +24,8 @@
 #include "helpers.h"
 
 void test_single_key_sig() {
-    Hash seed = seeded_hash(1113);
+    Hash seed = new_hash();
+    seeded_hash(&seed, 1113);
 
     auto [msg, msg_len] = str_to_bytes("the_message");
     auto [dst, dst_len] = str_to_bytes("bullet_ledger");
@@ -55,9 +56,10 @@ void test_many_key_sig() {
 
     std::vector<blst_p1> pks;
     pks.reserve(5);
+    Hash seed = new_hash();
     for (size_t i = 0; i < 5; i++) {
 
-        Hash seed = seeded_hash(i);
+        seeded_hash(&seed, i);
         key_pair keys = gen_key_pair(dst, dst_len, seed);
 
         blst_p2 tmp_sig;

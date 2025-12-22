@@ -18,9 +18,17 @@
 
 #pragma once
 #include "blake3.h"
-#include "types.h"
+#include "blst.h"
+#include <cstdlib>
+#include <cstring>
+#include <span>
 
-using Hash = std::array<byte, 32>;
+struct Hash {
+    byte h[32];
+};
+
+using ByteSlice = std::span<byte>;
+
 class BlakeHasher {
 private: blake3_hasher h_;
 public:
@@ -30,18 +38,17 @@ public:
     void update(const byte* data, const size_t size) {
         blake3_hasher_update(&h_, data, size);
     }
-    Hash finalize() {
-        Hash hash;
+    void finalize(byte* out) {
         blake3_hasher_finalize(&h_, 
-            reinterpret_cast<uint8_t*>(hash.data()), 
-            hash.size());
-        return hash;
+            reinterpret_cast<uint8_t*>(out), 
+            32);
     }
 };
 
-Hash derive_kv_hash(const Hash &key_hash, const Hash &val_hash);
+void derive_kv_hash(Hash out, const Hash &key_hash, const Hash &val_hash);
 
-Hash derive_hash(const ByteSlice &value);
+void derive_hash(byte* out, const ByteSlice &value);
 
+Hash new_hash(const byte* h = nullptr);
 void print_hash(const Hash &hash);
-Hash seeded_hash(int i);
+void seeded_hash(Hash* out, int i);

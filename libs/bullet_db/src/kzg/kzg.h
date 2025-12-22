@@ -17,14 +17,17 @@
  */
 
 #pragma once
+#include "blst.h"
 #include "hashing.h"
 #include "settings.h"
 #include <optional>
+#include <vector>
+
+using Scalar_vec = std::vector<blst_scalar>;
 
 std::optional<std::tuple<blst_p1, blst_p1>> prove_kzg(
     const Scalar_vec &evals,
-    const blst_scalar &z,
-    const blst_scalar &y,
+    const size_t eval_idx,
     const KZGSettings &s
 );
 
@@ -42,6 +45,6 @@ bool batch_verify(
     std::vector<blst_p1> &Cs,
     std::vector<size_t> &Z_idxs,
     Scalar_vec &Ys,
-    Hash &base_r,
+    Hash base_r,
     KZGSettings &kzg
 );

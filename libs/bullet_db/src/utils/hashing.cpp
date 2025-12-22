@@ -21,17 +21,17 @@
 #include <iostream>
 #include <random>
 
-Hash derive_kv_hash(const Hash &key_hash, const Hash &val_hash) {
+void derive_kv_hash(Hash out, const Hash &key_hash, const Hash &val_hash) {
     BlakeHasher hasher;
-    hasher.update(key_hash.data(), key_hash.size());
-    hasher.update(val_hash.data(), val_hash.size());
-    return hasher.finalize();
+    hasher.update(key_hash.h, 32);
+    hasher.update(val_hash.h, 32);
+    hasher.finalize(out.h);
 }
 
-Hash derive_hash(const ByteSlice &value) {
+void derive_hash(byte* out, const ByteSlice &value) {
     BlakeHasher hasher;
     hasher.update(value.data(), value.size());
-    return hasher.finalize();
+    hasher.finalize(out);
 }
 
 void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag) {
@@ -43,32 +43,40 @@ void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag
 
     hasher.update(c_bytes, 48);
 
-    Hash h = hasher.finalize();
-    blst_scalar_from_le_bytes(s, h.data(), h.size());
+    Hash h = new_hash();
+    hasher.finalize(h.h);
+    blst_scalar_from_le_bytes(s, h.h, 32);
+}
+
+Hash new_hash(const byte* h) { 
+    Hash hash = {0}; 
+    if (h != nullptr) {
+        std::memcpy(hash.h, h, 32);
+    } else {
+        std::memset(hash.h, 0, 32);
+    }
+    return hash;
 }
 
 void print_hash(const Hash &hash) {
-    for (byte b : hash) {
+    for (auto i = hash.h; i < hash.h + 32; i++) {
         std::cout << std::hex
                   << std::setw(2)
                   << std::setfill('0')
-                  << static_cast<unsigned>(b);
+                  << static_cast<unsigned>(*i);
     }
     std::cout << std::dec << std::endl; // restore formatting
 }
 
-Hash seeded_hash(int i) {
+void seeded_hash(Hash* out, int i) {
     std::mt19937_64 gen(i);            // 64-bit PRNG
     std::uniform_int_distribution<uint64_t> dist;
 
-    Hash hash;
-
-    for (int i = 0; i < 4; ++i) {        // 4 * 8 bytes = 32 bytes
+    for (i = 0; i < 4; ++i) {        // 4 * 8 bytes = 32 bytes
         uint64_t num = dist(gen);
         for (int j = 0; j < 8; ++j) {
-            hash[i*8 + j] = static_cast<byte>((num >> (8 * j)) & 0xFF);
+            out->h[i*8 + j] = static_cast<byte>((num >> (8 * j)) & 0xFF);
         }
     }
-    return hash;
 }
 

@@ -18,6 +18,7 @@
 
 #include "helpers.h"
 #include "polynomial.h"
+#include "kzg.h"
 
 // ================== COMMIT POLYNOMIAL ==================
 // commits to f(x) via evaluating f(r)
@@ -26,6 +27,7 @@ void commit_g1(
     const Polynomial& coeffs, 
     const SRS& srs
 ) {
+    // TODO -- more effecient way to do this?
     blst_p1 tmp;
     for (size_t i = 0; i < coeffs.size(); i++) {
         blst_p1_mult(&tmp, &srs.g1_powers_jacob[i], coeffs[i].b, 256);

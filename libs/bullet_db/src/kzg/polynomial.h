@@ -19,6 +19,9 @@
 #pragma once
 #include "settings.h"
 #include <optional>
+#include <vector>
+ 
+using Polynomial = std::vector<blst_scalar>;
 
 void commit_g1(blst_p1* C, const Polynomial& coeffs, const SRS& srs);
 
@@ -30,7 +33,7 @@ Polynomial multiply_binomial(
 Polynomial differentiate_polynomial(const Polynomial &f);
 
 std::optional<Polynomial> derive_quotient(
-    const Scalar_vec &poly_eval,
+    const std::vector<blst_scalar> &poly_eval,
     const blst_scalar &z,
     const blst_scalar &y,
     const NTTRoots &roots

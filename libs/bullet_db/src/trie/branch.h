@@ -17,43 +17,22 @@
  */
 
 #pragma once
-#include "blst.h"
-#include "hashing.h"
-#include <array>
-#include <vector>
+#include "node.h"
 
-using bytes32 = std::array<byte, 32>;
+class Branch_i : public Node {
+public:
+    virtual void insert_child(
+        const byte& nib,
+        const Commitment* new_commit,
+        const Gadgets* gadgets,
+        const uint16_t block_id
+    ) = 0;
 
-struct key_pair {
-    blst_p1 pk;
-    blst_scalar sk;
+    virtual Result<void*, int> change_id(
+        uint64_t node_id,
+        uint16_t block_id,
+        Gadgets* gadgets
+    ) = 0;
 };
 
-std::tuple<const byte*, size_t> str_to_bytes(const char* str);
-
-key_pair gen_key_pair(
-    const byte* tag, 
-    size_t tag_len,
-    Hash seed
-);
-
-bool verify_sig(
-    const blst_p1 &PK,
-    blst_p2 &signature, 
-    const byte* msg,
-    size_t msg_len,
-    const byte* dst,
-    size_t dst_len
-);
-
-bool verify_aggregate_signature(
-    std::vector<blst_p1>& pks,
-    const blst_p2& agg_sig,
-    const byte* msg,
-    size_t msg_len,
-    const byte* dst,
-    size_t dst_len
-);
-
-
-
+Branch_i* create_branch(const NodeId* id, const ByteSlice* buff);

@@ -16,9 +16,10 @@ target_include_directories(bullet_db PUBLIC
 )
 target_include_directories(bullet_db PRIVATE
     ${PROJECT_SOURCE_DIR}/src/kzg
-    ${PROJECT_SOURCE_DIR}/src/state
+    ${PROJECT_SOURCE_DIR}/src/ledger
+    ${PROJECT_SOURCE_DIR}/src/trie
     ${PROJECT_SOURCE_DIR}/src/utils
-    ${PROJECT_SOURCE_DIR}/src/encoding
+    ${PROJECT_SOURCE_DIR}/src/blocks
     ${PROJECT_SOURCE_DIR}/src/bindings
 )
 
