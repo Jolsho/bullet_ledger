@@ -16,80 +16,104 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <cassert>
+#include "hashing.h"
+#include "helpers.h"
+#include "kzg.h"
+#include "ledger.h"
+#include <filesystem>
 
 void main_state_trie() {
-    // namespace fs = std::filesystem;
-    // const char* path = "./fake_db";
-    // if (fs::exists(path)) fs::remove_all(path);
-    // fs::create_directory(path);
-    //
-    // Ledger l(path, 6, 
-    //     10 * 1024 * 1024, 
-    //     "bullet", 
-    //     num_scalar(13)
-    // );
-    //
-    // std::vector<Hash> raw_hashes;
-    // raw_hashes.reserve(256);
-    // for (int i = 0; i < raw_hashes.capacity(); i++) {
-    //     Hash rnd = seeded_hash(i);
-    //     raw_hashes.push_back(rnd);
-    // }
-    //
-    //
-    // // --- Insert phase ---
-    // int i = 0;
-    // for (Hash h: raw_hashes) {
-    //     ByteSlice key(h.data(), h.size());
-    //     ByteSlice value(h.data(), h.size());
-    //
-    //     auto virt_root = l.virtual_put(key, value, 1).value();
-    //
-    //     auto root = l.put(key, value, 1).value();
-    //
-    //     byte virt[48];
-    //     virt_root.compress(virt);
-    //
-    //     byte r[48];
-    //     root.compress(r);
-    //
-    //     assert(std::equal(virt, virt+48, r));
-    //
-    //     ByteSlice got = l.get_value(key, 1).value();
-    //     assert(std::equal(got.begin(), got.end(), value.begin()));
-    //     printf("INSERT %d\n", i);
-    //     i++;
-    // }
-    //
-    // // --- Proving phase ---
-    // i = 0;
-    // for (Hash h: raw_hashes) {
-    //     ByteSlice key(h.data(), h.size());
-    //     auto [C, Pi, Ws, Ys, Zs] = l.get_existence_proof(key, 1).value();
-    //     assert(multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
-    //
-    //     byte raw[32]; Zs[0].to_lendian(raw);
-    //     if (raw[0] != 0) raw[0] = 0;    // TODO what is this??
-    //     else raw[0] = 1;
-    //     assert(!multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
-    //     printf("PROVED %d\n", i);
-    //     i++;
-    // }
-    //
-    // // --- Remove phase ---
-    // i = 0;
-    // for (Hash h: raw_hashes) {
-    //     std::span<byte> key(h.data(), h.size());
-    //     l.remove(key, 1);
-    //     auto got = l.get_value(key, 1);
-    //     assert(got.has_value() == false);
-    //     printf("DELETED %d\n", i);
-    //     i++;
-    // }
-    //
-    //
-    // fs::remove_all("./fake_db");
-    //
-    // printf("VERKLE STATE SUCCESSFUL \n");
+    namespace fs = std::filesystem;
+    const char* path = "./fake_db";
+    if (fs::exists(path)) fs::remove_all(path);
+    fs::create_directory(path);
+
+    size_t CACHE_SIZE{128};
+    size_t MAP_SIZE{10ULL * 1024 * 1024 * 1024};
+    std::string DST{"bullet"};
+    blst_scalar SECRET{num_scalar(13)};
+
+    Ledger l(path, CACHE_SIZE, MAP_SIZE, DST, SECRET);
+
+    std::vector<Hash> raw_hashes(512);
+    for (int i = 0; i < raw_hashes.capacity(); i++) {
+        seeded_hash(&raw_hashes[i], i);
+    }
+
+
+    // --- Insert phase ---
+    uint16_t block_id = 1;
+    uint8_t idx = 3;
+
+    int i = 0;
+    for (Hash h: raw_hashes) {
+
+        ByteSlice key(h.h, 32);
+        ByteSlice value(h.h, 32);
+
+        int res = l.put(key, value, idx, block_id);
+        printf("INSERT %d, %d\n\n", i, res);
+        assert(res == OK);
+        i++;
+    }
+
+    Hash h;
+    int res = l.finalize_block(block_id, &h);
+    printf("FINALIZED %d\n", res);
+    assert(res == OK);
+
+
+    // --- Proving phase ---
+    std::vector<Commitment> Cs;
+    std::vector<Proof> Pis;
+    std::vector<size_t> Zs;
+    std::vector<blst_scalar> Ys;
+
+    Hash base;
+    seeded_hash(&base, 2);
+
+    const KZGSettings* settings = l.get_settings();
+
+    i = 0;
+    for (Hash h: raw_hashes) {
+
+        ByteSlice key(h.h, sizeof(h.h));
+        ByteSlice value(h.h, 32);
+
+        int res = l.generate_proof(Cs, Pis, key, block_id, idx);
+        printf("GENERATE %d\n", res);
+        assert(res == OK);
+
+        Hash key_hash;
+        derive_hash(key_hash.h, key);
+        key_hash.h[31] = idx;
+        l.derive_Zs_n_Ys(key_hash, value, &Cs, &Pis, &Zs, &Ys, settings);
+
+        printf("PROVING %d == ", i);
+
+        for (int k{}; k < Pis.size(); k++) {
+            assert(verify_kzg(
+                Cs[k], 
+                settings->roots.roots[Zs[k]], 
+                Ys[k], 
+                Pis[k], 
+                settings->setup
+            ));
+            printf("%d/%zu, ", k+1, Pis.size());
+        }
+
+        assert(batch_verify(Pis, Cs, Zs, Ys, base, *settings));
+
+        Cs.clear();
+        Pis.clear();
+        Zs.clear();
+        Ys.clear();
+
+        printf("\n");
+        i++;
+    }
+
+    fs::remove_all("./fake_db");
+
+    printf("VERKLE STATE SUCCESSFUL \n");
 }

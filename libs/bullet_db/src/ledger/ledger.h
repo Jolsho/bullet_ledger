@@ -61,38 +61,52 @@
  */
 
 #pragma once
-#include "alloc.h"
+#include "kzg.h"
 #include "settings.h"
+#include "gadgets.h"
+#include "node.h"
 
-struct Gadgets {
-    KZGSettings settings;
-    NodeAllocator alloc;
-};
-
-inline Gadgets init_gadgets(
-    size_t degree, 
-    const blst_scalar &s, 
-    std::string tag,
-    std::string path,
-    size_t cache_size,
-    size_t map_size
-) {
-    return {
-        init_settings(degree, s, tag), 
-        NodeAllocator(path, cache_size, map_size)
-    };
-}
 
 class Ledger {
 private:
+    Gadgets_ptr gadgets_;
+
+    Result<Node_ptr, int> get_root(uint16_t block_id);
+    int delete_root(uint16_t block_id);
+
     std::vector<byte> shard_prefix_;
     bool in_shard(const Hash hash);
 
+public:
+    Ledger(
+        std::string path,
+        size_t cache_size,
+        size_t map_size,
+        std::string tag,
+        blst_scalar secret_sk
+    );
+
+    const KZGSettings* get_settings() const;
+
+    int finalize_block(uint16_t block_id, Hash* out);
+    int prune_block(uint16_t block_id);
+    int justify_block(uint16_t block_id);
+
     int generate_proof(
+        std::vector<Commitment> &Cs,
+        std::vector<Proof> &Pis,
+        ByteSlice& key,
+        uint16_t block_id,
+        uint8_t idx
+    );
+    void derive_Zs_n_Ys(
+        Hash& key_hash,
+        ByteSlice& value,
         std::vector<Commitment>* Cs,
         std::vector<Proof>* Pis,
-        ByteSlice& key,
-        uint8_t idx
+        std::vector<size_t>* Zs,
+        Scalar_vec* Ys,
+        const KZGSettings* settings
     );
 
     int put(
@@ -106,20 +120,6 @@ private:
         ByteSlice &key, 
         uint16_t new_block_id
     );
-
-public:
-    Gadgets gadgets_;
-
-    Ledger(
-        std::string path,
-        size_t cache_size,
-        size_t map_size,
-        std::string tag,
-        blst_scalar secret_sk
-    );
-
-    Node* get_root(uint16_t block_id);
-    int delete_root(uint16_t block_id);
 
     ~Ledger();
 };

@@ -18,10 +18,13 @@
 
 #include "fft.h"
 #include "branch.h"
+#include "hashing.h"
 #include "polynomial.h"
 #include "helpers.h"
 #include "leaf.h"
-#include "ledger.h"
+#include "state_types.h"
+#include <cstdio>
+#include <cstring>
 
 class Branch : public Branch_i {
 private:
@@ -34,42 +37,49 @@ private:
     uint8_t count_;
     NodeId tmp_id_;
 
+    Gadgets_ptr gadgets_;
+
 public:
 
-    Branch(const NodeId* id, const ByteSlice* buff) :
+    Branch(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff) :
         id_(id),
         tmp_id_(0, 0),
         children_(BRANCH_ORDER), 
+        child_block_ids_(BRANCH_ORDER), 
         commit_{blst_p1()}, 
-        count_{0}
+        count_{},
+        gadgets_{gadgets}
     {
         for (auto &c: children_) c = ZERO_SK;
         if (buff == nullptr) { return; }
 
         byte* cursor = buff->data(); cursor++;
 
-        id_.from_bytes(cursor);
-        cursor += id_.size();
+        id_.from_bytes(cursor); cursor += id_.size();
 
         commit_ = p1_from_bytes(cursor); cursor += 48;
 
-        std::array<byte, 2> block_id_buff;
-        count_ = *cursor; cursor++;
-        for (int i = 0; i < count_; i++) {
-            byte nib(*cursor); 
-            cursor++;
-
-            blst_scalar_from_le_bytes(&children_[nib], cursor, 32);
+        for (int i{}; i < BRANCH_ORDER; i++) {
+            blst_scalar_from_le_bytes(&children_[i], cursor, 32);
             cursor += 32;
 
-            std::memcpy(block_id_buff.data(), cursor, 2);
-            cursor += 2;
-            child_block_ids_[i] = std::bit_cast<uint16_t>(block_id_buff);
+            std::memcpy(&child_block_ids_[i], cursor, sizeof(uint16_t));
+            cursor += sizeof(uint16_t);
         }
     }
 
+    ~Branch() override { 
+        int res = gadgets_->alloc.persist_node(this);
+        if (res != OK) printf("BRANCH::PERSIST::ERR::%d\n", res);
+        assert(res == OK); 
+    }
+
     std::vector<byte> to_bytes() const override {
-        std::vector<byte> buffer(1 + id_.size() + 48 + 1 + (count_ * (32 + 2)));
+        std::vector<byte> buffer(
+            1 + 
+            id_.size() + 
+            48 + 
+            (BRANCH_ORDER * (32 + sizeof(uint16_t))));
         byte* cursor = buffer.data();
 
         *cursor = BRANCH; cursor++;
@@ -79,27 +89,18 @@ public:
 
         blst_p1_compress(cursor, &commit_); cursor += 48;
 
-        *cursor = count_; 
-        cursor++;
+        for (int i{}; i < BRANCH_ORDER; i++) {
+            std::memcpy(cursor, children_[i].b, 32);
+            cursor += 32;
 
-        std::array<byte, 2> block_id_buff;
-        for (int i = 0; i < BRANCH_ORDER; i++) {
-            if (!scalar_is_zero(children_[i])) {
-                *cursor = static_cast<uint8_t>(i); 
-                cursor++;
-
-                std::memcpy(cursor, children_[i].b, 32);
-                cursor += 32;
-
-                block_id_buff = std::bit_cast<std::array<byte, 2>>(child_block_ids_[i]);
-                std::memcpy(cursor, block_id_buff.data(), 2);
-                cursor += 2;
-            }
+            std::memcpy(cursor, &child_block_ids_[i], sizeof(uint16_t));
+            cursor += sizeof(uint16_t);
         }
         return buffer;
     }
 
     const NodeId* get_id() override { return &id_; };
+    void set_id(const NodeId &id) override { id_ = id; };
 
     const Commitment* get_commitment() const override { return &commit_; };
 
@@ -109,22 +110,20 @@ public:
 
     void insert_child(
         const byte &nib, 
-        const Commitment* new_commit, 
-        const Gadgets *gadgets,
         const uint16_t block_id
     ) override {
-        if (scalar_is_zero(children_[nib])) count_++;
-        hash_p1_to_sk(children_[nib], *new_commit, &gadgets->settings.tag);
+        if (scalar_is_zero(children_[nib])) {
+            children_[nib].b[0] = 1;
+            count_++;
+        }
         child_block_ids_[nib] = block_id;
     }
 
-    const NodeId* get_next_id(ByteSlice &nibs) override {
-        if (!scalar_is_zero(children_[nibs.front()])) {
+    const NodeId* get_next_id(byte nib) override {
+        if (!scalar_is_zero(children_[nib])) {
             
-            uint64_t child_node_id = id_.derive_child_id(nibs.front());
-
-            tmp_id_.set_block_id(child_block_ids_[nibs.front()]);
-            tmp_id_.set_node_id(child_node_id);
+            tmp_id_.set_node_id(id_.derive_child_id(nib));
+            tmp_id_.set_block_id(child_block_ids_[nib]);
 
             return &tmp_id_;
         } else {
@@ -132,166 +131,132 @@ public:
         }
     }
 
-    Result<void*, int> change_id(uint64_t node_id, uint16_t block_id, Gadgets *gadgets) override {
+    int change_id(
+        uint64_t node_id, 
+        uint16_t block_id
+    ) override {
         for (uint64_t i = 0; i < BRANCH_ORDER; i++) {
             if (scalar_is_zero(children_[i])) continue;  // no child here, skip
 
-            // Compute old and new IDs
             uint64_t old_child_id = id_.derive_child_id(i);
             uint64_t new_child_id = node_id * BRANCH_ORDER + i;
 
             if (old_child_id == new_child_id) continue;
 
-            // Prevent accidental deletion of the root
-            if (old_child_id == 1) continue;
-
             // Remove the child node from cache/db safely
             NodeId old_child(old_child_id, block_id);
-            Result<Node*, int> res = gadgets->alloc.load_node( &old_child);
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node( &old_child);
             if (res.is_err()) return res.unwrap_err();
 
-            Node* node = res.unwrap();
+            Node_ptr node = res.unwrap();
 
             if (node->get_type() == BRANCH) {
                 // Recursively update children safely
-                auto change_res = reinterpret_cast<Branch*>(node)->change_id(new_child_id, block_id, gadgets);
-                if (change_res.is_err()) return change_res.unwrap_err();
+                int change_res = node->change_id(new_child_id, block_id);
+                if (change_res != OK) return change_res;
             }
         }
 
-        // change id and recache...
-        if (id_.get_block_id() != block_id) {
-            NodeId old_id(id_);
-            id_.set_node_id(node_id);
-            id_.set_block_id(block_id);
-            gadgets->alloc.recache(old_id, this);
+        if (id_.get_block_id() != block_id || 
+            id_.get_node_id() != node_id) {
+
+            NodeId new_id(node_id, block_id);
+            int cache_res = gadgets_->alloc.recache(&id_, &new_id);
+            if (cache_res != OK) return cache_res;
         }
 
-        return nullptr;
+        return OK;
     }
 
-
-    const Commitment* derive_commitment(Gadgets *gadgets) override {
-        Polynomial Fx(BRANCH_ORDER, ZERO_SK);
-        for (int i = 0; i < children_.size(); i++) 
-            Fx[i] = children_[i];
-
-        inverse_fft_in_place(Fx, gadgets->settings.roots.inv_roots);
-        commit_g1(&commit_, Fx, gadgets->settings.setup);
-        return &commit_;
-    }
-
-    Result<Hash, int> search(Gadgets *gadgets, ByteSlice nibbles) override {
-        if (const NodeId* next_id = get_next_id(nibbles)) {
-            Result<Node*, int> res = gadgets->alloc.load_node(next_id);
-            if (res.is_ok()) {
-                Node* n = res.unwrap();
-                return n->search(gadgets, nibbles.subspan(1));
-            } else {
-                return res.unwrap_err();
-            }
-        }
-        return NOT_EXIST;
-    }
 
     int generate_proof(
-        Gadgets *gadgets, 
-        const Hash &key,
-        ByteSlice nibbles,
-        std::vector<Polynomial> &Fxs
+        const Hash* key,
+        std::vector<Polynomial> &Fxs,
+        std::vector<blst_p1> &Cs,
+        int i
     ) override {
-        if (const NodeId* next_id = get_next_id(nibbles)) {
-            Result<Node*, int> res = gadgets->alloc.load_node(next_id);
-            if (res.is_ok()) {
-                Node* n = res.unwrap();
 
-                int res = n->generate_proof(
-                    gadgets, key, 
-                    nibbles.subspan(1), 
-                    Fxs
-                );
-                if (res != EXISTS) return res;
+        if (const NodeId* next_id = get_next_id(key->h[i])) {
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
+            if (res.is_ok()) {
+
+                int rc = res.unwrap()->generate_proof(key, Fxs, Cs, ++i);
+                if (rc != OK) return rc;
 
             } else return res.unwrap_err();
         } else return NOT_EXIST;
 
-        int fx_idx = 32 - nibbles.size();
+        Polynomial Fx(children_);
+        Fxs.push_back(Fx);
+        Cs.push_back(commit_);
 
-        // build Fx
-        for (int i = 0; i < BRANCH_ORDER; i++)
-            Fxs[fx_idx][i] = children_[i];
-
-        return EXISTS;
+        return OK;
     }
 
     int put(
-        Gadgets *gadgets, 
-        ByteSlice nibbles, 
-        const Hash &key, 
-        const Hash &val_hash,
-        uint16_t new_block_id
+        const Hash* key, 
+        const Hash* val_hash,
+        uint16_t new_block_id,
+        int i
     ) override {
 
-        if (const NodeId* next_id = get_next_id(nibbles)) {
-            Result<Node*, int> res = gadgets->alloc.load_node(next_id);
+        byte nib = key->h[i];
+        if (const NodeId* next_id = get_next_id(nib)) {
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
             if (res.is_ok()) {
-                Node* n = res.unwrap();
+                Node_ptr n = res.unwrap();
 
-                Result<const Commitment*, int> res = n->put(
-                    gadgets, nibbles.subspan(1), 
-                    key, val_hash, new_block_id
-                );
-                if (res.is_ok()) {
+                int res = n->put(key, val_hash, new_block_id, ++i);
+                if (res == OK) {
 
-                    insert_child(nibbles.front(), res.unwrap(), gadgets, new_block_id);
-
-                    // change id if not already changed
                     if (id_.get_block_id() != new_block_id) {
-                        NodeId old_id = id_;
-                        id_.set_block_id(new_block_id);
-                        gadgets->alloc.recache(old_id, this);
+                        NodeId new_id(id_.get_node_id(), new_block_id);
+                        int cache_res = gadgets_->alloc.recache(&id_, &new_id);
+                        if (cache_res != OK) return cache_res;
                     }
 
-                } else return res.unwrap_err();
+                    insert_child(nib, new_block_id);
+
+                    return OK;
+
+                } else return PUT_ERR;
             } else return res.unwrap_err();
 
         } else {
 
-            NodeId leaf_id(id_.derive_child_id(nibbles.front()), id_.get_block_id());
             // create and fill leaf
-            Leaf_i* leaf = create_leaf(&leaf_id, nullptr);
-            leaf->set_path(nibbles.subspan(1, nibbles.size() - 2));
-            leaf->insert_child(nibbles.back(), val_hash, new_block_id);
-            gadgets->alloc.cache_node(leaf);
+            NodeId leaf_id(id_.derive_child_id(nib), new_block_id);
+            auto leaf = create_leaf(gadgets_, &leaf_id, nullptr);
+            leaf->set_path(key, new_block_id);
+            leaf->insert_child(key->h[31], val_hash, new_block_id);
 
-            // set fake commitment will be derived when being finalized
-            insert_child(nibbles.front(), {}, gadgets, new_block_id);
+            int cache_res = gadgets_->alloc.cache_node(leaf);
+            if (cache_res != OK) return cache_res;
 
             if (id_.get_block_id() != new_block_id) {
-                NodeId old_id = id_;
-                id_.set_block_id(new_block_id);
-                gadgets->alloc.recache(old_id, this);
+                NodeId new_id (id_.get_node_id(), new_block_id);
+                cache_res = gadgets_->alloc.recache(&id_, &new_id);
+                if (cache_res != OK) return cache_res;
             }
+
+            insert_child(nib, new_block_id);
         }
 
         return OK;
     }
 
     int remove(
-        Gadgets *gadgets, 
-        ByteSlice nibbles,
-        const Hash &kv,
-        uint16_t new_block_id
+        const Hash* key,
+        uint16_t new_block_id, 
+        int i
     ) override {
-        if (const NodeId* next_id = get_next_id(nibbles)) {
-            Result<Node*, int> res = gadgets->alloc.load_node(next_id);
+        byte nib = key->h[i];
+        if (const NodeId* next_id = get_next_id(nib)) {
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
             if (res.is_ok()) {
-                Node* n = res.unwrap();
+                Node_ptr n = res.unwrap();
 
-                auto nib = nibbles.front();
-
-                int res = n->remove(gadgets, nibbles.subspan(1), kv, new_block_id);
-
+                int res = n->remove(key, new_block_id, ++i);
                 if (res == DELETED) {
 
                     if (!scalar_is_zero(children_[nib])) {
@@ -309,9 +274,8 @@ public:
                 } else return res;
 
                 if (id_.get_block_id() != new_block_id) {
-                    NodeId old_id(id_);
-                    id_.set_block_id(new_block_id);
-                    int cache_res = gadgets->alloc.recache(old_id, this);
+                    NodeId new_id (id_.get_node_id(), new_block_id);
+                    int cache_res = gadgets_->alloc.recache(&id_, &new_id);
                     if (cache_res != 0) return cache_res;
                 }
 
@@ -322,104 +286,99 @@ public:
     }
 
     inline int delete_account(
-        Gadgets *gadgets, 
-        ByteSlice nibbles,
-        const Hash &kv,
-        uint16_t new_block_id
+        const Hash* key,
+        uint16_t new_block_id, 
+        int i
     ) override { 
-        return remove(gadgets, nibbles, kv, new_block_id); 
+        return remove(key, new_block_id, i); 
     }
 
 
     Result<const Commitment*, int> finalize(
-        Gadgets* gadgets,
         const uint16_t block_id
     ) override {
 
-        for (int i = 0; i < BRANCH_ORDER; i++) {
-            if (child_block_ids_[i] != block_id ||
-                scalar_is_zero(children_[i])) 
-                continue;
+        tmp_id_.set_block_id(block_id);
+        for (int i{}; i < BRANCH_ORDER; i++) {
+            if (child_block_ids_[i] != block_id || 
+                scalar_is_zero(children_[i])
+            ) continue;
 
-            tmp_id_.set_block_id(child_block_ids_[i]);
             tmp_id_.set_node_id(id_.derive_child_id(i));
 
-            Result<Node*, int> res = gadgets->alloc.load_node(&tmp_id_);
+            Result<Node_ptr, int> child = gadgets_->alloc.load_node(&tmp_id_);
+            if (child.is_err()) return LOAD_NODE_ERR;
+
+            auto res = child.unwrap()->finalize(block_id);
             if (res.is_err()) return res.unwrap_err();
 
-            auto final_res = res.unwrap()->finalize(gadgets, block_id);
-            if (final_res.is_err()) return final_res.unwrap_err();
-
-            hash_p1_to_sk(children_[i], *final_res.unwrap(), &gadgets->settings.tag);
+            hash_p1_to_scalar(res.unwrap(), &children_[i], &gadgets_->settings.tag);
         }
 
-        derive_commitment(gadgets);
+        Polynomial Fx(children_);
+        inverse_fft_in_place(Fx, gadgets_->settings.roots.inv_roots);
+        commit_g1(&commit_, Fx, gadgets_->settings.setup);
+
         return &commit_;
     }
 
     int prune(
-        Gadgets* gadgets,
         const uint16_t block_id
     ) override {
-        for (int i = 0; i < BRANCH_ORDER; i++) {
+        tmp_id_.set_block_id(block_id);
+        for (int i{}; i < BRANCH_ORDER; i++) {
             if (child_block_ids_[i] != block_id) continue;
-
-            tmp_id_.set_block_id(child_block_ids_[i]);
             tmp_id_.set_node_id(id_.derive_child_id(i));
 
-            Result<Node*, int> res = gadgets->alloc.load_node(&tmp_id_);
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node(&tmp_id_);
             if (res.is_err()) continue;
 
-            int prune_res = res.unwrap()->prune(gadgets, block_id);
+            int prune_res = res.unwrap()->prune(block_id);
             if (prune_res != OK) return prune_res;
-
-            delete res.unwrap();
 
         }
 
-        auto res = gadgets->alloc.delete_node(id_);
+        auto res = gadgets_->alloc.delete_node(id_);
         if (res.is_err()) return res.unwrap_err();
 
         return OK;
     }
 
-    int justify(Gadgets* gadgets) override {
+    int justify() override {
 
-        for (int i = 0; i < BRANCH_ORDER; i++) {
+        for (int i{}; i < BRANCH_ORDER; i++) {
             if (child_block_ids_[i] == 0) continue;
 
             uint64_t node_id = id_.derive_child_id(i);
             tmp_id_.set_node_id(node_id);
             tmp_id_.set_block_id(child_block_ids_[i]);
 
-            Result<Node*, int> res = gadgets->alloc.load_node(&tmp_id_);
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node(&tmp_id_);
             if (res.is_err()) return res.unwrap_err();
 
-            int just_res = res.unwrap()->justify(gadgets);
-            if (just_res == DELETED) {
-
-                delete res.unwrap();
-
-            } else if (just_res != OK) 
-                return just_res;
+            int just_res = res.unwrap()->justify();
+            if (just_res != OK && just_res != DELETED) return just_res;
 
             child_block_ids_[i] = 0;
         }
 
-        // delete self
-        auto del_res = gadgets->alloc.delete_node(id_);
+        auto del_res = gadgets_->alloc.delete_node(id_);
         if (del_res.is_err()) return del_res.unwrap_err();
 
         if (should_delete()) return DELETED;
 
-        // update block_id
         id_.set_block_id(0);
 
-        // recache self to be saved later
-        return gadgets->alloc.cache_node(this);
+        Node_ptr new_self = del_res.unwrap();
+        new_self->set_id(id_);
+
+        // this* and new_self should point to same addr
+        assert(this == new_self.get());
+
+        return gadgets_->alloc.cache_node(new_self);
     }
 };
 
-Branch_i* create_branch(const NodeId* id, const ByteSlice* buff) {
-    return new Branch(id, buff);
+std::shared_ptr<Branch_i> create_branch(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff) {
+    return std::make_shared<Branch>(gadgets, id, buff);
 }

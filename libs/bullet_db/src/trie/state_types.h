@@ -31,7 +31,15 @@ constexpr byte BRANCH = static_cast<byte>(69);
 constexpr byte LEAF   = static_cast<byte>(71);
 constexpr byte EDGE   = static_cast<byte>(73);
 
-extern const Hash ZERO_HASH;
+const uint64_t ROOT_NODE_ID = 0;
+
+inline Hash new_zero_hash() {
+    Hash h;
+    std::memset(h.h, 0, 32);
+    return h;
+}
+const Hash ZERO_HASH = new_zero_hash();
+
 inline bool hash_is_zero(const Hash& h) {
     return std::memcmp(h.h, ZERO_HASH.h, 32) == 0;
 }
@@ -49,5 +57,8 @@ enum LedgerCodes {
     DELETED = 7,
     ALREADY_DELETED = 8,
     DELETE_VALUE_ERR= 9,
-    REPLACE_VALUE_ERR= 10 
+    REPLACE_VALUE_ERR= 10,
+    NOT_EXIST_RECACHE = 11,
+    LEAF_IDX_ZERO = 12,
+    PUT_ERR = 13,
 };

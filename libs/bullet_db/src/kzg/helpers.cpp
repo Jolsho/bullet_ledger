@@ -21,8 +21,7 @@
 #include <iostream>
 #include "helpers.h"
 #include "blst.h"
-#include "hashing.h"
-
+#include <array>
 
 blst_scalar num_scalar(const uint64_t v) {
     blst_scalar s;
@@ -109,22 +108,6 @@ void hash_to_sk(blst_scalar* dst, const byte* hash) {
     blst_scalar_from_le_bytes(dst, hash, 32);
     assert(blst_sk_check(dst));
 }
-
-void hash_p1_to_sk(
-    blst_scalar &out,
-    const blst_p1 &p, 
-    const std::string* tag
-) {
-    byte buff[48];
-    blst_p1_compress(buff, &p);
-
-    BlakeHasher h;
-    h.update(buff, 48);
-    Hash hash = new_hash();
-    h.finalize(hash.h);
-    hash_to_sk(&out, hash.h);
-}
-
 
 blst_p1 new_p1() {
     blst_p1 p;

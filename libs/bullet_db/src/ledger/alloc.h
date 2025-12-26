@@ -20,7 +20,10 @@
 #include "node.h"
 #include "db.h"
 #include "lru.h"
+#include <memory>
 #include <string>
+
+struct Gadgets;
 
 class NodeAllocator {
 public:
@@ -31,15 +34,16 @@ public:
     );
     ~NodeAllocator();
 
-    Node* root_;
-    LRUCache<NodeId, Node*, NodeIdHash> cache_;
+    LRUCache<NodeId, std::shared_ptr<Node>, NodeIdHash> cache_;
     BulletDB db_;
+    std::shared_ptr<Gadgets> gadgets_;
+    void set_gadgets(std::shared_ptr<Gadgets> gadgets);
 
-    Result<Node*, int> load_node(const NodeId* id);
-    int recache(const NodeId& old_id, Node* node);
-    int cache_node(Node* node);
-    Result<Node*, int> delete_node(const NodeId& id);
+    Result<std::shared_ptr<Node>, int> load_node(const NodeId* id);
+    int recache(const NodeId *old_id, const NodeId *new_id);
+    int cache_node(std::shared_ptr<Node> node);
+    Result<std::shared_ptr<Node>, int> delete_node(const NodeId& id);
+    int persist_node(Node* node);
 
     int rename_value(const NodeId& old_id, const NodeId& new_id);
 };
-

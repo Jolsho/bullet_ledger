@@ -20,9 +20,10 @@
 #include "kzg.h"
 #include "helpers.h"
 #include "polynomial.h"
+#include <cassert>
 
 // Returns C, Pi
-std::optional<std::tuple<blst_p1, blst_p1>> prove_kzg(
+std::optional<blst_p1> prove_kzg(
     const Scalar_vec &evals,
     const size_t eval_idx,
     const KZGSettings &s
@@ -47,11 +48,8 @@ std::optional<std::tuple<blst_p1, blst_p1>> prove_kzg(
     Scalar_vec fx(evals);
     inverse_fft_in_place(fx, s.roots.inv_roots);
 
-    // COMMIT TO F
-    blst_p1 C = new_inf_p1(); 
-    commit_g1(&C, fx, s.setup);
 
-    return {{C, P}};
+    return {P};
 }
 
 bool verify_kzg(
@@ -122,8 +120,12 @@ bool batch_verify(
     std::vector<size_t> &Z_idxs,
     Scalar_vec &Ys,
     Hash base_r,
-    KZGSettings &kzg
+    const KZGSettings &kzg
 ) {
+    assert(Pis.size() == Cs.size());
+    assert(Ys.size() == Z_idxs.size());
+    assert(Pis.size() == Ys.size());
+
     blst_p1 agg_left = new_inf_p1();
     blst_p1 agg_right = new_inf_p1();
     blst_p1 tmp;
@@ -131,7 +133,7 @@ bool batch_verify(
     byte buff[48];
     Hash hash = new_hash();
 
-    for(int i = 0; i < Pis.size(); i++) {
+    for(int i{}; i < Pis.size(); i++) {
 
         Z = kzg.roots.roots[Z_idxs[i]];
 

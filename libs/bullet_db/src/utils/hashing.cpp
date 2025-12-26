@@ -49,7 +49,7 @@ void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag
 }
 
 Hash new_hash(const byte* h) { 
-    Hash hash = {0}; 
+    Hash hash; 
     if (h != nullptr) {
         std::memcpy(hash.h, h, 32);
     } else {
@@ -59,7 +59,7 @@ Hash new_hash(const byte* h) {
 }
 
 void print_hash(const Hash &hash) {
-    for (auto i = hash.h; i < hash.h + 32; i++) {
+    for (const byte* i{hash.h}; i < hash.h + 32; i++) {
         std::cout << std::hex
                   << std::setw(2)
                   << std::setfill('0')
@@ -74,7 +74,7 @@ void seeded_hash(Hash* out, int i) {
 
     for (i = 0; i < 4; ++i) {        // 4 * 8 bytes = 32 bytes
         uint64_t num = dist(gen);
-        for (int j = 0; j < 8; ++j) {
+        for (int j{} ; j < 8; ++j) {
             out->h[i*8 + j] = static_cast<byte>((num >> (8 * j)) & 0xFF);
         }
     }

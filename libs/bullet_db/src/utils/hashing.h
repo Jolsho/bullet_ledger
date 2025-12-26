@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <span>
+#include <string>
 
 struct Hash {
     byte h[32];
@@ -39,9 +40,7 @@ public:
         blake3_hasher_update(&h_, data, size);
     }
     void finalize(byte* out) {
-        blake3_hasher_finalize(&h_, 
-            reinterpret_cast<uint8_t*>(out), 
-            32);
+        blake3_hasher_finalize(&h_, static_cast<uint8_t*>(out), 32);
     }
 };
 
@@ -52,3 +51,4 @@ void derive_hash(byte* out, const ByteSlice &value);
 Hash new_hash(const byte* h = nullptr);
 void print_hash(const Hash &hash);
 void seeded_hash(Hash* out, int i);
+void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag);

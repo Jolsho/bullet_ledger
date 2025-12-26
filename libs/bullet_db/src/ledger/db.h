@@ -26,6 +26,7 @@ public:
     MDB_env* env_;
     MDB_txn* txn_;
     MDB_dbi dbi_;
+    bool active_txn_;
 
     BulletDB(const char* path, size_t map_size);
     ~BulletDB();
@@ -33,12 +34,14 @@ public:
     void end_txn(int rc = 0);
     int put(const void* key_data, size_t key_size, 
             const void* value_data, size_t value_size);
-    int get(const void* key_data, size_t key_size, 
+    int get(
+        const void* key_data, size_t key_size, 
+        std::vector<std::byte> &out
+    );
+    int get_raw(const void* key_data, size_t key_size,
             void** value_data, size_t* value_size);
-    void* mut_get(const void* key, size_t key_size, 
-                  size_t value_size);
+
     int del(const void* key_data, size_t key_size);
     int exists(const void* key_data, size_t key_size);
     std::vector<uint64_t> flatten_sort_l2();
-
 };

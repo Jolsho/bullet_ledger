@@ -40,7 +40,7 @@ NTTRoots build_roots(size_t n) {
     inv_roots[0] = num_scalar(1);
 
 
-    for (size_t i = 1; i < n; i++) {
+    for (size_t i{1}; i < n; i++) {
         blst_sk_mul_n_check(&roots[i], &roots[i - 1], &w);
         blst_sk_inverse(&inv_roots[i], &roots[i]);
     }
@@ -79,7 +79,7 @@ SRS::SRS(size_t degree, const blst_scalar &s) {
 
     // Compute Jacobian powers
      
-    for (size_t i = 0; i <= degree; i++) {
+    for (size_t i{}; i <= degree; i++) {
 
         blst_p1_mult(&g1_powers_jacob[i], &g, pow_s.b, 256);
         blst_p2_mult(&g2_powers_jacob[i], &h, pow_s.b, 256);
@@ -88,7 +88,7 @@ SRS::SRS(size_t degree, const blst_scalar &s) {
     }
 
     // Convert all to affine in a separate loop
-    for (size_t i = 0; i <= degree; i++) {
+    for (size_t i{}; i <= degree; i++) {
         blst_p1_to_affine(&g1_powers_aff[i], &g1_powers_jacob[i]);
         blst_p2_to_affine(&g2_powers_aff[i], &g2_powers_jacob[i]);
     }

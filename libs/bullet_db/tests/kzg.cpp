@@ -106,9 +106,9 @@ void main_kzg() {
 
     Scalar_vec evals(DEGREE, blst_scalar());
     Hash hash = new_hash();
-    for (int k = 0; k < count; k++) {
+    for (int k{}; k < count; k++) {
         int n = k * DEGREE;
-        for (auto i = n; i < n + DEGREE; i++) {
+        for (int i{n}; i < n + DEGREE; i++) {
             seeded_hash(&hash, i);
             hash_to_sk(&evals[i - n], hash.h);
         }
@@ -120,10 +120,13 @@ void main_kzg() {
         size_t idx = k;
 
         // PROVE AND VERIFY f(3)
-        auto [C, Pi] = prove_kzg(evals, idx, settings).value();
+        auto Pi = prove_kzg(evals, idx, settings).value();
 
         blst_scalar z = settings.roots.roots[idx];
         blst_scalar y = evals[idx];
+
+        blst_p1 C = new_inf_p1();
+        commit_g1(&C, fx, settings.setup);
 
         Cs.push_back(C);
         Pis.push_back(Pi);

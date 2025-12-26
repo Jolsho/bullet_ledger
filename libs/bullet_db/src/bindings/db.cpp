@@ -72,15 +72,8 @@ int db_get(void* handle,
              const void* key_data, size_t key_size, 
              void** value_data, size_t* value_size) {
     return static_cast<BulletDB*>(handle)
-        ->get(key_data, key_size, value_data, value_size);
+        ->get_raw(key_data, key_size, value_data, value_size);
 
-}
-
-void* mutable_get(void* handle, 
-                  const void* key, size_t key_size, 
-                  size_t value_size) {
-    return static_cast<BulletDB*>(handle) 
-        ->mut_get(key, key_size, value_size);
 }
 
 

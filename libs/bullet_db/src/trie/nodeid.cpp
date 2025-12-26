@@ -20,10 +20,10 @@
 #include "state_types.h"
 
 const size_t NODE_ID_OFF = 0;
-const size_t NODE_ID_SIZE = 8;
+const size_t NODE_ID_SIZE = sizeof(uint64_t);
 
 const size_t BLOCK_ID_OFF = NODE_ID_OFF + NODE_ID_SIZE;
-const size_t BLOCK_ID_SIZE = 2;
+const size_t BLOCK_ID_SIZE = sizeof(uint16_t);
 
 NodeId::NodeId() {
     std::memset(buff_, 0, ID_SIZE);
@@ -38,7 +38,7 @@ NodeId::NodeId(uint64_t node_id, uint16_t block_id) {
     std::memcpy(buff_ + BLOCK_ID_OFF, &block_id, BLOCK_ID_SIZE);
 }
 
-NodeId::~NodeId() { free(buff_); }
+NodeId::~NodeId() {}
 
 bool NodeId::operator==(const NodeId& other) const noexcept {
     return std::memcmp(buff_, other.get_full(), ID_SIZE) == 0;
@@ -50,6 +50,9 @@ uint16_t NodeId::get_block_id() const {
     std::memcpy(&id, buff_ + BLOCK_ID_OFF, BLOCK_ID_SIZE);
     return id;
 }
+void NodeId::set_block_id(uint16_t id) {
+    std::memcpy(buff_ + BLOCK_ID_OFF, &id, BLOCK_ID_SIZE);
+}
 
 uint64_t NodeId::get_node_id() const { 
     uint64_t id;
@@ -60,14 +63,22 @@ void NodeId::set_node_id(uint64_t id) {
     std::memcpy(buff_ + NODE_ID_OFF, &id, NODE_ID_SIZE);
 }
 
-size_t NodeId::size() const { return ID_SIZE; }
+size_t NodeId::size() const { 
+    return ID_SIZE; 
+}
 
 uint64_t NodeId::derive_child_id(const byte nib) const {
 
-    uint64_t id;
-    std::memcpy(&id, buff_ + NODE_ID_OFF, NODE_ID_SIZE);
-    id += nib;
+    uint64_t id = get_node_id();
+
+    // if id == 0 and nib == 0
+    // child has same id as parent
+    // so skip 0 -> BRANCH_ORDER
+    // by incrementing id
+    if (id == 0) id++;
+
     id *= BRANCH_ORDER;
+    id += nib;
 
     return id;
 }

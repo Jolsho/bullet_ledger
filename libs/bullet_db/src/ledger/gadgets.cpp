@@ -16,35 +16,20 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#pragma once
-#include "blst.h"
-#include "hashing.h"
-#include "settings.h"
-#include <optional>
-#include <vector>
+#include "gadgets.h"
 
-using Scalar_vec = std::vector<blst_scalar>;
-
-std::optional<blst_p1> prove_kzg(
-    const Scalar_vec &evals,
-    const size_t eval_idx,
-    const KZGSettings &s
-);
-
-
-bool verify_kzg(
-    const blst_p1 C, 
-    const blst_scalar z, 
-    const blst_scalar y, 
-    const blst_p1 Pi, 
-    const SRS &S
-);
-
-bool batch_verify(
-    std::vector<blst_p1> &Pis,
-    std::vector<blst_p1> &Cs,
-    std::vector<size_t> &Z_idxs,
-    Scalar_vec &Ys,
-    Hash base_r,
-    const KZGSettings &kzg
-);
+Gadgets_ptr init_gadgets(
+    size_t degree, 
+    const blst_scalar &s, 
+    std::string tag,
+    std::string path,
+    size_t cache_size,
+    size_t map_size
+) {
+    auto g = std::make_shared<Gadgets>(
+        init_settings(degree, s, tag), 
+        path, cache_size, map_size
+    );
+    g.get()->alloc.set_gadgets(g);
+    return g;
+}

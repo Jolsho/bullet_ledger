@@ -86,7 +86,7 @@ bool verify_aggregate_signature(
 
     // Convert agg_pk to affine
     blst_p1_affine aff;
-    for (size_t i = 0; i < pks.size(); i++) {
+    for (size_t i{}; i < pks.size(); i++) {
         blst_p1_to_affine(&aff, &pks[i]);
         blst_pairing_aggregate_pk_in_g1(ctx, &aff, NULL, msg, msg_len);
     }

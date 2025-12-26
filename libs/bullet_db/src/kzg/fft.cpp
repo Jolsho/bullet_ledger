@@ -30,8 +30,8 @@ void fft_in_place(
     size_t n = a.size(); 
 
     // Bit-reversal permutation
-    size_t j = 0; 
-    for (size_t i = 1; i < n; i++) { 
+    size_t j{}; 
+    for (size_t i{1}; i < n; i++) { 
         size_t bit = n >> 1; 
         for (; j & bit; bit >>= 1) 
             j ^= bit; 
@@ -41,12 +41,14 @@ void fft_in_place(
     } 
 
     // Cooley–Tukey butterflies
-    for (size_t len = 2; len <= n; len <<= 1) { 
+    for (size_t len{2}; len <= n; len <<= 1) { 
         size_t half = len >> 1; 
         size_t step = n / len; 
-        for (size_t i = 0; i < n; i += len) { 
-            size_t root_index = 0; 
-            for (size_t k = 0; k < half; k++) { 
+
+        for (size_t i{}; i < n; i += len) { 
+            size_t root_index{}; 
+
+            for (size_t k{}; k < half; k++) { 
                 blst_scalar t = a[i + k + half]; 
                 blst_sk_mul_n_check(&t, &t, &roots[root_index]);
 

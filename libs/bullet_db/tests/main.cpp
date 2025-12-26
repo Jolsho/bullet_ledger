@@ -45,7 +45,7 @@ int main(int argc, char* argv[]) {
     main_kzg();
 
     // STATE_TRIE
-//    main_state_trie();
+    main_state_trie();
 
     return 0;
 

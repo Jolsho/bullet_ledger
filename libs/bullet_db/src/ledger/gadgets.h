@@ -17,32 +17,31 @@
  */
 
 #pragma once
-#include "bitmap.h"
-#include "state_types.h"
-#include "kzg.h"
-#include <optional>
+#include "alloc.h"
+#include <string>
 
-size_t calculate_proof_size(
-    Commitment &C, Proof &Pi,
-    std::vector<Commitment> &Ws,
-    std::vector<Scalar_vec> &Ys,
-    Scalar_vec &Zs
-);
+struct Gadgets {
+    KZGSettings settings;
+    NodeAllocator alloc;
 
-void marshal_existence_proof(
-    byte* beginning,
-    Commitment C, Proof Pi,
-    std::vector<Commitment> Ws,
-    std::vector<Scalar_vec> Ys,
-    Scalar_vec Zs
-);
+    Gadgets(
+        KZGSettings settings_,
+        std::string path,
+        size_t cache_size,
+        size_t map_size
+    )
+        : settings(std::move(settings_))
+        , alloc(path, cache_size, map_size)
+    {}
+};
 
-std::optional<std::tuple<
-    Commitment, Proof, 
-    std::vector<Commitment>, 
-    std::vector<Scalar_vec>, 
-    Bitmap<32>
->> unmarshal_existence_proof(
-    const byte* beginning, 
-    size_t size
+using Gadgets_ptr = std::shared_ptr<Gadgets>;
+
+Gadgets_ptr init_gadgets(
+    size_t degree, 
+    const blst_scalar &s, 
+    std::string tag,
+    std::string path,
+    size_t cache_size,
+    size_t map_size
 );

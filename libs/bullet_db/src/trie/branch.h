@@ -18,21 +18,16 @@
 
 #pragma once
 #include "node.h"
+#include "gadgets.h"
+#include <memory>
 
 class Branch_i : public Node {
 public:
     virtual void insert_child(
         const byte& nib,
-        const Commitment* new_commit,
-        const Gadgets* gadgets,
         const uint16_t block_id
     ) = 0;
 
-    virtual Result<void*, int> change_id(
-        uint64_t node_id,
-        uint16_t block_id,
-        Gadgets* gadgets
-    ) = 0;
 };
 
-Branch_i* create_branch(const NodeId* id, const ByteSlice* buff);
+std::shared_ptr<Branch_i> create_branch(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff);

@@ -18,16 +18,18 @@
 
 #pragma once
 #include "node.h"
+#include "gadgets.h"
+#include <memory>
 
 class Leaf_i : public Node {
 public:
     virtual void insert_child(
-        const byte& nib,
-        const Hash& val_hash,
+        const byte &nib, 
+        const Hash* val_hash, 
         const uint16_t block_id
     ) = 0;
 
-    virtual void set_path(ByteSlice path) = 0;
+    virtual void set_path(const Hash* key, uint16_t block_id) = 0;
 };
 
-Leaf_i* create_leaf(const NodeId* id, const ByteSlice* buff);
+std::shared_ptr<Leaf_i> create_leaf(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff);

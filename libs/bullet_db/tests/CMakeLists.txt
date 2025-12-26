@@ -15,7 +15,8 @@ target_link_libraries(tests_exec PRIVATE bullet_db)
 target_include_directories(tests_exec PRIVATE 
     PRIVATE
         ${PROJECT_SOURCE_DIR}/src/kzg
-        ${PROJECT_SOURCE_DIR}/src/state
+        ${PROJECT_SOURCE_DIR}/src/ledger
+        ${PROJECT_SOURCE_DIR}/src/trie
         ${PROJECT_SOURCE_DIR}/src/utils
 )
 

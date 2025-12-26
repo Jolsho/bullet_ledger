@@ -23,71 +23,65 @@
 #include "state_types.h"
 #include "polynomial.h"
 #include <cstdint>
+#include <memory>
 #include <vector>
 
-
-struct Gadgets;
+class Node;
+using Node_ptr = std::shared_ptr<Node>;
 
 class Node {
 public:
     virtual ~Node() = default;
 
     virtual const NodeId* get_id() = 0;
+    virtual void set_id(const NodeId &id) = 0;
     virtual const Commitment* get_commitment() const = 0;
     virtual const byte get_type() const = 0;
     virtual const bool should_delete() const = 0;
 
-    virtual const NodeId* get_next_id(ByteSlice& nibbles) = 0;
+    virtual const NodeId* get_next_id(byte nib) = 0;
     virtual std::vector<byte> to_bytes() const = 0;
-
-    virtual const Commitment* derive_commitment(Gadgets*) = 0;
-
-    virtual Result<Hash, int> search(
-        Gadgets*, 
-        ByteSlice nibbles
+    virtual int change_id(
+        uint64_t node_id, 
+        uint16_t block_id
     ) = 0;
 
-
     virtual int put(
-        Gadgets*,
-        ByteSlice nibbles,
-        const Hash& key,
-        const Hash& val_hash,
-        uint16_t new_block_id
+        const Hash* key,
+        const Hash* val_hash,
+        uint16_t new_block_id,
+        int i
     ) = 0;
 
     virtual int remove(
-        Gadgets*,
-        ByteSlice nibbles,
-        const Hash& key,
-        uint16_t new_block_id
+        const Hash* key,
+        uint16_t new_block_id,
+        int i
     ) = 0;
 
     virtual int delete_account(
-        Gadgets*,
-        ByteSlice nibbles,
-        const Hash& key,
-        uint16_t new_block_id
+        const Hash* key,
+        uint16_t new_block_id,
+        int i
     ) = 0;
 
     virtual int generate_proof(
-        Gadgets*,
-        const Hash& key,
-        ByteSlice nibbles,
-        std::vector<Polynomial>& Fxs
+        const Hash* key,
+        std::vector<Polynomial> &Fxs,
+        std::vector<blst_p1> &Cs,
+        int i
     ) = 0;
 
 
     virtual Result<const Commitment*, int> finalize(
-        Gadgets*,
         const uint16_t block_id
     ) = 0;
 
     virtual int prune(
-        Gadgets*,
         const uint16_t block_id
     ) = 0;
 
-    virtual int justify(Gadgets*) = 0;
+    virtual int justify() = 0;
 
 };
+

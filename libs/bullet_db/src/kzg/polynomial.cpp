@@ -29,7 +29,7 @@ void commit_g1(
 ) {
     // TODO -- more effecient way to do this?
     blst_p1 tmp;
-    for (size_t i = 0; i < coeffs.size(); i++) {
+    for (size_t i{}; i < coeffs.size(); i++) {
         blst_p1_mult(&tmp, &srs.g1_powers_jacob[i], coeffs[i].b, 256);
         blst_p1_add_or_double(C, C, &tmp);
     }
@@ -42,7 +42,7 @@ Polynomial multiply_binomial(const Polynomial &P, const blst_scalar &w) {
 
     // Q[i+1] = P[i] (shift)
     // Q[i]   = P[i] * w (added to existing term)
-    for (size_t i = 0; i < d; i++) {
+    for (size_t i{}; i < d; i++) {
         blst_scalar tmp;
         // P[i] * w
         blst_sk_mul_n_check(&tmp, &P[i], &w);  
@@ -62,7 +62,7 @@ Polynomial differentiate_polynomial(const Polynomial &f) {
     if (f.size() == 0) return {};
     Polynomial df(f.size() - 1);
 
-    for (auto i = 0; i < df.size(); i++) {
+    for (size_t i{}; i < df.size(); i++) {
         blst_scalar pow = num_scalar(i + 1);
         blst_sk_mul_n_check(&df[i], &f[i + 1], &pow);
     }
@@ -71,9 +71,8 @@ Polynomial differentiate_polynomial(const Polynomial &f) {
 }
 
 bool batch_inv(Scalar_vec &out, const Scalar_vec &in) {
-    int i;
     blst_scalar accumulator = ONE_SK;
-    for (i = 0; i < out.size(); i++) {
+    for (int i{}; i < out.size(); i++) {
         out[i] = accumulator;
         blst_sk_mul_n_check(&accumulator, &accumulator, &in[i]);
     }
@@ -82,7 +81,7 @@ bool batch_inv(Scalar_vec &out, const Scalar_vec &in) {
 
     blst_sk_inverse(&accumulator, &accumulator);
 
-    for (i = out.size() - 1; i >= 0; i--) {
+    for (int i = out.size() - 1; i >= 0; i--) {
         blst_sk_mul_n_check(&out[i], &out[i], &accumulator);
         blst_sk_mul_n_check(&accumulator, &accumulator, &in[i]);
     }
@@ -96,7 +95,6 @@ std::optional<Polynomial> derive_quotient(
     const blst_scalar &y,
     const NTTRoots &roots
 ) {
-    int i;
     uint64_t m = 0;
     size_t len = poly_eval.size();
 
@@ -104,7 +102,7 @@ std::optional<Polynomial> derive_quotient(
     Scalar_vec inverses_in(len);
     Scalar_vec q_poly(len);
 
-    for (i = 0; i < len; i++) {
+    for (int i{}; i < len; i++) {
         if (equal_scalars(z, roots.roots[i])) {
             m = i + 1;
             inverses_in[i] = ONE_SK;
@@ -118,14 +116,14 @@ std::optional<Polynomial> derive_quotient(
 
     if (!batch_inv(inverses, inverses_in)) return std::nullopt;
 
-    for (i = 0; i < len; i++) {
+    for (int i{}; i < len; i++) {
         blst_sk_mul_n_check(&q_poly[i], &q_poly[i], &inverses[i]);
     }
 
     blst_scalar tmp;
     if (m != 0) {
         q_poly[--m] = ZERO_SK;
-        for (i = 0; i < len; i++) {
+        for (int i{}; i < len; i++) {
             if (i == m) continue;
 
             // Build denominator: z * (z - w_i) 
@@ -135,7 +133,7 @@ std::optional<Polynomial> derive_quotient(
 
         if (!batch_inv(inverses, inverses_in)) return std::nullopt;
 
-        for (i = 0; i < len; i++) {
+        for (int i{}; i < len; i++) {
             if (i == m) continue;
 
             // Build Numerator: w_i * (p_i - y)
