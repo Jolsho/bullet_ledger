@@ -16,8 +16,10 @@ target_include_directories(bullet_db PUBLIC
 )
 target_include_directories(bullet_db PRIVATE
     ${PROJECT_SOURCE_DIR}/src/kzg
-    ${PROJECT_SOURCE_DIR}/src/state
+    ${PROJECT_SOURCE_DIR}/src/ledger
+    ${PROJECT_SOURCE_DIR}/src/trie
     ${PROJECT_SOURCE_DIR}/src/utils
+    ${PROJECT_SOURCE_DIR}/src/blocks
     ${PROJECT_SOURCE_DIR}/src/bindings
 )
 
@@ -45,8 +47,13 @@ endif()
 ####################################################
 set(BLAKE3_SOURCE ${PROJECT_SOURCE_DIR}/deps/blake3)
 set(BLAKE3_INCLUDE ${BLAKE3_SOURCE}/c)
-target_include_directories(bullet_db PRIVATE ${BLAKE3_INCLUDE})
-target_link_libraries(bullet_db PRIVATE ${BLAKE3_SOURCE}/libblake3.a)
+if(TESTING)
+    target_include_directories(bullet_db PUBLIC ${BLAKE3_INCLUDE})
+    target_link_libraries(bullet_db PUBLIC ${BLAKE3_SOURCE}/libblake3.a)
+else()
+    target_include_directories(bullet_db PRIVATE ${BLAKE3_INCLUDE})
+    target_link_libraries(bullet_db PRIVATE ${BLAKE3_SOURCE}/libblake3.a)
+endif()
 
 
 ####################################################

@@ -7,9 +7,9 @@ set -e
 BUILD_DIR="./test_build"
 EXEC="$BUILD_DIR/tests/tests_exec"
 
-# Default mode
-MODE=${1:-gdb}
-NO_RUN=${2:-run}
+# Default mode and run behavior
+MODE=${1:-sanitizer}
+RUN_MODE=${2:-gdb}
 
 # Determine flags based on mode
 case "$MODE" in
@@ -22,7 +22,6 @@ case "$MODE" in
         LINK_FLAGS=""
         ;;
     gdb)
-        # Same as sanitizer but launch GDB at the end
         CXX_FLAGS="-g -O0 -fno-inline -gdwarf-4 -fno-omit-frame-pointer"
         LINK_FLAGS=""
         ;;
@@ -37,14 +36,21 @@ if [ ! -d "$BUILD_DIR" ]; then
     cmake -B "$BUILD_DIR" \
           -DCMAKE_BUILD_TYPE=Debug \
           -DCMAKE_CXX_FLAGS_DEBUG="$CXX_FLAGS" \
-          -DCMAKE_LINKER_FLAGS_DEBUG="$LINK_FLAGS" \
+          -DCMAKE_EXE_LINKER_FLAGS_DEBUG="$LINK_FLAGS" \
           -DTESTING=ON
 fi
 
 # Build
 cmake --build "$BUILD_DIR"
 
-if [ "$NO_RUN" = "run" ]; then
-    gdb "$EXEC"
-fi
-
+case "$RUN_MODE" in 
+    gdb)
+        gdb "$EXEC"
+        ;;
+    reg)
+        "$EXEC"
+        ;;
+    *)
+        echo "No run mode selected"
+        ;;
+esac

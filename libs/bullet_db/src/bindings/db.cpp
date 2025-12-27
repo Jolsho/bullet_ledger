@@ -16,10 +16,11 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+// TODO -- all Trxs are null ptrs...not good
 
-// extern.cpp
+// db.cpp
 #include <lmdb.h>
-#include "../state/db.h"
+#include "db.h"
 #include "extern.h"
 
 extern "C" {
@@ -43,55 +44,49 @@ extern const int MAP_RESIZED     = MDB_MAP_RESIZED;
 
 }
 
-void* lmdb_open(const char* path, size_t map_size) {
+void* db_open(const char* path, size_t map_size) {
     return new BulletDB(path, map_size);
 }
-void lmdb_close(void* handle) {
+void db_close(void* handle) {
     delete static_cast<BulletDB*>(handle);
 }
 
-void lmdb_start_trx(void* handle) {
+void db_start_trx(void* handle) {
     auto h = static_cast<BulletDB*>(handle);
-    mdb_txn_begin(h->env_, nullptr, 0, &h->txn_);
+    mdb_txn_begin(h->env_, nullptr, 0, &h->txns_[0]);
 }
 
-void lmdb_end_trx(void* handle, int rc) {
+void db_end_trx(void* handle, int rc) {
     auto h = static_cast<BulletDB*>(handle);
-    if (rc == 0) mdb_txn_commit(h->txn_);
-    else mdb_txn_abort(h->txn_);
+    if (rc == 0) mdb_txn_commit(h->txns_[0]);
+    else mdb_txn_abort(h->txns_[0]);
 }
 
-int lmdb_put(void* handle, 
+int db_put(void* handle, 
              const void* key_data, size_t key_size, 
              const void* value_data, size_t value_size) {
     return static_cast<BulletDB*>(handle) 
-        ->put(key_data, key_size, value_data, value_size);
+        ->put(key_data, key_size, value_data, value_size, nullptr);
 }
 
-int lmdb_get(void* handle, 
+int db_get(void* handle, 
              const void* key_data, size_t key_size, 
              void** value_data, size_t* value_size) {
     return static_cast<BulletDB*>(handle)
-        ->get(key_data, key_size, value_data, value_size);
+        ->get_raw(key_data, key_size, value_data, value_size, nullptr);
 
 }
-void* mutable_get(void* handle, 
-                  const void* key, size_t key_size, 
-                  size_t value_size) {
-    return static_cast<BulletDB*>(handle) 
-        ->mut_get(key, key_size, value_size);
-}
 
 
-int lmdb_delete(void* handle, 
+int db_delete(void* handle, 
                 const void* key_data, size_t key_size) {
     return static_cast<BulletDB*>(handle) 
-        ->del(key_data, key_size);
+        ->del(key_data, key_size, nullptr);
 }
 
 int lmdb_exists(void* handle, const void* key_data, size_t key_size) {
     return static_cast<BulletDB*>(handle) 
-        ->exists(key_data, key_size);
+        ->exists(key_data, key_size, nullptr);
 }
 
 

@@ -17,34 +17,34 @@
  */
 
 #pragma once
-#include "blst.h"
-#include "hashing.h"
+#include "alloc.h"
 #include "settings.h"
-#include <optional>
-#include <vector>
+#include <string>
 
-using Scalar_vec = std::vector<blst_scalar>;
+struct Gadgets {
+    KZGSettings settings;
+    NodeAllocator alloc;
 
-std::optional<blst_p1> prove_kzg(
-    const Scalar_vec &evals,
-    const size_t eval_idx,
-    const KZGSettings &s
-);
+    Gadgets(
+        size_t degree, 
+        const blst_scalar &s, 
+        std::string tag,
+        std::string path,
+        size_t cache_size,
+        size_t map_size
+    ) : 
+        settings(init_settings(degree, s, tag)),
+        alloc(path, cache_size, map_size)
+    {}
+};
 
+using Gadgets_ptr = std::shared_ptr<Gadgets>;
 
-bool verify_kzg(
-    const blst_p1 C, 
-    const blst_scalar z, 
-    const blst_scalar y, 
-    const blst_p1 Pi, 
-    const SRS &S
-);
-
-bool batch_verify(
-    std::vector<blst_p1> &Pis,
-    std::vector<blst_p1> &Cs,
-    std::vector<size_t> &Z_idxs,
-    Scalar_vec &Ys,
-    Hash base_r,
-    const KZGSettings &kzg
+Gadgets_ptr init_gadgets(
+    size_t degree, 
+    const blst_scalar &s, 
+    std::string tag,
+    std::string path,
+    size_t cache_size,
+    size_t map_size
 );

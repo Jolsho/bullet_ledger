@@ -16,35 +16,23 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#pragma once
-#include "blst.h"
-#include "hashing.h"
-#include "settings.h"
-#include <optional>
-#include <vector>
 
-using Scalar_vec = std::vector<blst_scalar>;
-
-std::optional<blst_p1> prove_kzg(
-    const Scalar_vec &evals,
-    const size_t eval_idx,
-    const KZGSettings &s
-);
+#include "serialize.h"
 
 
-bool verify_kzg(
-    const blst_p1 C, 
-    const blst_scalar z, 
-    const blst_scalar y, 
-    const blst_p1 Pi, 
-    const SRS &S
-);
-
-bool batch_verify(
-    std::vector<blst_p1> &Pis,
-    std::vector<blst_p1> &Cs,
-    std::vector<size_t> &Z_idxs,
-    Scalar_vec &Ys,
-    Hash base_r,
-    const KZGSettings &kzg
-);
+/*  TODO --
+ *  1/2 trx::
+ *      p1 = l2 evals to hash of c2 @ z1
+ *      c2 = l3 commitment
+ *      p2 = l3 evals to hash of trx_value @ z2
+ *      ---------------------------------------
+ *      (48 + 2) * 3 = 150 = 300 / TRX
+ *
+ *      additional layer == +c +p = +(48+2) +(48+2) = +100
+ *
+ *
+ *  ORDERING::
+ *      n = 1 byte
+ *      proof_i -> commit_i+1
+ *      proof_n -> value_hash
+ */

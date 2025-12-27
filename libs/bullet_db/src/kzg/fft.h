@@ -17,34 +17,14 @@
  */
 
 #pragma once
-#include "blst.h"
-#include "hashing.h"
-#include "settings.h"
-#include <optional>
 #include <vector>
+#include "blst.h"
 
-using Scalar_vec = std::vector<blst_scalar>;
-
-std::optional<blst_p1> prove_kzg(
-    const Scalar_vec &evals,
-    const size_t eval_idx,
-    const KZGSettings &s
+void fft_in_place( 
+    std::vector<blst_scalar> &a, 
+    const std::vector<blst_scalar> &roots 
 );
-
-
-bool verify_kzg(
-    const blst_p1 C, 
-    const blst_scalar z, 
-    const blst_scalar y, 
-    const blst_p1 Pi, 
-    const SRS &S
-);
-
-bool batch_verify(
-    std::vector<blst_p1> &Pis,
-    std::vector<blst_p1> &Cs,
-    std::vector<size_t> &Z_idxs,
-    Scalar_vec &Ys,
-    Hash base_r,
-    const KZGSettings &kzg
+void inverse_fft_in_place(
+    std::vector<blst_scalar> &a, 
+    const std::vector<blst_scalar> &inv_roots
 );

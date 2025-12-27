@@ -19,32 +19,41 @@
 #pragma once
 #include "blst.h"
 #include "hashing.h"
-#include "settings.h"
-#include <optional>
+#include <array>
 #include <vector>
 
-using Scalar_vec = std::vector<blst_scalar>;
+using bytes32 = std::array<byte, 32>;
 
-std::optional<blst_p1> prove_kzg(
-    const Scalar_vec &evals,
-    const size_t eval_idx,
-    const KZGSettings &s
+struct key_pair {
+    blst_p1 pk;
+    blst_scalar sk;
+};
+
+std::tuple<const byte*, size_t> str_to_bytes(const char* str);
+
+key_pair gen_key_pair(
+    const byte* tag, 
+    size_t tag_len,
+    Hash seed
+);
+
+bool verify_sig(
+    const blst_p1 &PK,
+    blst_p2 &signature, 
+    const byte* msg,
+    size_t msg_len,
+    const byte* dst,
+    size_t dst_len
+);
+
+bool verify_aggregate_signature(
+    std::vector<blst_p1>& pks,
+    const blst_p2& agg_sig,
+    const byte* msg,
+    size_t msg_len,
+    const byte* dst,
+    size_t dst_len
 );
 
 
-bool verify_kzg(
-    const blst_p1 C, 
-    const blst_scalar z, 
-    const blst_scalar y, 
-    const blst_p1 Pi, 
-    const SRS &S
-);
 
-bool batch_verify(
-    std::vector<blst_p1> &Pis,
-    std::vector<blst_p1> &Cs,
-    std::vector<size_t> &Z_idxs,
-    Scalar_vec &Ys,
-    Hash base_r,
-    const KZGSettings &kzg
-);

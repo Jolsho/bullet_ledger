@@ -17,34 +17,27 @@
  */
 
 #pragma once
-#include "blst.h"
-#include "hashing.h"
-#include "settings.h"
-#include <optional>
-#include <vector>
+#include "kzg.h"
+#include "ledger.h"
+#include "state_types.h"
 
-using Scalar_vec = std::vector<blst_scalar>;
+int finalize_block(Ledger &ledger, uint16_t block_id, Hash* out);
+int prune_block(Ledger &ledger, uint16_t block_id);
+int justify_block(Ledger &ledger, uint16_t block_id);
 
-std::optional<blst_p1> prove_kzg(
-    const Scalar_vec &evals,
-    const size_t eval_idx,
-    const KZGSettings &s
+int generate_proof(
+    Ledger &ledger, 
+    std::vector<Commitment> &Cs,
+    std::vector<Proof> &Pis,
+    Hash& key_hash,
+    uint16_t block_id
 );
-
-
-bool verify_kzg(
-    const blst_p1 C, 
-    const blst_scalar z, 
-    const blst_scalar y, 
-    const blst_p1 Pi, 
-    const SRS &S
-);
-
-bool batch_verify(
-    std::vector<blst_p1> &Pis,
-    std::vector<blst_p1> &Cs,
-    std::vector<size_t> &Z_idxs,
-    Scalar_vec &Ys,
-    Hash base_r,
-    const KZGSettings &kzg
+void derive_Zs_n_Ys(
+    Ledger &ledger, 
+    Hash& key_hash,
+    Hash& val_hash,
+    std::vector<Commitment>* Cs,
+    std::vector<Proof>* Pis,
+    std::vector<size_t>* Zs,
+    Scalar_vec* Ys
 );

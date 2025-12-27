@@ -21,14 +21,23 @@
 
 extern "C" {
 
-void* lmdb_open(const char* path, size_t map_size);
-void lmdb_close(void* handle);
-void lmdb_start_trx(void* handle);
-void lmdb_end_trx(void* handle, int rc);
-int lmdb_put(void* handle, const void* key_data, size_t key_size, const void* value_data, size_t value_size);
-int lmdb_get(void* handle, const void* key_data, size_t key_size, void** value_data, size_t* value_size);
-void* mutable_get(void* handle, const void* key, size_t key_size, size_t value_size);
-int lmdb_delete(void* handle, const void* key_data, size_t key_size);
-int lmdb_exists(void* handle, const void* key_data, size_t key_size);
+// LEDGER
+void* open(
+    const char* path, 
+    size_t cache_size,
+    size_t map_size,
+    const char* tag,
+    const void* secret
+);
+
+// DATABASE
+void* db_open(const char* path, size_t map_size);
+void db_close(void* handle);
+void db_start_trx(void* handle);
+void db_end_trx(void* handle, int rc);
+int db_put(void* handle, const void* key_data, size_t key_size, const void* value_data, size_t value_size);
+int db_get(void* handle, const void* key_data, size_t key_size, void** value_data, size_t* value_size);
+int db_delete(void* handle, const void* key_data, size_t key_size);
+int db_exists(void* handle, const void* key_data, size_t key_size);
 
 } // extern "C"

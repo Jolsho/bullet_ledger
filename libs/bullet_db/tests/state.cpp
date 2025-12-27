@@ -16,25 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "verkle.h"
-#include <cassert>
+#include "hashing.h"
+#include "helpers.h"
+#include "kzg.h"
+#include "ledger.h"
+#include "processing.h"
 #include <filesystem>
-#include <random>
-
-Hash pseudo_random_hash(int i) {
-    std::mt19937_64 gen(i);            // 64-bit PRNG
-    std::uniform_int_distribution<uint64_t> dist;
-
-    Hash hash;
-
-    for (int i = 0; i < 4; ++i) {        // 4 * 8 bytes = 32 bytes
-        uint64_t num = dist(gen);
-        for (int j = 0; j < 8; ++j) {
-            hash[i*8 + j] = static_cast<byte>((num >> (8 * j)) & 0xFF);
-        }
-    }
-    return hash;
-}
 
 void main_state_trie() {
     namespace fs = std::filesystem;
@@ -42,61 +29,93 @@ void main_state_trie() {
     if (fs::exists(path)) fs::remove_all(path);
     fs::create_directory(path);
 
-    Ledger l(path, 128, 10 * 1024 * 1024, "bullet", new_scalar(13));
+    size_t CACHE_SIZE{128};
+    size_t MAP_SIZE{10ULL * 1024 * 1024 * 1024};
+    std::string DST{"bullet"};
+    blst_scalar SECRET{num_scalar(13)};
 
-    vector<Hash> raw_hashes;
-    raw_hashes.reserve(25);
+    Ledger l(path, CACHE_SIZE, MAP_SIZE, DST, SECRET);
+
+    std::vector<Hash> raw_hashes(512);
     for (int i = 0; i < raw_hashes.capacity(); i++) {
-        Hash rnd = pseudo_random_hash(i);
-        raw_hashes.push_back(rnd);
+        seeded_hash(&raw_hashes[i], i);
     }
 
 
     // --- Insert phase ---
+    uint16_t block_id = 1;
+    uint8_t idx = 3;
+
     int i = 0;
     for (Hash h: raw_hashes) {
-        ByteSlice key(h.data(), h.size());
-        ByteSlice value(h.data(), h.size());
 
-        auto virt_root = l.virtual_put(key, value, 1).value();
+        ByteSlice key(h.h, 32);
+        ByteSlice val_hash(h.h, 32);
 
-        auto root = l.put(key, value, 1).value();
-
-        auto virt = compress_p1(&virt_root);
-        assert(std::equal(virt.begin(), virt.end(), compress_p1(&root).begin()));
-
-        ByteSlice got = l.get_value(key, 1).value();
-        assert(std::equal(got.begin(), got.end(), value.begin()));
-        printf("INSERT %d\n", i);
+        int res = l.put(key, val_hash, idx, block_id);
+        printf("INSERT %d, %d\n\n", i, res);
+        assert(res == OK);
         i++;
     }
+
+    Hash h;
+    printf("FINALIZING......\n");
+    int res = finalize_block(l, block_id, &h);
+    printf("DONE FINALIZING\n");
+    assert(res == OK);
+
 
     // --- Proving phase ---
+    std::vector<Commitment> Cs;
+    std::vector<Proof> Pis;
+    std::vector<size_t> Zs;
+    std::vector<blst_scalar> Ys;
+
+    Hash base;
+    seeded_hash(&base, 2);
+
+    const Gadgets_ptr gadgets = l.get_gadgets();
+
     i = 0;
     for (Hash h: raw_hashes) {
-        ByteSlice key(h.data(), h.size());
-        print_hash(h);
-        auto [C, Pi, Ws, Ys, Zs] = l.get_existence_proof(key, 1).value();
-        assert(multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
 
-        if (*Zs[0].b != 0) *Zs[0].b = 0;
-        else *Zs[0].b = 1;
-        assert(!multi_func_multi_point_verify(Ws, Zs, Ys, Pi, *l.get_srs()));
-        printf("PROVED %d\n", i);
+        Hash key_hash;
+        derive_hash(key_hash.h, {h.h, sizeof(h.h)});
+        key_hash.h[31] = idx;
+
+        Hash val_hash;
+        derive_hash(val_hash.h, {h.h, sizeof(h.h)});
+
+
+        int res = generate_proof(l, Cs, Pis, key_hash, block_id);
+        printf("GENERATE %d\n", res);
+        assert(res == OK);
+
+        derive_Zs_n_Ys(l, key_hash, val_hash, &Cs, &Pis, &Zs, &Ys);
+
+        printf("PROVING %d == ", i);
+
+        for (int k {}; k < Pis.size(); k++) {
+            assert(verify_kzg(
+                Cs[k], 
+                gadgets->settings.roots.roots[Zs[k]], 
+                Ys[k], 
+                Pis[k], 
+                gadgets->settings.setup
+            ));
+            printf("%d/%zu, ", k+1, Pis.size());
+        }
+
+        assert(batch_verify(Pis, Cs, Zs, Ys, base, gadgets->settings));
+
+        Cs.clear();
+        Pis.clear();
+        Zs.clear();
+        Ys.clear();
+
+        printf("\n");
         i++;
     }
-
-    // --- Remove phase ---
-    i = 0;
-    for (Hash h: raw_hashes) {
-        std::span<byte> key(h.data(), h.size());
-        l.remove(key, 1);
-        auto got = l.get_value(key, 1);
-        assert(got.has_value() == false);
-        printf("DELETED %d\n", i);
-        i++;
-    }
-    
 
     fs::remove_all("./fake_db");
 

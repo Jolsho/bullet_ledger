@@ -24,7 +24,7 @@ template <typename T>
 class RingBuffer {
 public:
     explicit RingBuffer(size_t capacity)
-        : buf_(capacity), head_(0), tail_(0), full_(false), capacity_(capacity){}
+        : buf_(capacity), head_{}, tail_{}, full_(false), capacity_(capacity){}
 
     // ----- capacity / state -----
     size_t capacity() const { return capacity_; }

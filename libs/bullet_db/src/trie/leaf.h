@@ -17,34 +17,19 @@
  */
 
 #pragma once
-#include "blst.h"
-#include "hashing.h"
-#include "settings.h"
-#include <optional>
-#include <vector>
+#include "node.h"
+#include "gadgets.h"
+#include <memory>
 
-using Scalar_vec = std::vector<blst_scalar>;
+class Leaf_i : public Node {
+public:
+    virtual void insert_child(
+        const byte &nib, 
+        const Hash* val_hash, 
+        const uint16_t block_id
+    ) = 0;
 
-std::optional<blst_p1> prove_kzg(
-    const Scalar_vec &evals,
-    const size_t eval_idx,
-    const KZGSettings &s
-);
+    virtual void set_path(const Hash* key, uint16_t block_id) = 0;
+};
 
-
-bool verify_kzg(
-    const blst_p1 C, 
-    const blst_scalar z, 
-    const blst_scalar y, 
-    const blst_p1 Pi, 
-    const SRS &S
-);
-
-bool batch_verify(
-    std::vector<blst_p1> &Pis,
-    std::vector<blst_p1> &Cs,
-    std::vector<size_t> &Z_idxs,
-    Scalar_vec &Ys,
-    Hash base_r,
-    const KZGSettings &kzg
-);
+std::shared_ptr<Leaf_i> create_leaf(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff);
