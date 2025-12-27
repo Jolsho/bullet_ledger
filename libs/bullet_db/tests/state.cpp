@@ -20,6 +20,7 @@
 #include "helpers.h"
 #include "kzg.h"
 #include "ledger.h"
+#include "processing.h"
 #include <filesystem>
 
 void main_state_trie() {
@@ -49,17 +50,18 @@ void main_state_trie() {
     for (Hash h: raw_hashes) {
 
         ByteSlice key(h.h, 32);
-        ByteSlice value(h.h, 32);
+        ByteSlice val_hash(h.h, 32);
 
-        int res = l.put(key, value, idx, block_id);
+        int res = l.put(key, val_hash, idx, block_id);
         printf("INSERT %d, %d\n\n", i, res);
         assert(res == OK);
         i++;
     }
 
     Hash h;
-    int res = l.finalize_block(block_id, &h);
-    printf("FINALIZED %d\n", res);
+    printf("FINALIZING......\n");
+    int res = finalize_block(l, block_id, &h);
+    printf("DONE FINALIZING\n");
     assert(res == OK);
 
 
@@ -72,37 +74,39 @@ void main_state_trie() {
     Hash base;
     seeded_hash(&base, 2);
 
-    const KZGSettings* settings = l.get_settings();
+    const Gadgets_ptr gadgets = l.get_gadgets();
 
     i = 0;
     for (Hash h: raw_hashes) {
 
-        ByteSlice key(h.h, sizeof(h.h));
-        ByteSlice value(h.h, 32);
+        Hash key_hash;
+        derive_hash(key_hash.h, {h.h, sizeof(h.h)});
+        key_hash.h[31] = idx;
 
-        int res = l.generate_proof(Cs, Pis, key, block_id, idx);
+        Hash val_hash;
+        derive_hash(val_hash.h, {h.h, sizeof(h.h)});
+
+
+        int res = generate_proof(l, Cs, Pis, key_hash, block_id);
         printf("GENERATE %d\n", res);
         assert(res == OK);
 
-        Hash key_hash;
-        derive_hash(key_hash.h, key);
-        key_hash.h[31] = idx;
-        l.derive_Zs_n_Ys(key_hash, value, &Cs, &Pis, &Zs, &Ys, settings);
+        derive_Zs_n_Ys(l, key_hash, val_hash, &Cs, &Pis, &Zs, &Ys);
 
         printf("PROVING %d == ", i);
 
-        for (int k{}; k < Pis.size(); k++) {
+        for (int k {}; k < Pis.size(); k++) {
             assert(verify_kzg(
                 Cs[k], 
-                settings->roots.roots[Zs[k]], 
+                gadgets->settings.roots.roots[Zs[k]], 
                 Ys[k], 
                 Pis[k], 
-                settings->setup
+                gadgets->settings.setup
             ));
             printf("%d/%zu, ", k+1, Pis.size());
         }
 
-        assert(batch_verify(Pis, Cs, Zs, Ys, base, *settings));
+        assert(batch_verify(Pis, Cs, Zs, Ys, base, gadgets->settings));
 
         Cs.clear();
         Pis.clear();

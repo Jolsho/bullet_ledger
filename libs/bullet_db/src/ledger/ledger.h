@@ -61,8 +61,6 @@
  */
 
 #pragma once
-#include "kzg.h"
-#include "settings.h"
 #include "gadgets.h"
 #include "node.h"
 
@@ -70,12 +68,7 @@
 class Ledger {
 private:
     Gadgets_ptr gadgets_;
-
-    Result<Node_ptr, int> get_root(uint16_t block_id);
-    int delete_root(uint16_t block_id);
-
     std::vector<byte> shard_prefix_;
-    bool in_shard(const Hash hash);
 
 public:
     Ledger(
@@ -86,28 +79,12 @@ public:
         blst_scalar secret_sk
     );
 
-    const KZGSettings* get_settings() const;
+    const Gadgets_ptr get_gadgets() const;
 
-    int finalize_block(uint16_t block_id, Hash* out);
-    int prune_block(uint16_t block_id);
-    int justify_block(uint16_t block_id);
+    bool in_shard(const Hash hash);
 
-    int generate_proof(
-        std::vector<Commitment> &Cs,
-        std::vector<Proof> &Pis,
-        ByteSlice& key,
-        uint16_t block_id,
-        uint8_t idx
-    );
-    void derive_Zs_n_Ys(
-        Hash& key_hash,
-        ByteSlice& value,
-        std::vector<Commitment>* Cs,
-        std::vector<Proof>* Pis,
-        std::vector<size_t>* Zs,
-        Scalar_vec* Ys,
-        const KZGSettings* settings
-    );
+    Result<Node_ptr, int> get_root(uint16_t block_id);
+    int delete_root(uint16_t block_id);
 
     int put(
         ByteSlice& key,

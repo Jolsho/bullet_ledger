@@ -45,14 +45,12 @@ public:
 
     Leaf(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff) : 
         id_(id),
-        children_(LEAF_ORDER), 
-        child_block_ids_(LEAF_ORDER), 
-        commit_{new_p1()},
+        children_(LEAF_ORDER, ZERO_HASH), 
+        child_block_ids_(LEAF_ORDER, {}), 
+        commit_{new_inf_p1()},
         is_deleted_{false},
         gadgets_{gadgets}
     {
-
-        for (auto &c: children_) c = ZERO_HASH;
         if (buff == nullptr) { return; }
 
         byte* cursor = buff->data(); cursor++;
@@ -69,9 +67,7 @@ public:
         }
     }
     ~Leaf() override { 
-        int res = gadgets_->alloc.persist_node(this);
-        if (res != OK) printf("LEAF::PERSIST::ERR::%d\n", res);
-        assert(res == OK); 
+        gadgets_->alloc.persist_node(this); 
     }
 
     std::vector<byte> to_bytes() const override {
@@ -109,6 +105,7 @@ public:
     const bool should_delete() const override { return is_deleted_; };
 
     const Commitment* get_commitment() const override { return &commit_; };
+    void set_commitment(const Commitment &c) override { commit_ = c; };
 
     Hash* get_path() { return &path_; }
 
@@ -232,8 +229,7 @@ public:
         leaf->set_path(key, new_block_id);
         leaf->insert_child(key->h[31], val_hash, new_block_id);
 
-        int cache_res = gadgets_->alloc.cache_node(leaf);
-        if (cache_res != OK) return cache_res;
+        gadgets_->alloc.cache_node(leaf);
 
         branches.back()->insert_child(new_nib, new_block_id);
 
@@ -249,7 +245,7 @@ public:
 
 
         // INSERT OLD LEAF INTO LAST BRANCH
-        cache_res = gadgets_->alloc.recache(&id_, &new_id);
+        int cache_res = gadgets_->alloc.recache(&id_, &new_id);
         if (cache_res != OK) return cache_res;
 
         branches.back()->insert_child(path_.h[i], new_block_id);
@@ -258,10 +254,7 @@ public:
 
         // due to the fact that one of these branches has this* id_
         // we have to wait to cache until after this* has been recached under a new id 
-        for (auto &branch: branches) {
-            cache_res = gadgets_->alloc.cache_node(branch);
-            if (cache_res != OK) return cache_res;
-        }
+        for (auto &branch: branches) gadgets_->alloc.cache_node(branch);
 
         return OK;
     }
@@ -314,23 +307,27 @@ public:
         return DELETED;
     }
 
-    Result<const Commitment*, int> finalize(
-        const uint16_t block_id
+    int finalize(
+        const uint16_t block_id,
+        Commitment *out,
+        const size_t start, 
+        size_t end,
+        Polynomial* Fx
     ) override {
 
-        Polynomial Fx(BRANCH_ORDER, ZERO_SK);
+        Polynomial poly(BRANCH_ORDER, ZERO_SK);
         for (int i{}; i < LEAF_ORDER; i++) {
-            blst_scalar_from_le_bytes(&Fx[i], children_[i].h, 32);
+            if (!hash_is_zero(children_[i]))
+                blst_scalar_from_le_bytes(&poly[i], children_[i].h ,32);
         }
 
-        inverse_fft_in_place(Fx, gadgets_->settings.roots.inv_roots);
-        commit_g1(&commit_, Fx, gadgets_->settings.setup);
-        return &commit_;
+        inverse_fft_in_place(poly, gadgets_->settings.roots.inv_roots);
+        commit_g1(&commit_, poly, gadgets_->settings.setup);
+        *out = commit_;
+        return OK;
     }
 
-    int prune(
-        const uint16_t block_id
-    ) override {
+    int prune(const uint16_t block_id) override {
 
         NodeId tmp_id_;
         for (int i{}; i < LEAF_ORDER; i++) {
@@ -341,8 +338,10 @@ public:
             tmp_id_.set_block_id(child_block_ids_[i]);
             tmp_id_.set_node_id(id_.derive_child_id(i));
 
-            int res = gadgets_->alloc.db_.del(tmp_id_.get_full(), tmp_id_.size());
-            if (res != 0) return DELETE_VALUE_ERR;
+            void* trx = gadgets_->alloc.db_.start_txn();
+            int rc = gadgets_->alloc.db_.del(tmp_id_.get_full(), tmp_id_.size(), trx);
+            gadgets_->alloc.db_.end_txn(trx, rc);
+            if (rc != OK) return DELETE_VALUE_ERR;
         }
 
         auto res = gadgets_->alloc.delete_node(id_);
@@ -372,13 +371,34 @@ public:
             // if not found just continue (could be trying to delete zero hash)
             if (should_delete() || hash_is_zero(children_[i])) {
 
-                int res = gadgets_->alloc.db_.del(old_id_.get_full(), old_id_.size());
-                if (res != 0 && res != MDB_NOTFOUND) return DELETE_VALUE_ERR;
+                void* trx = gadgets_->alloc.db_.start_txn();
+                int rc = gadgets_->alloc.db_.del(old_id_.get_full(), old_id_.size(), trx);
+                gadgets_->alloc.db_.end_txn(trx, rc);
+                if (rc != OK && rc != MDB_NOTFOUND) return DELETE_VALUE_ERR;
 
             } else {
 
-                int res = gadgets_->alloc.rename_value(old_id_, new_id_);
-                if (res != 0 && res != MDB_NOTFOUND) return REPLACE_VALUE_ERR;
+                std::vector<std::byte> out;
+
+                // GET
+                void* trx = gadgets_->alloc.db_.start_rd_txn();
+                int rc = gadgets_->alloc.db_.get(
+                    old_id_.get_full(), old_id_.size(), 
+                    out, trx
+                );
+                gadgets_->alloc.db_.end_txn(trx, rc);
+                if (rc != OK && rc != MDB_NOTFOUND) return rc;
+
+
+                // PUT
+                trx = gadgets_->alloc.db_.start_txn();
+                rc = gadgets_->alloc.db_.put(
+                    new_id_.get_full(), new_id_.size(), 
+                    out.data(), out.size(), 
+                    trx
+                );
+                gadgets_->alloc.db_.end_txn(trx, rc);
+                if (rc != OK) return rc;
             }
 
             child_block_ids_[i] = 0;
@@ -395,9 +415,11 @@ public:
         new_self->set_id(id_);
 
         // this* and new_self should point to same addr
-        assert(this == new_self.get());
+        assert(std::addressof(*this) == std::addressof(*new_self.get()));
 
-        return gadgets_->alloc.cache_node(new_self);
+        gadgets_->alloc.cache_node(new_self);
+
+        return OK;
     }
 };
 

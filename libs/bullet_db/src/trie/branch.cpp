@@ -25,6 +25,7 @@
 #include "state_types.h"
 #include <cstdio>
 #include <cstring>
+#include <memory>
 
 class Branch : public Branch_i {
 private:
@@ -68,11 +69,7 @@ public:
         }
     }
 
-    ~Branch() override { 
-        int res = gadgets_->alloc.persist_node(this);
-        if (res != OK) printf("BRANCH::PERSIST::ERR::%d\n", res);
-        assert(res == OK); 
-    }
+    ~Branch() override { gadgets_->alloc.persist_node(this); }
 
     std::vector<byte> to_bytes() const override {
         std::vector<byte> buffer(
@@ -103,6 +100,7 @@ public:
     void set_id(const NodeId &id) override { id_ = id; };
 
     const Commitment* get_commitment() const override { return &commit_; };
+    void set_commitment(const Commitment &c) override { commit_ = c; };
 
     const byte get_type() const override { return BRANCH; };
     const bool should_delete() const override { return count_ == 0; };
@@ -145,7 +143,7 @@ public:
 
             // Remove the child node from cache/db safely
             NodeId old_child(old_child_id, block_id);
-            Result<Node_ptr, int> res = gadgets_->alloc.load_node( &old_child);
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node(&old_child);
             if (res.is_err()) return res.unwrap_err();
 
             Node_ptr node = res.unwrap();
@@ -230,12 +228,11 @@ public:
             leaf->set_path(key, new_block_id);
             leaf->insert_child(key->h[31], val_hash, new_block_id);
 
-            int cache_res = gadgets_->alloc.cache_node(leaf);
-            if (cache_res != OK) return cache_res;
+            gadgets_->alloc.cache_node(leaf);
 
             if (id_.get_block_id() != new_block_id) {
                 NodeId new_id (id_.get_node_id(), new_block_id);
-                cache_res = gadgets_->alloc.recache(&id_, &new_id);
+                int cache_res = gadgets_->alloc.recache(&id_, &new_id);
                 if (cache_res != OK) return cache_res;
             }
 
@@ -294,37 +291,51 @@ public:
     }
 
 
-    Result<const Commitment*, int> finalize(
-        const uint16_t block_id
+    int finalize(
+        const uint16_t block_id,
+        Commitment *out,
+        const size_t start, 
+        size_t end,
+        Polynomial* Fx
     ) override {
 
-        tmp_id_.set_block_id(block_id);
-        for (int i{}; i < BRANCH_ORDER; i++) {
+        if (end == 0) end = BRANCH_ORDER;
+        NodeId tmp(0, block_id);
+
+        Commitment child_commit;
+
+        for (size_t i{start}; i < end; i++) {
             if (child_block_ids_[i] != block_id || 
                 scalar_is_zero(children_[i])
             ) continue;
 
-            tmp_id_.set_node_id(id_.derive_child_id(i));
+            tmp.set_node_id(id_.derive_child_id(i));
 
-            Result<Node_ptr, int> child = gadgets_->alloc.load_node(&tmp_id_);
+            auto child = gadgets_->alloc.load_node(&tmp, true);
             if (child.is_err()) return LOAD_NODE_ERR;
 
-            auto res = child.unwrap()->finalize(block_id);
-            if (res.is_err()) return res.unwrap_err();
+            int rc = child.unwrap()->finalize(block_id, &child_commit);
+            if (rc != OK) return rc;
 
-            hash_p1_to_scalar(res.unwrap(), &children_[i], &gadgets_->settings.tag);
+            hash_p1_to_scalar(
+                &child_commit, 
+                &children_[i], 
+                &gadgets_->settings.tag
+            );
+
+            if (Fx && !out) Fx->at(i) = children_[i];
         }
 
-        Polynomial Fx(children_);
-        inverse_fft_in_place(Fx, gadgets_->settings.roots.inv_roots);
-        commit_g1(&commit_, Fx, gadgets_->settings.setup);
-
-        return &commit_;
+        if (!Fx && out) {
+            Polynomial poly(children_);
+            inverse_fft_in_place(poly, gadgets_->settings.roots.inv_roots);
+            commit_g1(&commit_, poly, gadgets_->settings.setup);
+            *out = commit_;
+        }
+        return OK;
     }
 
-    int prune(
-        const uint16_t block_id
-    ) override {
+    int prune(const uint16_t block_id) override {
         tmp_id_.set_block_id(block_id);
         for (int i{}; i < BRANCH_ORDER; i++) {
             if (child_block_ids_[i] != block_id) continue;
@@ -373,9 +384,10 @@ public:
         new_self->set_id(id_);
 
         // this* and new_self should point to same addr
-        assert(this == new_self.get());
+        assert(std::addressof(*this) == std::addressof(*new_self.get()));
 
-        return gadgets_->alloc.cache_node(new_self);
+        gadgets_->alloc.cache_node(new_self);
+        return OK;
     }
 };
 

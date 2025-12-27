@@ -18,6 +18,7 @@ target_include_directories(tests_exec PRIVATE
         ${PROJECT_SOURCE_DIR}/src/ledger
         ${PROJECT_SOURCE_DIR}/src/trie
         ${PROJECT_SOURCE_DIR}/src/utils
+        ${PROJECT_SOURCE_DIR}/src/blocks
 )
 
 # Register with CTest

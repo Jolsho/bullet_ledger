@@ -19,6 +19,7 @@
 #include "bigint.h"
 #include "settings.h"
 #include "helpers.h"
+#include <cstdio>
 
 NTTRoots build_roots(size_t n) {
     
@@ -65,11 +66,11 @@ NTTRoots build_roots(size_t n) {
 size_t SRS::max_degree() { return g1_powers_jacob.size() - 1; }
 
 SRS::SRS(size_t degree, const blst_scalar &s) {
-    g1_powers_jacob.resize(degree + 1);
-    g1_powers_aff.resize(degree + 1);
+    g1_powers_jacob.resize(degree);
+    g1_powers_aff.resize(degree);
 
-    g2_powers_jacob.resize(degree + 1);
-    g2_powers_aff.resize(degree + 1);
+    g2_powers_jacob.resize(degree);
+    g2_powers_aff.resize(degree);
 
     g = *blst_p1_generator();
     h = *blst_p2_generator();
@@ -96,6 +97,12 @@ SRS::SRS(size_t degree, const blst_scalar &s) {
 
 KZGSettings init_settings(size_t degree, const blst_scalar &s, std::string tag) {
     NTTRoots roots = build_roots(degree);
+    assert(roots.roots.size() == degree);
+    assert(roots.inv_roots.size() == degree);
+
     SRS setup(degree, s);
-    return { roots, setup , tag};
+    assert(setup.g1_powers_jacob.size() == degree);
+    assert(setup.g2_powers_jacob.size() == degree);
+
+    return {roots, setup , tag};
 }

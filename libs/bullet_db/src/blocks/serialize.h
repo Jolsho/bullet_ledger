@@ -17,9 +17,11 @@
  */
 
 #pragma once
+#include "blst.h"
 #include "result.h"
-#include "state_types.h"
+#include <cstdint>
 #include <cstring>
+#include <span>
 
 const size_t BLOCK_ID_OFFSET = 2;
 

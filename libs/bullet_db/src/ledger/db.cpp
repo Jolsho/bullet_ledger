@@ -20,17 +20,16 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <lmdb.h>
 
 BulletDB::BulletDB(const char* path, size_t map_size) {
     assert(mdb_env_create(&env_) == 0);
     assert(mdb_env_set_mapsize(env_, map_size) == 0);
     assert(mdb_env_open(env_, path, 0, 0600) == 0);
 
-    MDB_txn* txn;
-    assert(mdb_txn_begin(env_, nullptr, 0, &txn) == 0);
-    assert(mdb_dbi_open(txn, nullptr, 0, &dbi_) == 0);
-    assert(mdb_txn_commit(txn) == 0);
-    active_txn_ = false;
+    void* trx = start_txn();
+    assert(mdb_dbi_open((MDB_txn*)trx, nullptr, 0, &dbi_) == 0);
+    end_txn(trx);
 }
 
 BulletDB::~BulletDB() {
@@ -39,36 +38,45 @@ BulletDB::~BulletDB() {
     mdb_env_close(env_);
 }
 
-void BulletDB::start_txn() { 
-    if (active_txn_) return;
-    assert(mdb_txn_begin(env_, nullptr, 0, &txn_) == 0); 
-    active_txn_ = true;
+void* BulletDB::start_txn() { 
+    MDB_txn* tx;
+    assert(mdb_txn_begin(env_, nullptr, 0, &tx) == 0); 
+    return tx;
 }
 
-void BulletDB::end_txn(int rc) {
-    if (!active_txn_) return;
-    if (rc == 0) assert(mdb_txn_commit(txn_) == 0);
-    else mdb_txn_abort(txn_);
-    active_txn_ = false;
+void* BulletDB::start_rd_txn() { 
+    MDB_txn* tx;
+    assert(mdb_txn_begin(env_, nullptr, MDB_RDONLY, &tx) == 0); 
+    return tx;
+}
+
+void BulletDB::end_txn(void* trx, int rc) {
+    if (rc == 0) 
+        assert(mdb_txn_commit((MDB_txn*)trx) == 0);
+    else 
+        mdb_txn_abort((MDB_txn*)trx);
 }
 
 int BulletDB::put(
     const void* key_data, size_t key_size, 
-    const void* value_data, size_t value_size
+    const void* value_data, size_t value_size, 
+    void* trx
 ) {
     MDB_val key{ key_size, (void*)(key_data) };
     MDB_val value{ value_size, (void*)(value_data) };
 
-    return mdb_put(txn_, dbi_, &key, &value, 0);
+    return mdb_put((MDB_txn*)trx, dbi_, &key, &value, 0);
 }
+
 int BulletDB::get_raw(
     const void* key_data, size_t key_size, 
-    void** value_data, size_t* value_size
+    void** value_data, size_t* value_size,
+    void* trx
 ) {
     MDB_val key{ key_size, (void*)(key_data) };
     MDB_val value;
 
-    int rc = mdb_get(txn_, dbi_, &key, &value);
+    int rc = mdb_get((MDB_txn*)trx, dbi_, &key, &value);
     if (rc == 0) {
         *value_size = value.mv_size;
         *value_data = malloc(value.mv_size);
@@ -79,12 +87,13 @@ int BulletDB::get_raw(
 
 int BulletDB::get(
     const void* key_data, size_t key_size, 
-    std::vector<std::byte> &out
+    std::vector<std::byte> &out,
+    void* trx
 ) {
     MDB_val key{ key_size, (void*)(key_data) };
     MDB_val value;
 
-    int rc = mdb_get(txn_, dbi_, &key, &value);
+    int rc = mdb_get((MDB_txn*)trx, dbi_, &key, &value);
     if (rc == 0) {
         out.resize(value.mv_size);
         std::memcpy(out.data(), value.mv_data, value.mv_size);
@@ -92,13 +101,13 @@ int BulletDB::get(
     return rc;
 }
 
-int BulletDB::del( const void* key_data, size_t key_size) {
+int BulletDB::del(const void* key_data, size_t key_size, void* trx) {
     MDB_val key{ key_size, (void*)(key_data) };
-    return mdb_del(txn_, dbi_, &key, nullptr);
+    return mdb_del((MDB_txn*)trx, dbi_, &key, nullptr);
 }
 
-int BulletDB::exists(const void* key_data, size_t key_size) {
+int BulletDB::exists(const void* key_data, size_t key_size, void* trx) {
     MDB_val key{ key_size, (void*)(key_data) };
     MDB_val value;
-    return mdb_get(txn_, dbi_, &key, &value);
+    return mdb_get((MDB_txn*)trx, dbi_, &key, &value);
 }

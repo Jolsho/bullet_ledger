@@ -19,6 +19,9 @@
 #include "branch.h"
 #include "leaf.h"
 #include "node.h"
+#include <cassert>
+#include <cstddef>
+#include <cstdio>
 
 NodeAllocator::NodeAllocator(
     std::string path, 
@@ -33,45 +36,98 @@ NodeAllocator::NodeAllocator(
 
 NodeAllocator::~NodeAllocator() {}
 
+void NodeAllocator::persist_node(Node* node) {
+
+    const NodeId* id = node->get_id();
+
+    std::vector<byte> bytes = node->to_bytes();
+
+    void* trx = db_.start_txn();
+    int rc = db_.put(
+        id->get_full(), id->size(), 
+        bytes.data(), bytes.size(), 
+        trx
+    );
+    assert(rc == OK);
+    db_.end_txn(trx, rc);
+}
+
 void NodeAllocator::set_gadgets(std::shared_ptr<Gadgets> gadgets) { 
     gadgets_ = gadgets; 
 }
 
-int NodeAllocator::cache_node(Node_ptr node) {
+Node_ptr NodeAllocator::cache_node(
+    Node_ptr node, 
+    bool needs_lock
+) {
+    if (needs_lock) mux_.lock();
     auto put_res = cache_.put(node->get_id(), node);
-    // put_res can have an evicted node but
-    // since destructor triggers persistence 
-    // we dont need to persist the evicted here
-    return OK;
+    if (needs_lock) mux_.unlock();
+
+    if (put_res.has_value()) {
+        // put_res can have an evicted node but
+        // since destructor triggers pending persistence 
+        // we dont need to persist the evicted here
+        auto [id, n] = put_res.value();
+        return n;
+    }
+    return nullptr;
 }
 
-int NodeAllocator::recache(const NodeId *old_id, const NodeId *new_id) {
+int NodeAllocator::recache(
+    const NodeId *old_id, 
+    const NodeId *new_id, 
+    bool needs_lock
+) {
+    if (needs_lock) mux_.lock();
     Node_ptr entry = cache_.remove(old_id);
+    if (needs_lock) mux_.unlock();
     if (entry == nullptr) return NOT_EXIST_RECACHE;
     // if its not in cache we can just return OK
     // it will be deconstructed and therefore persisted...
 
     std::vector<byte> node_bytes = entry->to_bytes();
+    void* trx = db_.start_txn();
     int rc = db_.put(
-        entry->get_id()->get_full(), entry->get_id()->size(), 
-        node_bytes.data(), node_bytes.size()
+        old_id->get_full(), old_id->size(), 
+        node_bytes.data(), node_bytes.size(), 
+        trx
     );
+    db_.end_txn(trx, rc);
     if (rc != OK) return rc;
 
     entry->set_id(new_id);
-    return cache_node(entry);
+    Node_ptr maybe_evicted = cache_node(entry, needs_lock);
+
+    return OK;
 }
 
 
-Result<Node_ptr, int> NodeAllocator::load_node(const NodeId* id) {
+Result<Node_ptr, int> NodeAllocator::load_node(
+    const NodeId* id, 
+    bool needs_lock
+) {
 
-    if (Node_ptr* node = cache_.get(id)) return *node;
+    if (needs_lock) mux_.lock_shared();
+    Node_ptr* node = cache_.get(id);
+    if (needs_lock) mux_.unlock_shared();
+    if (node) return *node;
 
-    std::vector<std::byte> out;
-    int rc = db_.get(id->get_full(), id->size(), out);
+    std::vector<byte> out;
+    void* out_data = nullptr;
+    size_t size = 0;
+
+    void* trx = db_.start_rd_txn();
+    int rc = db_.get_raw(id->get_full(), id->size(), &out_data, &size, trx);
     if (rc == 0) {
-        ByteSlice raw_node(reinterpret_cast<byte*>(out.data()), out.size());
+        out.resize(size);
+        std::memcpy(out.data(), out_data, size);
+        free(out_data);  // avoid memory leak
+    }
+    db_.end_txn(trx, rc);
 
+    if (rc == 0) {
+        ByteSlice raw_node(out.data(), out.size());
         Node_ptr node_ptr;
 
         if (raw_node[0] == BRANCH)
@@ -80,11 +136,7 @@ Result<Node_ptr, int> NodeAllocator::load_node(const NodeId* id) {
             node_ptr = create_leaf(gadgets_, id, &raw_node);
 
         // Insert into cache (cache now owns the unique_ptr)
-        int rc = cache_node(node_ptr);
-        if (rc != OK) {
-            printf("FAILED CACHE\n");
-            return rc;
-        }
+        cache_node(node_ptr, needs_lock);
 
         return node_ptr;
     }
@@ -92,7 +144,11 @@ Result<Node_ptr, int> NodeAllocator::load_node(const NodeId* id) {
     return rc;
 }
 
-Result<Node_ptr, int> NodeAllocator::delete_node(const NodeId &id) {
+Result<Node_ptr, int> NodeAllocator::delete_node(
+    const NodeId &id,
+    bool need_lock
+) {
+    if (need_lock) mux_.lock();
 
     Node_ptr entry = cache_.remove(id);
     if (!entry) {
@@ -104,26 +160,10 @@ Result<Node_ptr, int> NodeAllocator::delete_node(const NodeId &id) {
         }
     }
     if (entry) {
-        int rc = db_.del(id.get_full(), id.size());
-        if (rc != 0) return rc;
+        void* trx = db_.start_txn();
+        int rc = db_.del(id.get_full(), id.size(), trx);
+        db_.end_txn(trx, rc);
+        if (rc != OK) return rc;
     }
     return entry;
-}
-
-int NodeAllocator::rename_value(const NodeId& old_id, const NodeId& new_id) {
-
-    std::vector<std::byte> out;
-    int res = db_.get(old_id.get_full(), old_id.size(), out);
-    if (res != 0) return res;
-
-    return db_.put(new_id.get_full(), new_id.size(), out.data(), out.size());
-}
-
-int NodeAllocator::persist_node(Node* node) {
-    const NodeId* id = node->get_id();
-    std::vector<byte> node_bytes = node->to_bytes();
-    return db_.put(
-        id->get_full(), id->size(), 
-        node_bytes.data(), node_bytes.size()
-    );
 }

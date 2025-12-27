@@ -125,7 +125,7 @@ void main_kzg() {
         blst_scalar z = settings.roots.roots[idx];
         blst_scalar y = evals[idx];
 
-        blst_p1 C = new_inf_p1();
+        blst_p1 C;
         commit_g1(&C, fx, settings.setup);
 
         Cs.push_back(C);

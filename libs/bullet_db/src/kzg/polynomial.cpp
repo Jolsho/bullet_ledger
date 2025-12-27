@@ -27,7 +27,10 @@ void commit_g1(
     const Polynomial& coeffs, 
     const SRS& srs
 ) {
+    assert(coeffs.size() <= srs.g1_powers_jacob.size());
+
     // TODO -- more effecient way to do this?
+    *C = new_p1();
     blst_p1 tmp;
     for (size_t i{}; i < coeffs.size(); i++) {
         blst_p1_mult(&tmp, &srs.g1_powers_jacob[i], coeffs[i].b, 256);
@@ -95,6 +98,10 @@ std::optional<Polynomial> derive_quotient(
     const blst_scalar &y,
     const NTTRoots &roots
 ) {
+
+    assert(roots.roots.size() == poly_eval.size());
+    assert(roots.inv_roots.size() == poly_eval.size());
+
     uint64_t m = 0;
     size_t len = poly_eval.size();
 

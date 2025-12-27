@@ -18,6 +18,7 @@
 
 #pragma once
 #include "alloc.h"
+#include "settings.h"
 #include <string>
 
 struct Gadgets {
@@ -25,13 +26,15 @@ struct Gadgets {
     NodeAllocator alloc;
 
     Gadgets(
-        KZGSettings settings_,
+        size_t degree, 
+        const blst_scalar &s, 
+        std::string tag,
         std::string path,
         size_t cache_size,
         size_t map_size
-    )
-        : settings(std::move(settings_))
-        , alloc(path, cache_size, map_size)
+    ) : 
+        settings(init_settings(degree, s, tag)),
+        alloc(path, cache_size, map_size)
     {}
 };
 

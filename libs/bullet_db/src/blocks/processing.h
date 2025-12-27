@@ -16,20 +16,28 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "gadgets.h"
-#include <cassert>
+#pragma once
+#include "kzg.h"
+#include "ledger.h"
+#include "state_types.h"
 
-Gadgets_ptr init_gadgets(
-    size_t degree, 
-    const blst_scalar &s, 
-    std::string tag,
-    std::string path,
-    size_t cache_size,
-    size_t map_size
-) {
-    auto g = std::make_shared<Gadgets>(
-        degree, s, tag, path, cache_size, map_size
-    );
-    g->alloc.set_gadgets(g);
-    return g;
-}
+int finalize_block(Ledger &ledger, uint16_t block_id, Hash* out);
+int prune_block(Ledger &ledger, uint16_t block_id);
+int justify_block(Ledger &ledger, uint16_t block_id);
+
+int generate_proof(
+    Ledger &ledger, 
+    std::vector<Commitment> &Cs,
+    std::vector<Proof> &Pis,
+    Hash& key_hash,
+    uint16_t block_id
+);
+void derive_Zs_n_Ys(
+    Ledger &ledger, 
+    Hash& key_hash,
+    Hash& val_hash,
+    std::vector<Commitment>* Cs,
+    std::vector<Proof>* Pis,
+    std::vector<size_t>* Zs,
+    Scalar_vec* Ys
+);

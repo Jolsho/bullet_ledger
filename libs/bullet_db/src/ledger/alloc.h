@@ -20,7 +20,9 @@
 #include "node.h"
 #include "db.h"
 #include "lru.h"
+#include "result.h"
 #include <memory>
+#include <shared_mutex>
 #include <string>
 
 struct Gadgets;
@@ -34,16 +36,22 @@ public:
     );
     ~NodeAllocator();
 
+    std::shared_mutex mux_;
     LRUCache<NodeId, std::shared_ptr<Node>, NodeIdHash> cache_;
     BulletDB db_;
     std::shared_ptr<Gadgets> gadgets_;
+
     void set_gadgets(std::shared_ptr<Gadgets> gadgets);
 
-    Result<std::shared_ptr<Node>, int> load_node(const NodeId* id);
-    int recache(const NodeId *old_id, const NodeId *new_id);
-    int cache_node(std::shared_ptr<Node> node);
-    Result<std::shared_ptr<Node>, int> delete_node(const NodeId& id);
-    int persist_node(Node* node);
-
-    int rename_value(const NodeId& old_id, const NodeId& new_id);
+    Result<std::shared_ptr<Node>, int> load_node(
+        const NodeId* id, 
+        bool needs_lock = false
+    );
+    Result<std::shared_ptr<Node>, int> delete_node(
+        const NodeId& id,
+        bool needs_lock = false
+    );
+    int recache(const NodeId *old_id, const NodeId *new_id, bool needs_lock = false);
+    Node_ptr cache_node(std::shared_ptr<Node> node, bool needs_lock = false);
+    void persist_node(Node* node);
 };

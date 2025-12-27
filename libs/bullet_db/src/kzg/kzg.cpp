@@ -40,7 +40,7 @@ std::optional<blst_p1> prove_kzg(
     inverse_fft_in_place(Q, s.roots.inv_roots);
 
     // COMMIT TO Q
-    blst_p1 P = new_inf_p1(); 
+    blst_p1 P; 
     commit_g1(&P, Q, s.setup);
 
 
@@ -59,6 +59,8 @@ bool verify_kzg(
     const blst_p1 Pi, 
     const SRS &S
 ) {
+    assert(S.g1_powers_aff.size() >= 2);
+    assert(S.g2_powers_aff.size() >= 2);
 
     // tmp = - [y]_1
     blst_p1 tmp;
