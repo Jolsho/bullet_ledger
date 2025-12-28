@@ -36,13 +36,16 @@ void main_state_trie() {
 
     Ledger l(path, CACHE_SIZE, MAP_SIZE, DST, SECRET);
 
-    std::vector<Hash> raw_hashes(512);
+    std::vector<Hash> raw_hashes(32);
     for (int i = 0; i < raw_hashes.capacity(); i++) {
         seeded_hash(&raw_hashes[i], i);
     }
 
 
-    // --- Insert phase ---
+
+    ///////////////////////////
+    // --- Insert phase --- //
+    /////////////////////////
     uint16_t block_id = 1;
     uint8_t idx = 3;
 
@@ -53,11 +56,15 @@ void main_state_trie() {
         ByteSlice val_hash(h.h, 32);
 
         int res = l.put(key, val_hash, idx, block_id);
-        printf("INSERT %d, %d\n\n", i, res);
+        printf("INSERT %d, %d\n", i, res);
         assert(res == OK);
         i++;
     }
 
+
+    /////////////////////////////
+    // --- FINALIZE phase --- //
+    ///////////////////////////
     Hash h;
     printf("FINALIZING......\n");
     int res = finalize_block(l, block_id, &h);
@@ -65,7 +72,12 @@ void main_state_trie() {
     assert(res == OK);
 
 
-    // --- Proving phase ---
+
+
+
+    ////////////////////////////
+    // --- Proving phase --- //
+    //////////////////////////
     std::vector<Commitment> Cs;
     std::vector<Proof> Pis;
     std::vector<size_t> Zs;
@@ -79,13 +91,13 @@ void main_state_trie() {
     i = 0;
     for (Hash h: raw_hashes) {
 
-        Hash key_hash;
-        derive_hash(key_hash.h, {h.h, sizeof(h.h)});
-        key_hash.h[31] = idx;
+        ByteSlice rh{h.h, sizeof(h.h)};
 
         Hash val_hash;
-        derive_hash(val_hash.h, {h.h, sizeof(h.h)});
+        derive_hash(val_hash.h, rh);
 
+        Hash key_hash = val_hash;
+        key_hash.h[31] = idx;
 
         int res = generate_proof(l, Cs, Pis, key_hash, block_id);
         printf("GENERATE %d\n", res);
@@ -116,6 +128,60 @@ void main_state_trie() {
         printf("\n");
         i++;
     }
+
+
+
+    ////////////////////////////
+    // --- JUSTIFY phase --- //
+    //////////////////////////
+    res = justify_block(l, block_id);
+    assert(res == OK);
+    ByteSlice rh{raw_hashes[0].h, sizeof(raw_hashes[0].h)};
+
+    Hash val_hash;
+    derive_hash(val_hash.h, rh);
+
+    Hash key_hash = val_hash;
+    key_hash.h[31] = idx;
+
+
+    res = generate_proof(l, Cs, Pis, key_hash, 0);
+    assert(res == OK);
+    derive_Zs_n_Ys(l, key_hash, val_hash, &Cs, &Pis, &Zs, &Ys);
+    assert(batch_verify(Pis, Cs, Zs, Ys, base, gadgets->settings));
+    res = generate_proof(l, Cs, Pis, key_hash, 1);
+    assert(res != OK);
+    printf("SUCCESSFUL JUSTIFICATION \n");
+
+
+
+    //////////////////////////
+    // --- PRUNE phase --- //
+    ////////////////////////
+    block_id = 3;
+    idx = 4;
+
+    i = 0;
+    for (Hash h: raw_hashes) {
+
+        ByteSlice key(h.h, 32);
+        ByteSlice val_hash(h.h, 32);
+
+        int res = l.put(key, val_hash, idx, block_id);
+        printf("INSERT %d, %d\n", i, res);
+        assert(res == OK);
+        i++;
+    }
+
+    res = prune_block(l, block_id);
+    assert(res == OK);
+    res = generate_proof(l, Cs, Pis, key_hash, block_id);
+    assert(res != OK);
+    assert(res == NOT_EXIST);
+
+    printf("SUCCESSFUL PRUNING \n");
+
+
 
     fs::remove_all("./fake_db");
 

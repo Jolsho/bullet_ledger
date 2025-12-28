@@ -69,7 +69,10 @@ public:
         }
     }
 
-    ~Branch() override { gadgets_->alloc.persist_node(this); }
+    ~Branch() override { 
+        if (should_delete()) return;
+        gadgets_->alloc.persist_node(this); 
+    }
 
     std::vector<byte> to_bytes() const override {
         std::vector<byte> buffer(
@@ -103,7 +106,9 @@ public:
     void set_commitment(const Commitment &c) override { commit_ = c; };
 
     const byte get_type() const override { return BRANCH; };
-    const bool should_delete() const override { return count_ == 0; };
+    const bool should_delete() const override { 
+        return count_ == 0; 
+    };
 
 
     void insert_child(
@@ -336,27 +341,38 @@ public:
     }
 
     int prune(const uint16_t block_id) override {
+        int rc {};
         tmp_id_.set_block_id(block_id);
         for (int i{}; i < BRANCH_ORDER; i++) {
             if (child_block_ids_[i] != block_id) continue;
+
             tmp_id_.set_node_id(id_.derive_child_id(i));
 
-            Result<Node_ptr, int> res = gadgets_->alloc.load_node(&tmp_id_);
-            if (res.is_err()) continue;
+            auto res = gadgets_->alloc.load_node(&tmp_id_);
+            if (res.is_err()) {
+                rc = res.unwrap_err();
+                if (rc == MDB_NOTFOUND) continue;
+                return rc;
+            }
 
-            int prune_res = res.unwrap()->prune(block_id);
-            if (prune_res != OK) return prune_res;
-
+            rc = res.unwrap()->prune(block_id);
+            if (rc != OK) return rc;
         }
 
+        // should_delete() evals to true now
+        count_ = 0;
+
+        // delete
         auto res = gadgets_->alloc.delete_node(id_);
-        if (res.is_err()) return res.unwrap_err();
+        if (res.is_err() && res.unwrap_err() != MDB_NOTFOUND) 
+            return res.unwrap_err();
 
         return OK;
     }
 
     int justify() override {
 
+        // change all child block ids != 0 -> 0
         for (int i{}; i < BRANCH_ORDER; i++) {
             if (child_block_ids_[i] == 0) continue;
 
@@ -373,9 +389,11 @@ public:
             child_block_ids_[i] = 0;
         }
 
+        // delete self under this id
         auto del_res = gadgets_->alloc.delete_node(id_);
         if (del_res.is_err()) return del_res.unwrap_err();
 
+        // if have no children
         if (should_delete()) return DELETED;
 
         id_.set_block_id(0);

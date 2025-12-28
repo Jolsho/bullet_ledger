@@ -23,6 +23,7 @@
 #include "state_types.h"
 #include <cstdio>
 #include <future>
+#include <lmdb.h>
 
 // descends subtree & generates proofs and commitments.
 // returns the new root hash for that block.
@@ -95,9 +96,7 @@ int justify_block(Ledger &ledger, uint16_t block_id) {
     if (root.is_err()) return root.unwrap_err();
 
     int res = root.unwrap()->justify();
-    if (res == DELETED) ledger.delete_root(block_id);
-
-    return res;
+    return res == DELETED ? OK : res;
 }
 
 // descends subtree and removes all nodes belonging to that block_id.
@@ -105,11 +104,10 @@ int justify_block(Ledger &ledger, uint16_t block_id) {
 int prune_block(Ledger &ledger, uint16_t block_id) {
 
     Result<Node_ptr, int> root = ledger.get_root(block_id);
-    if (root.is_err()) return root.unwrap_err();
-
-    int res = root.unwrap()->prune(block_id);
-    if (res == OK) 
-        res = ledger.delete_root(block_id);
-
-    return res;
+    if (root.is_err()) {
+        int err = root.unwrap_err();
+        if (err == MDB_NOTFOUND) return OK;
+        return err;
+    }
+    return root.unwrap()->prune(block_id);
 }

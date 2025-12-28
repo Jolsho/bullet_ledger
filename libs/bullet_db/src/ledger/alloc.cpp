@@ -163,7 +163,7 @@ Result<Node_ptr, int> NodeAllocator::delete_node(
         void* trx = db_.start_txn();
         int rc = db_.del(id.get_full(), id.size(), trx);
         db_.end_txn(trx, rc);
-        if (rc != OK) return rc;
+        if (rc != OK && rc != MDB_NOTFOUND) return rc;
     }
     return entry;
 }

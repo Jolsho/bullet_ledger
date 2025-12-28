@@ -100,8 +100,6 @@ int Ledger::put(
     Result<Node_ptr, int> root = get_root(new_block_id);
     if (root.is_err()) return root.unwrap_err();
 
-    print_hash(key_hash);
-
     int res = root.unwrap()->put(
         &key_hash, &val_hash, 
         new_block_id, 
