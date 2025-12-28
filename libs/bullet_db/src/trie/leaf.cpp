@@ -67,6 +67,7 @@ public:
         }
     }
     ~Leaf() override { 
+        if (should_delete()) return;
         gadgets_->alloc.persist_node(this); 
     }
 
@@ -329,84 +330,102 @@ public:
 
     int prune(const uint16_t block_id) override {
 
-        NodeId tmp_id_;
+        NodeId tmp_id_(0, block_id);
         for (int i{}; i < LEAF_ORDER; i++) {
-            if (child_block_ids_[i] != block_id ||
-                std::memcmp(children_[i].h, ZERO_HASH.h, 32) == 0) 
-                continue;
+            if (child_block_ids_[i] != block_id) continue;
 
-            tmp_id_.set_block_id(child_block_ids_[i]);
             tmp_id_.set_node_id(id_.derive_child_id(i));
 
             void* trx = gadgets_->alloc.db_.start_txn();
-            int rc = gadgets_->alloc.db_.del(tmp_id_.get_full(), tmp_id_.size(), trx);
+            int rc = gadgets_->alloc.db_.del(
+                tmp_id_.get_full(), tmp_id_.size(), 
+                trx
+            );
             gadgets_->alloc.db_.end_txn(trx, rc);
-            if (rc != OK) return DELETE_VALUE_ERR;
+            if (rc != OK && rc != MDB_NOTFOUND) 
+                return DELETE_VALUE_ERR;
         }
 
+        // should_delete() evals to true now
+        is_deleted_ = true;
+
+        // delete
         auto res = gadgets_->alloc.delete_node(id_);
-        if (res.is_err()) return res.unwrap_err();
+        if (res.is_err() && res.unwrap_err() != MDB_NOTFOUND) 
+            return res.unwrap_err();
 
         return OK;
     }
 
     int justify() override {
-        NodeId old_id_;
+        NodeId child_id_; 
+        child_id_.set_block_id(0);
 
-        NodeId new_id_; 
-        new_id_.set_block_id(0);
-
+        // change all child block ids != 0 -> 0
         for (int i{}; i < LEAF_ORDER; i++) {
             if (child_block_ids_[i] == 0) continue;
 
-            old_id_.set_block_id(child_block_ids_[i]);
+            child_id_.set_block_id(child_block_ids_[i]);
 
-            uint64_t node_id = id_.derive_child_id(i);
-            old_id_.set_node_id(node_id);
-            new_id_.set_node_id(node_id);
+            child_id_.set_node_id(id_.derive_child_id(i));
 
 
-            // if self is being deleted
-            // delete every value else rename value
-            // if not found just continue (could be trying to delete zero hash)
+            /*  
+             *  if self is being deleted delete every value 
+             *  else rename value 
+             *  if not found just continue 
+             *      (could be trying to delete ZERO_HASH)
+            */
             if (should_delete() || hash_is_zero(children_[i])) {
 
                 void* trx = gadgets_->alloc.db_.start_txn();
-                int rc = gadgets_->alloc.db_.del(old_id_.get_full(), old_id_.size(), trx);
+                int rc = gadgets_->alloc.db_.del(
+                    child_id_.get_full(), child_id_.size(), 
+                    trx
+                );
                 gadgets_->alloc.db_.end_txn(trx, rc);
-                if (rc != OK && rc != MDB_NOTFOUND) return DELETE_VALUE_ERR;
+                if (rc != OK && rc != MDB_NOTFOUND) 
+                    return DELETE_VALUE_ERR;
 
             } else {
 
-                std::vector<std::byte> out;
+                void* out_data = nullptr;
+                size_t size = 0;
 
                 // GET
                 void* trx = gadgets_->alloc.db_.start_rd_txn();
-                int rc = gadgets_->alloc.db_.get(
-                    old_id_.get_full(), old_id_.size(), 
-                    out, trx
+                int rc = gadgets_->alloc.db_.get_raw(
+                    child_id_.get_full(), child_id_.size(), 
+                    &out_data, &size, trx
                 );
                 gadgets_->alloc.db_.end_txn(trx, rc);
-                if (rc != OK && rc != MDB_NOTFOUND) return rc;
+                if (rc != OK && rc != MDB_NOTFOUND) {
+                    free(out_data);
+                    return rc;
+                }
 
+                child_id_.set_block_id(0);
 
                 // PUT
                 trx = gadgets_->alloc.db_.start_txn();
                 rc = gadgets_->alloc.db_.put(
-                    new_id_.get_full(), new_id_.size(), 
-                    out.data(), out.size(), 
+                    child_id_.get_full(), child_id_.size(), 
+                    out_data, size, 
                     trx
                 );
                 gadgets_->alloc.db_.end_txn(trx, rc);
+                free(out_data);
                 if (rc != OK) return rc;
             }
 
             child_block_ids_[i] = 0;
         }
 
+        // delete self under this id
         auto del_res = gadgets_->alloc.delete_node(id_);
         if (del_res.is_err()) return del_res.unwrap_err();
 
+        // if have no children
         if (should_delete()) return DELETED;
 
         id_.set_block_id(0);
@@ -418,7 +437,6 @@ public:
         assert(std::addressof(*this) == std::addressof(*new_self.get()));
 
         gadgets_->alloc.cache_node(new_self);
-
         return OK;
     }
 };
