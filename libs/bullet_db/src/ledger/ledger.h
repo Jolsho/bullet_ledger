@@ -84,7 +84,6 @@ public:
     bool in_shard(const Hash hash);
 
     Result<Node_ptr, int> get_root(uint16_t block_id);
-    int delete_root(uint16_t block_id);
 
     int put(
         ByteSlice& key,

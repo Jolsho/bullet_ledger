@@ -17,9 +17,7 @@
  */
 
 #pragma once
-#include "node.h"
 #include "gadgets.h"
-#include <memory>
 
 class Branch_i : public Node {
 public:
@@ -30,4 +28,8 @@ public:
 
 };
 
-std::shared_ptr<Branch_i> create_branch(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff);
+std::shared_ptr<Branch_i> create_branch(
+    Gadgets_ptr gadgets, 
+    const NodeId* id, 
+    const ByteSlice* buff
+);

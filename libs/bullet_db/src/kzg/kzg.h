@@ -17,11 +17,9 @@
  */
 
 #pragma once
-#include "blst.h"
 #include "hashing.h"
 #include "settings.h"
 #include <optional>
-#include <vector>
 
 using Scalar_vec = std::vector<blst_scalar>;
 

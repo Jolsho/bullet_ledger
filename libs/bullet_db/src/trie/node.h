@@ -17,13 +17,10 @@
  */
 
 #pragma once
-#include "hashing.h"
 #include "nodeid.h"
 #include "state_types.h"
 #include "polynomial.h"
-#include <cstdint>
 #include <memory>
-#include <vector>
 
 class Node;
 using Node_ptr = std::shared_ptr<Node>;
@@ -49,6 +46,8 @@ public:
         uint16_t block_id
     ) = 0;
 
+    // TODO -- differentiate put from create_account
+    // aka add create_account method + change put implementations
     virtual int put(
         const Hash* key,
         const Hash* val_hash,
@@ -86,6 +85,6 @@ public:
 
     virtual int prune(const uint16_t block_id) = 0;
 
-    virtual int justify() = 0;
+    virtual int justify(const uint16_t block_id) = 0;
 };
 

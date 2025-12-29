@@ -16,11 +16,10 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "helpers.h"
 #include <cstring>
 #include <iomanip>
 #include <iostream>
-#include "helpers.h"
-#include "blst.h"
 #include <array>
 
 blst_scalar num_scalar(const uint64_t v) {

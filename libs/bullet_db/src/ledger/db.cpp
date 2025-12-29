@@ -33,7 +33,6 @@ BulletDB::BulletDB(const char* path, size_t map_size) {
 }
 
 BulletDB::~BulletDB() {
-    // TODO -- save state??
     mdb_dbi_close(env_, dbi_);
     mdb_env_close(env_);
 }

@@ -18,10 +18,7 @@
 
 #include "branch.h"
 #include "leaf.h"
-#include "node.h"
 #include <cassert>
-#include <cstddef>
-#include <cstdio>
 
 NodeAllocator::NodeAllocator(
     std::string path, 
@@ -34,7 +31,7 @@ NodeAllocator::NodeAllocator(
 {
 }
 
-NodeAllocator::~NodeAllocator() {}
+NodeAllocator::~NodeAllocator() { }
 
 void NodeAllocator::persist_node(Node* node) {
 

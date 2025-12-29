@@ -16,10 +16,8 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include "bigint.h"
 #include "settings.h"
 #include "helpers.h"
-#include <cstdio>
 
 NTTRoots build_roots(size_t n) {
     

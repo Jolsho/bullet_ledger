@@ -17,9 +17,7 @@
  */
 
 #pragma once
-#include "node.h"
 #include "gadgets.h"
-#include <memory>
 
 class Leaf_i : public Node {
 public:
@@ -32,4 +30,8 @@ public:
     virtual void set_path(const Hash* key, uint16_t block_id) = 0;
 };
 
-std::shared_ptr<Leaf_i> create_leaf(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff);
+std::shared_ptr<Leaf_i> create_leaf(
+    Gadgets_ptr gadgets, 
+    const NodeId* id, 
+    const ByteSlice* buff
+);

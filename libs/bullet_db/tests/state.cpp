@@ -88,10 +88,10 @@ void main_state_trie() {
 
     const Gadgets_ptr gadgets = l.get_gadgets();
 
-    i = 0;
-    for (Hash h: raw_hashes) {
+    
+    for (i = 0; i < 4; i++) {
 
-        ByteSlice rh{h.h, sizeof(h.h)};
+        ByteSlice rh{raw_hashes[i].h, sizeof(raw_hashes[i].h)};
 
         Hash val_hash;
         derive_hash(val_hash.h, rh);

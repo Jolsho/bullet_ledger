@@ -16,12 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
-#include <cassert>
-#include <cstddef>
-#include <cstdio>
-#include <cstring>
 #include "helpers.h"
-
 
 void fft_in_place( 
     std::vector<blst_scalar> &a, 

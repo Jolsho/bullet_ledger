@@ -18,7 +18,6 @@
 
 #pragma once
 #include <lmdb.h>
-#include <cstdint>
 #include <shared_mutex>
 #include <unordered_map>
 #include <vector>

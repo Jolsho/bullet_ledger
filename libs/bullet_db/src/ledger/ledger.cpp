@@ -18,11 +18,6 @@
 
 #include "ledger.h"
 #include "branch.h"
-#include "hashing.h"
-#include "state_types.h"
-#include <cassert>
-#include <cstdio>
-#include <lmdb.h>
 
 Ledger::Ledger(
     std::string path, 
@@ -57,14 +52,6 @@ Result<Node_ptr, int> Ledger::get_root(uint16_t block_id) {
         return res.unwrap_err();
     }
     return res.unwrap();
-}
-
-int Ledger::delete_root(uint16_t block_id) {
-    NodeId id(ROOT_NODE_ID, block_id);
-    void* trx = gadgets_->alloc.db_.start_txn();
-    int rc = gadgets_->alloc.db_.del(id.get_full(), id.size(), trx);
-    gadgets_->alloc.db_.end_txn(trx, rc);
-    return rc;
 }
 
 bool Ledger::in_shard(const Hash h) {
