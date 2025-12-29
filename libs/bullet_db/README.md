@@ -8,9 +8,9 @@
 ## Trie
 */src/trie*
 
-A verkle tree is a B+ Tree with a branching factor of 256.  Except the children are "commited" to through a polynomial commitment scheme (KZG).  We will get into the scheme later, but for now imagine each node in the tree as possesing some function f(x).  f(x) has properties such that when x = 0 to 256 f(x_i) = child_i.  The evaluation is the child at that indexes hashed polynomial interpreted as a 256bit unsigned integer.  This is not exactly true, but for now it will suffice.
+A verkle tree is a B+ Tree with a branching factor of 256.  Except the children are "commited" to through a polynomial commitment scheme (KZG).  We will get into the scheme later, but for now imagine each node in the tree as possesing some function f(x).  f(x) has properties such that when x = 0 -> 256, f(x) = child_x.  The evaluation is the child at x polynomial hashed and interpreted as a 256bit number.  This is not exactly true, but for now it will suffice.
 
-Now, since each node holds a single polynomial that evaluates to its children,  if you want to prove a value exists at a specific position within the tree,  you can just transfer over something like the polynomials along the path to the value instead of all 256 children at each level down to the value.  
+Now, since each node holds a single polynomial that evaluates to its children,  if you want to prove a value exists at a specific position within the tree,  you can just transfer over something like compressed polynomials along the path to the value instead of all 256 children at each level down to the value.  
 
 This makes the space complexity of an “existence proof” equal to the depth of the tree rather than proportional to the branching factor and depth.  This is why a branching factor of 256 is chosen: to limit depth and hence the space complexity of an existence proof.
 
@@ -22,13 +22,9 @@ Inside **/src/trie** navigate to **node.h**.  Here you will see the virtual clas
 
 Leaves and Branches consist of a similar underlying structure, and differ predominantly in methods.  Their structures generally consist of a **NodeId**, **Commitment**, **Children**, and **child_block_ids**.  There is of course more than this, but for now this will give you the basic understanding.
 
-A **NodeId** is a contiguous array split into two parts: the **node_id** and the **block_id**.  The prior is a `uint_64` which tells you the position of the node within the tree,  and is calculated by adding its index in its parent to the parent’s **node_id** and multiplying by the branching factor.
+A **NodeId** is a contiguous array split into two parts: the **node_id** and the **block_id**.  The prior is a `uint_64` which tells you the position of the node within the tree,  and is calculated by adding its index in its parent to the parent’s **node_id** and multiplying by the branching factor. For example, if you are at the root node where `node_id == 1`,  the 0th child’s node_id is `(0 + 1) * 256 == 256`, and the 1st child is `(1 + 1) * 256 == 512`, etc.
 
-For example, if you are at the root node where `node_id == 1`,  the 0th child’s node_id is `(0 + 1) * 256 == 256`, and the 1st child is `(1 + 1) * 256 == 512`, etc.
-
-When you want to load a node you call **Node_allocator.load_node()**,  and pass it a **NodeId** you have created on the fly.  The purpose of doing it this way as opposed to conventional keying via hash  is because a Verkle Trie makes it computationally difficult to derive the child’s polynomial, which is called **Finalizing**.
-
-So by using the node_ids instead we can wait for a more convenient time to derive those child hashes.  If you want to peek ahead you can look at both the leaf and branch implementation of *finalize*;  either way it will be covered in depth later.
+When you want to load a node you call **Node_allocator.load_node()**,  and pass it a **NodeId** you have created on the fly.  The purpose of doing it this way as opposed to conventional keying via hash  is because a Verkle Trie makes it computationally difficult to derive the child’s polynomial, which is called **Finalizing**. So by using the node_ids instead we can wait for a more convenient time to derive those child hashes.  If you want to peek ahead you can look at both the leaf and branch implementation of *finalize*;  either way it will be covered in depth later.
 
 As for the latter part of the **NodeId**, the **block_id** is used to distinguish between nodes in different blocks.  Multiple blocks will have the same node_ids, so we need a way to distinguish which one we are looking for.
 
@@ -46,20 +42,13 @@ As we step up a layer of abstraction, it is useful to modify terminology slightl
 
 The reason is because you traverse the tree by popping off a byte from the front of the key,  interpreting it as a `uint_8` and using it to guide you to the next node.  In theory, at the end of this, you would land in a leaf which is just a value.  However, in this case the leaf is actually a branch whose children are value hashes.
 
-In order to achieve this account-like behavior, the last byte of the key can be overwritten from `1 -> 255`.  Notice the 0th index is reserved, and this is by design.
+In order to achieve this account-like behavior, the last byte of the key can be overwritten from `1 -> 255`.  Notice the 0th index is reserved, and this is by design. If you have two keys that share a prefix but only one exists in the tree,  without also proving the leaf belongs to one of the whole keys, the proof is ambiguous.  The verifier would not know for certain which account actually exists within the tree.
 
-If you have two keys that share a prefix but only one exists in the tree,  without also proving the leaf belongs to one of the whole keys, the proof is ambiguous.  The verifier would not know for certain which account actually exists within the tree.
-
-The most basic ways to interact with the Verkle Trie are:  
-*Create Account*, *Delete Account*, *Put*, and *Remove*.
-
-Create Account traverses the tree and creates the account if it does not already exist.  Delete Account is self-explanatory.
+The most basic ways to interact with the Verkle Trie are:  **Create Account**, **Delete Account**, **Put**, and **Remove**. Create Account traverses the tree and creates the account if it does not already exist.  Delete Account is self-explanatory.
 
 With Put, you have a key and a value.  The last byte of the key is modified to the index where the value belongs.  If the account is found, the value hash is modified and the value is saved.  If not, the operation aborts.
 
-Remove is effectively the same, except the hash at that index is overwritten with zeros.
-
-Beyond these, there are three more abstract methods primarily used for processing blocks:  
+Remove is effectively the same, except the hash at that index is overwritten with zeros. Beyond these, there are three more abstract methods primarily used for processing blocks:  
 **Finalize**, **Justify**, and **Prune**.
 
 Finalize finds all nodes touched in a given block, derives their polynomials,  and hands them to their parents, which hash and insert them at the appropriate child index.  At the end of this process, you are left with the root polynomial.
@@ -89,10 +78,10 @@ This introduces the material avoided so far.  Within the settings is a field cal
 
 Instead of using `0,1,2,3...` as inputs, roots of unity are used:
 
-root_i = (g^m)^i = g^(m * i)
-g = 5
-m = (p - 1) / 256
-p = prime order of BLS12-381 elliptic curve subgroup
+root_i = (g^m)^i = g^(m * i)  
+g = 5  
+m = (p - 1) / 256  
+p = prime order of BLS12-381 elliptic curve subgroup  
 
 
 
