@@ -18,7 +18,7 @@ This makes the space complexity of an “existence proof” equal to the depth o
 
 ### Node Basics
 
-Inside **/src/trie** navigate to **node.h**.  Here you will see the virtual class that defines a node in the Verkle Trie.  This class is then implemented by the class Branch in **/src/trie/branch.cpp** and class Leaf in **/src/trie/leaf.cpp**.  The header files for both include another virtual class which is the interface for themselves.  When you see leaf referenced outside `leaf.cpp` its type will be **Leaf_i** not **Leaf**, and the same is true of **Branch** and **Branch_i**.
+Inside `/src/trie` navigate to `node.h`.  Here you will see the virtual class that defines a node in the Verkle Trie.  This class is then implemented by the class Branch in `/src/trie/branch.cpp` and class Leaf in `/src/trie/leaf.cpp`.  The header files for both include another virtual class which is the interface for themselves.  When you see leaf referenced outside `leaf.cpp` its type will be **Leaf_i** not **Leaf**, and the same is true of **Branch** and **Branch_i**.
 
 Leaves and Branches consist of a similar underlying structure, and differ predominantly in methods.  Their structures generally consist of a **NodeId**, **Commitment**, **Children**, and **child_block_ids**.  There is of course more than this, but for now this will give you the basic understanding.
 
@@ -44,12 +44,12 @@ The reason is because you traverse the tree by popping off a byte from the front
 
 In order to achieve this account-like behavior, the last byte of the key can be overwritten from `1 -> 255`.  Notice the 0th index is reserved, and this is by design. If you have two keys that share a prefix but only one exists in the tree,  without also proving the leaf belongs to one of the whole keys, the proof is ambiguous.  The verifier would not know for certain which account actually exists within the tree.
 
-The most basic ways to interact with the Verkle Trie are:  **Create Account**, **Delete Account**, **Put**, and **Remove**. Create Account traverses the tree and creates the account if it does not already exist.  Delete Account is self-explanatory.
+The most basic ways to interact with the Verkle Trie are:     `create_account()`, `delete_account()`, `put()`, and `remove()`. Create Account traverses the tree and creates the account if it does not already exist.  Delete Account is self-explanatory.
 
 With Put, you have a key and a value.  The last byte of the key is modified to the index where the value belongs.  If the account is found, the value hash is modified and the value is saved.  If not, the operation aborts.
 
 Remove is effectively the same, except the hash at that index is overwritten with zeros. Beyond these, there are three more abstract methods primarily used for processing blocks:  
-**Finalize**, **Justify**, and **Prune**.
+`finalize()`, `justify()`, and `prune()`.
 
 Finalize finds all nodes touched in a given block, derives their polynomials,  and hands them to their parents, which hash and insert them at the appropriate child index.  At the end of this process, you are left with the root polynomial.
 
@@ -59,7 +59,7 @@ Prune traverses the tree and deletes every node whose `block_id` does not match 
 
 Together, these methods provide enough functionality to explore modified versions of canonical state,  merge new states into the canonical one, and prune useless versions—  all of which comprise a blockchain.
 
-You may have noticed the absence of **Generate_proof**.  That is intentional.  Its explanation depends on understanding what a Commitment actually is,  and it will be covered later.
+You may have noticed the absence of `generate_proof()`.  That is intentional.  Its explanation depends on understanding what a Commitment actually is,  and it will be covered later.
 
 ---
 
@@ -76,16 +76,15 @@ The second component of **Gadgets** is **KZG Settings**.
 
 This introduces the material avoided so far.  Within the settings is a field called *roots*, short for *roots of unity*.  These are the inputs for the node polynomials.
 
-Instead of using `0,1,2,3...` as inputs, roots of unity are used:
-
-root_i = (g^m)^i = g^(m * i)  
+Instead of using 0,1,2,3... as inputs, roots of unity are used:
+`root_i = (g^m)^i = g^(m * i)  
 g = 5  
 m = (p - 1) / 256  
-p = prime order of BLS12-381 elliptic curve subgroup  
+p = prime order of BLS12-381 elliptic curve subgroup  `
 
 
 
-For further exploration, see **/src/kzg/settings.cpp** `build_roots()`.
+For further exploration, see `/src/kzg/settings.cpp` `build_roots()`.
 
 The final piece of **KZG Settings** is the **setup** field.
 
@@ -99,9 +98,9 @@ We cannot derive `a^i` ourselves because we never know `a` directly.  The only f
 
 The value `a` is generated during a trusted setup.  In this process, someone computes `g * (a^i)` for all `i`,  then deletes the secret `a` and shares the resulting vectors.
 
-These vectors form the **setup** field.  The system also allows generating your own setup or loading one via *set_srs()*.
+These vectors form the **setup** field.  The system also allows generating your own setup or loading one via `set_srs()`.
 
-For full details, see **/src/kzg/settings.cpp** and **/src/kzg/settings.h**.
+For full details, see `/src/kzg/settings.cpp` and `/src/kzg/settings.h`.
 
 ---
 
