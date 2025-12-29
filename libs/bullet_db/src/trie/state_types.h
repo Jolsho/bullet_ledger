@@ -59,4 +59,5 @@ enum LedgerCodes {
     NOT_EXIST_RECACHE = 11,
     LEAF_IDX_ZERO = 12,
     PUT_ERR = 13,
+    ALREADY_EXISTS = 14
 };

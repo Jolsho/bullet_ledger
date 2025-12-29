@@ -40,14 +40,35 @@ Ledger::~Ledger() {}
 const Gadgets_ptr Ledger::get_gadgets() const { return gadgets_; }
 
 
-Result<Node_ptr, int> Ledger::get_root(uint16_t block_id) {
+Result<Node_ptr, int> Ledger::get_root( 
+    uint16_t block_id, 
+    uint16_t prev_block_id
+) {
 
     NodeId id(ROOT_NODE_ID, block_id);
     Result<Node_ptr, int> res = gadgets_->alloc.load_node(&id);
     if (res.is_err() && res.unwrap_err() == MDB_NOTFOUND) {
-        Node_ptr node = create_branch(gadgets_, &id, nullptr);
+
+        // fetch prev_blocks root
+        NodeId prev_root_id(ROOT_NODE_ID, prev_block_id);
+        Node_ptr prev_root_node = nullptr;
+
+        Result<Node_ptr, int> res = gadgets_->alloc.load_node(&prev_root_id);
+        if (res.is_err() && res.unwrap_err() == MDB_NOTFOUND) {
+            prev_root_node = create_branch(gadgets_, &prev_root_id, nullptr);
+            gadgets_->alloc.cache_node(prev_root_node);
+        } else {
+            prev_root_node = res.unwrap();
+        }
+
+        std::vector<byte> cannon_bytes = prev_root_node->to_bytes();
+        ByteSlice bytes(cannon_bytes);
+
+        Node_ptr node = create_branch(gadgets_, &id, &bytes);
         gadgets_->alloc.cache_node(node);
+
         return node;
+
     } else if (res.is_err()) {
         return res.unwrap_err();
     }
@@ -72,7 +93,8 @@ int Ledger::put(
     ByteSlice &key, 
     ByteSlice &value, 
     uint8_t idx,
-    uint16_t new_block_id
+    uint16_t block_id,
+    uint16_t prev_block_id
 ) {
     Hash key_hash;
     derive_hash(key_hash.h, key);
@@ -83,14 +105,12 @@ int Ledger::put(
 
     if (!in_shard(key_hash)) return NOT_IN_SHARD;
 
-
-    Result<Node_ptr, int> root = get_root(new_block_id);
+    Result<Node_ptr, int> root = get_root(block_id, prev_block_id);
     if (root.is_err()) return root.unwrap_err();
 
     int res = root.unwrap()->put(
         &key_hash, &val_hash, 
-        new_block_id, 
-        0
+        block_id, 0
     );
 
     if (res == OK) {
@@ -101,7 +121,7 @@ int Ledger::put(
             node_id += key_hash.h[i];
         }
 
-        NodeId id(node_id, new_block_id);
+        NodeId id(node_id, block_id);
 
         void* trx = gadgets_->alloc.db_.start_txn();
         res = gadgets_->alloc.db_.put(
@@ -116,19 +136,35 @@ int Ledger::put(
     return res;
 }
 
-int Ledger::delete_account(
+int Ledger::create_account(
     ByteSlice &key, 
-    uint16_t new_block_id
+    uint16_t block_id
 ) {
-    Hash key_hash = new_hash();
-    key_hash.h[32 - 1] = 0;
+    Hash key_hash;
+    derive_hash(key_hash.h, key);
+    key_hash.h[32-1] = 0;
 
     if (!in_shard(key_hash)) return NOT_IN_SHARD;
 
-    Result<Node_ptr, int> root = get_root(new_block_id);
+    Result<Node_ptr, int> root = get_root(block_id);
     if (root.is_err()) return root.unwrap_err();
 
-    ByteSlice nibs(key_hash.h, 32);
-    return root.unwrap()->delete_account(&key_hash, new_block_id, 0);
+    return root.unwrap()->create_account(&key_hash, block_id, 0);
+}
+
+int Ledger::delete_account(
+    ByteSlice &key, 
+    uint16_t block_id
+) {
+    Hash key_hash;
+    derive_hash(key_hash.h, key);
+    key_hash.h[32-1] = 0;
+
+    if (!in_shard(key_hash)) return NOT_IN_SHARD;
+
+    Result<Node_ptr, int> root = get_root(block_id);
+    if (root.is_err()) return root.unwrap_err();
+
+    return root.unwrap()->delete_account(&key_hash, block_id, 0);
 
 }

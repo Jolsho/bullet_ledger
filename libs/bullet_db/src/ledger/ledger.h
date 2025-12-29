@@ -83,18 +83,26 @@ public:
 
     bool in_shard(const Hash hash);
 
-    Result<Node_ptr, int> get_root(uint16_t block_id);
+    Result<Node_ptr, int> get_root(
+        uint16_t block_id,
+        uint16_t prev_block_id = 0
+    );
 
     int put(
         ByteSlice& key,
         ByteSlice& value,
         uint8_t idx,
-        uint16_t new_block_id
+        uint16_t block_id,
+        uint16_t prev_block_id = 0
+    );
+    int create_account(
+        ByteSlice& key,
+        uint16_t block_id
     );
 
     int delete_account(
         ByteSlice &key, 
-        uint16_t new_block_id
+        uint16_t block_id
     );
 
     ~Ledger();

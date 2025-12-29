@@ -226,6 +226,7 @@ public:
 
         std::optional<size_t> matching = matching_path(key, i);
         if (matching.has_value()) return NOT_EXIST;
+        if (hash_is_zero(children_[key->h[31]])) return NOT_EXIST;
 
         Polynomial Fx(BRANCH_ORDER, ZERO_SK);
         for (int i{}; i < LEAF_ORDER; i++)
@@ -243,37 +244,79 @@ public:
     int put(
         const Hash* key,
         const Hash* val_hash,
-        uint16_t new_block_id,
+        uint16_t block_id,
         int i
     ) override {
         if (key->h[31] == 0) return LEAF_IDX_ZERO;
 
         std::optional<size_t> matching = matching_path(key, i);
         if (!matching.has_value()) {
-            if (id_.get_block_id() != new_block_id) {
-                NodeId new_id (id_.get_node_id(), new_block_id);
+
+            if (id_.get_block_id() != block_id) {
+                NodeId new_id (id_.get_node_id(), block_id);
                 int cache_res = gadgets_->alloc.recache(&id_, &new_id);
                 if (cache_res != OK) return cache_res;
             }
 
-            insert_child(key->h[31], val_hash, new_block_id);
+            insert_child(key->h[31], val_hash, block_id);
 
             return OK;
         }
+
+        return NOT_EXIST;
+    }
+
+    int remove(
+        const Hash* key,
+        uint16_t block_id,
+        int i
+    ) override {
+
+        std::optional<size_t> matching = matching_path(key, i);
+        if (matching.has_value()) return NOT_EXIST;
+
+        byte nib = key->h[32];
+        if (!hash_is_zero(children_[nib])) {
+
+
+            if (id_.get_block_id() != block_id) {
+                NodeId new_id (id_.get_node_id(), block_id);
+                int cache_res = gadgets_->alloc.recache(&id_, &new_id);
+                if (cache_res != OK) return cache_res;
+            }
+
+            if (!hash_is_zero(children_[nib])) count_--;
+
+            // remove child
+            children_[nib] = ZERO_HASH;
+
+            return OK;
+        }
+
+        return NOT_EXIST;
+    }
+
+    inline int create_account(
+        const Hash* key,
+        uint16_t block_id, 
+        int i
+    ) override { 
+        std::optional<size_t> matching = matching_path(key, i);
+        if (!matching.has_value()) return ALREADY_EXISTS; // Already Exists
 
         // Each character of a shared key path allocates a branch.
         // each branch refrences the next through the associated path nibble
         size_t shared_path = matching.value();
         std::vector<std::shared_ptr<Branch_i>> branches(shared_path + 1);
 
-        NodeId new_id(id_.get_node_id(), new_block_id);
+        NodeId new_id(id_.get_node_id(), block_id);
 
         for (int k = 0; k <= shared_path; k++) {
 
             branches[k] = create_branch(gadgets_, &new_id, nullptr);
 
             if (k < shared_path) {
-                branches[k]->insert_child(key->h[i], new_block_id);
+                branches[k]->insert_child(key->h[i], block_id);
 
                 new_id.set_node_id(new_id.derive_child_id(key->h[i++]));
             }
@@ -286,12 +329,11 @@ public:
         new_id.set_node_id(new_id.derive_child_id(new_nib));
 
         auto leaf = create_leaf(gadgets_, &new_id, nullptr);
-        leaf->set_path(key, new_block_id);
-        leaf->insert_child(key->h[31], val_hash, new_block_id);
+        leaf->set_path(key, block_id);
 
         gadgets_->alloc.cache_node(leaf);
 
-        branches.back()->insert_child(new_nib, new_block_id);
+        branches.back()->insert_child(new_nib, block_id);
 
 
 
@@ -308,7 +350,7 @@ public:
         int cache_res = gadgets_->alloc.recache(&id_, &new_id);
         if (cache_res != OK) return cache_res;
 
-        branches.back()->insert_child(path_.h[i], new_block_id);
+        branches.back()->insert_child(path_.h[i], block_id);
 
 
 
@@ -319,47 +361,17 @@ public:
         return OK;
     }
 
-    int remove(
-        const Hash* key,
-        uint16_t new_block_id,
-        int i
-    ) override {
-
-        std::optional<size_t> matching = matching_path(key, i);
-        if (matching.has_value()) return NOT_EXIST;
-
-        byte nib = key->h[32];
-        if (!hash_is_zero(children_[nib])) {
-
-
-            if (id_.get_block_id() != new_block_id) {
-                NodeId new_id (id_.get_node_id(), new_block_id);
-                int cache_res = gadgets_->alloc.recache(&id_, &new_id);
-                if (cache_res != OK) return cache_res;
-            }
-
-            if (!hash_is_zero(children_[nib])) count_--;
-
-            // remove child
-            children_[nib] = ZERO_HASH;
-
-            return OK;
-        }
-
-        return NOT_EXIST;
-    }
-
     inline int delete_account(
         const Hash* key,
-        uint16_t new_block_id,
+        uint16_t block_id,
         int i
     ) override {
 
         std::optional<size_t> matching = matching_path(key, i);
         if (matching.has_value()) return NOT_EXIST;
 
-        if (id_.get_block_id() != new_block_id) {
-            NodeId new_id (id_.get_node_id(), new_block_id);
+        if (id_.get_block_id() != block_id) {
+            NodeId new_id (id_.get_node_id(), block_id);
             int cache_res = gadgets_->alloc.recache(&id_, &new_id);
             if (cache_res != OK) return cache_res;
         }
@@ -504,6 +516,13 @@ public:
         } else {
             // if have no children
             if (should_delete()) return DELETED;
+
+            uint16_t prev_block_id = id_.get_block_id();
+            id_.set_block_id(0);
+            
+            gadgets_->alloc.persist_node(this);
+
+            id_.set_block_id(prev_block_id);
         }
         return OK;
     }

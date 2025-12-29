@@ -245,7 +245,7 @@ public:
     int put(
         const Hash* key, 
         const Hash* val_hash,
-        uint16_t new_block_id,
+        uint16_t block_id,
         int i
     ) override {
 
@@ -253,49 +253,28 @@ public:
         if (const NodeId* next_id = get_next_id(nib)) {
             Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
             if (res.is_ok()) {
-                Node_ptr n = res.unwrap();
 
-                int res = n->put(key, val_hash, new_block_id, ++i);
-                if (res == OK) {
+                int rc = res.unwrap()->put(key, val_hash, block_id, ++i);
+                if (rc != OK) return rc;
 
-                    if (id_.get_block_id() != new_block_id) {
-                        NodeId new_id(id_.get_node_id(), new_block_id);
-                        int cache_res = gadgets_->alloc.recache(&id_, &new_id);
-                        if (cache_res != OK) return cache_res;
-                    }
+                if (id_.get_block_id() != block_id) {
+                    NodeId new_id(id_.get_node_id(), block_id);
+                    int cache_res = gadgets_->alloc.recache(&id_, &new_id);
+                    if (cache_res != OK) return cache_res;
+                }
 
-                    insert_child(nib, new_block_id);
+                insert_child(nib, block_id);
 
-                    return OK;
+                return OK;
 
-                } else return PUT_ERR;
             } else return res.unwrap_err();
-
-        } else {
-
-            // create and fill leaf
-            NodeId leaf_id(id_.derive_child_id(nib), new_block_id);
-            auto leaf = create_leaf(gadgets_, &leaf_id, nullptr);
-            leaf->set_path(key, new_block_id);
-            leaf->insert_child(key->h[31], val_hash, new_block_id);
-
-            gadgets_->alloc.cache_node(leaf);
-
-            if (id_.get_block_id() != new_block_id) {
-                NodeId new_id (id_.get_node_id(), new_block_id);
-                int cache_res = gadgets_->alloc.recache(&id_, &new_id);
-                if (cache_res != OK) return cache_res;
-            }
-
-            insert_child(nib, new_block_id);
         }
-
-        return OK;
+        return NOT_EXIST;
     }
 
     int remove(
         const Hash* key,
-        uint16_t new_block_id, 
+        uint16_t block_id, 
         int i
     ) override {
         byte nib = key->h[i];
@@ -304,12 +283,12 @@ public:
             if (res.is_ok()) {
                 Node_ptr n = res.unwrap();
 
-                int res = n->remove(key, new_block_id, ++i);
+                int res = n->remove(key, block_id, ++i);
                 if (res == DELETED) {
 
                     if (!scalar_is_zero(children_[nib])) {
 
-                        child_block_ids_[nib] = new_block_id;
+                        child_block_ids_[nib] = block_id;
                         children_[nib] = ZERO_SK;
                         count_--;
 
@@ -317,12 +296,12 @@ public:
 
                 } else if (res == OK) {
 
-                    child_block_ids_[nib] = new_block_id;
+                    child_block_ids_[nib] = block_id;
 
                 } else return res;
 
-                if (id_.get_block_id() != new_block_id) {
-                    NodeId new_id (id_.get_node_id(), new_block_id);
+                if (id_.get_block_id() != block_id) {
+                    NodeId new_id (id_.get_node_id(), block_id);
                     int cache_res = gadgets_->alloc.recache(&id_, &new_id);
                     if (cache_res != 0) return cache_res;
                 }
@@ -333,12 +312,46 @@ public:
         return NOT_EXIST;
     }
 
-    inline int delete_account(
+    inline int create_account(
         const Hash* key,
-        uint16_t new_block_id, 
+        uint16_t block_id, 
         int i
     ) override { 
-        return remove(key, new_block_id, i); 
+        byte nib = key->h[i];
+        if (const NodeId* next_id = get_next_id(nib)) {
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
+            if (res.is_ok()) {
+
+                int rc = res.unwrap()->create_account(key, block_id, ++i);
+                if (rc != OK) return rc;
+
+            } else return res.unwrap_err();
+
+        } else {
+
+            // create and fill leaf
+            NodeId leaf_id(id_.derive_child_id(nib), block_id);
+            auto leaf = create_leaf(gadgets_, &leaf_id, nullptr);
+            leaf->set_path(key, block_id);
+            gadgets_->alloc.cache_node(leaf);
+        }
+
+        if (id_.get_block_id() != block_id) {
+            NodeId new_id (id_.get_node_id(), block_id);
+            int cache_res = gadgets_->alloc.recache(&id_, &new_id);
+            if (cache_res != OK) return cache_res;
+        }
+        insert_child(nib, block_id);
+
+        return OK;
+    }
+
+    inline int delete_account(
+        const Hash* key,
+        uint16_t block_id, 
+        int i
+    ) override { 
+        return remove(key, block_id, i); 
     }
 
 
@@ -455,9 +468,15 @@ public:
             gadgets_->alloc.cache_node(new_self);
 
         } else {
-
             // if have no children
             if (should_delete()) return DELETED;
+
+            uint16_t prev_block_id = id_.get_block_id();
+            id_.set_block_id(0);
+            
+            gadgets_->alloc.persist_node(this);
+
+            id_.set_block_id(prev_block_id);
         }
 
         return OK;
