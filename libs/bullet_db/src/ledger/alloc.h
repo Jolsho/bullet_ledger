@@ -21,9 +21,6 @@
 #include "db.h"
 #include "lru.h"
 #include "result.h"
-#include <memory>
-#include <shared_mutex>
-#include <string>
 
 struct Gadgets;
 

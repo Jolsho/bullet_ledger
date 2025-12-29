@@ -18,14 +18,8 @@
 
 #include "fft.h"
 #include "branch.h"
-#include "hashing.h"
-#include "polynomial.h"
 #include "helpers.h"
 #include "leaf.h"
-#include "state_types.h"
-#include <cstdio>
-#include <cstring>
-#include <memory>
 
 class Branch : public Branch_i {
 private:
@@ -45,27 +39,43 @@ public:
     Branch(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff) :
         id_(id),
         tmp_id_(0, 0),
-        children_(BRANCH_ORDER), 
-        child_block_ids_(BRANCH_ORDER), 
+        children_(BRANCH_ORDER, ZERO_SK), 
+        child_block_ids_(BRANCH_ORDER, {}), 
         commit_{blst_p1()}, 
         count_{},
         gadgets_{gadgets}
     {
-        for (auto &c: children_) c = ZERO_SK;
         if (buff == nullptr) { return; }
 
-        byte* cursor = buff->data(); cursor++;
+        const size_t NIB_SIZE = sizeof(byte);
+        const size_t CHILD_SIZE = sizeof(children_[0]);
+        const size_t BLOCK_ID_SIZE = sizeof(child_block_ids_[0]);
 
-        id_.from_bytes(cursor); cursor += id_.size();
+        byte* cursor = buff->data(); 
+        cursor++;
 
-        commit_ = p1_from_bytes(cursor); cursor += 48;
+        id_.from_bytes(cursor); 
+        cursor += id_.size();
 
-        for (int i{}; i < BRANCH_ORDER; i++) {
-            blst_scalar_from_le_bytes(&children_[i], cursor, 32);
-            cursor += 32;
+        commit_ = p1_from_bytes(cursor); 
+        cursor += blst_p1_sizeof();
 
-            std::memcpy(&child_block_ids_[i], cursor, sizeof(uint16_t));
-            cursor += sizeof(uint16_t);
+        count_ = *cursor; 
+        cursor++;
+
+        uint8_t count2 = *cursor;
+        cursor++;
+
+        for (int i{}; i < count2; i++) {
+
+            byte nib = *cursor; 
+            cursor++;
+
+            blst_scalar_from_le_bytes(&children_[nib], cursor, CHILD_SIZE);
+            cursor += CHILD_SIZE;
+
+            std::memcpy(&child_block_ids_[nib], cursor, BLOCK_ID_SIZE);
+            cursor += BLOCK_ID_SIZE;
         }
     }
 
@@ -75,27 +85,63 @@ public:
     }
 
     std::vector<byte> to_bytes() const override {
+
+        const size_t NIB_SIZE = sizeof(byte);
+        const size_t CHILD_SIZE = sizeof(children_[0]);
+        const size_t BLOCK_ID_SIZE = sizeof(child_block_ids_[0]);
+
         std::vector<byte> buffer(
-            1 + 
+            sizeof(BRANCH) + 
             id_.size() + 
-            48 + 
-            (BRANCH_ORDER * (32 + sizeof(uint16_t))));
+            blst_p1_sizeof() + 
+            sizeof(count_) +
+            sizeof(count_) +
+            (BRANCH_ORDER * (
+                NIB_SIZE + 
+                CHILD_SIZE + 
+                BLOCK_ID_SIZE
+            ))
+        );
+
         byte* cursor = buffer.data();
 
-        *cursor = BRANCH; cursor++;
+        *cursor = BRANCH; 
+        cursor++;
 
-        std::memcpy(cursor, id_.get_full(), id_.size());
+        std::memcpy(cursor, id_.get_full(), id_.size()); 
         cursor += id_.size();
 
-        blst_p1_compress(cursor, &commit_); cursor += 48;
+        blst_p1_compress(cursor, &commit_); 
+        cursor += blst_p1_sizeof();
+
+        *cursor = count_; 
+        cursor++;
+
+        byte* count2_cursor = cursor;
+        cursor++;
+
+        uint8_t count2{};
 
         for (int i{}; i < BRANCH_ORDER; i++) {
-            std::memcpy(cursor, children_[i].b, 32);
-            cursor += 32;
+            if (scalar_is_zero(children_[i]) &&
+                child_block_ids_[i] == 0) continue;
 
-            std::memcpy(cursor, &child_block_ids_[i], sizeof(uint16_t));
-            cursor += sizeof(uint16_t);
+            count2++;
+
+            *cursor = i; 
+            cursor++;
+
+            std::memcpy(cursor, children_[i].b, CHILD_SIZE);
+            cursor += CHILD_SIZE;
+
+            std::memcpy(cursor, &child_block_ids_[i], BLOCK_ID_SIZE);
+            cursor += BLOCK_ID_SIZE;
         }
+
+        *count2_cursor = count2;
+
+        buffer.resize(cursor - buffer.data());
+
         return buffer;
     }
 
@@ -370,7 +416,7 @@ public:
         return OK;
     }
 
-    int justify() override {
+    int justify(const uint16_t block_id) override {
 
         // change all child block ids != 0 -> 0
         for (int i{}; i < BRANCH_ORDER; i++) {
@@ -383,28 +429,37 @@ public:
             Result<Node_ptr, int> res = gadgets_->alloc.load_node(&tmp_id_);
             if (res.is_err()) return res.unwrap_err();
 
-            int just_res = res.unwrap()->justify();
+            int just_res = res.unwrap()->justify(block_id);
             if (just_res != OK && just_res != DELETED) return just_res;
 
             child_block_ids_[i] = 0;
         }
 
-        // delete self under this id
-        auto del_res = gadgets_->alloc.delete_node(id_);
-        if (del_res.is_err()) return del_res.unwrap_err();
+        if (id_.get_block_id() == block_id) {
 
-        // if have no children
-        if (should_delete()) return DELETED;
+            // delete self under this id
+            auto del_res = gadgets_->alloc.delete_node(id_);
+            if (del_res.is_err()) return del_res.unwrap_err();
 
-        id_.set_block_id(0);
+            // if have no children
+            if (should_delete()) return DELETED;
 
-        Node_ptr new_self = del_res.unwrap();
-        new_self->set_id(id_);
+            id_.set_block_id(0);
 
-        // this* and new_self should point to same addr
-        assert(std::addressof(*this) == std::addressof(*new_self.get()));
+            Node_ptr new_self = del_res.unwrap();
+            new_self->set_id(id_);
 
-        gadgets_->alloc.cache_node(new_self);
+            // this* and new_self should point to same addr
+            assert(std::addressof(*this) == std::addressof(*new_self.get()));
+
+            gadgets_->alloc.cache_node(new_self);
+
+        } else {
+
+            // if have no children
+            if (should_delete()) return DELETED;
+        }
+
         return OK;
     }
 };

@@ -19,7 +19,6 @@
 #pragma once
 #include "settings.h"
 #include <optional>
-#include <vector>
  
 using Polynomial = std::vector<blst_scalar>;
 

@@ -20,7 +20,6 @@
 #include "kzg.h"
 #include "helpers.h"
 #include "polynomial.h"
-#include <cassert>
 
 // Returns C, Pi
 std::optional<blst_p1> prove_kzg(

@@ -18,8 +18,6 @@
 
 #pragma once
 #include "hashing.h"
-#include "blst.h"
-#include <cstdint>
 
 using Commitment = blst_p1;
 using Proof = blst_p1;

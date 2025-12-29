@@ -18,8 +18,6 @@
 
 #pragma once
 #include "alloc.h"
-#include "settings.h"
-#include <string>
 
 struct Gadgets {
     KZGSettings settings;

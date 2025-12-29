@@ -19,19 +19,15 @@
 #include "fft.h"
 #include "helpers.h"
 #include "leaf.h"
-#include "polynomial.h"
 #include "branch.h"
-#include "state_types.h"
-#include <cassert>
-#include <cstdio>
-#include <cstring>
-#include <memory>
 
 
 class Leaf : public Leaf_i {
 private:
     NodeId id_;
     Commitment commit_;
+
+    uint8_t count_;
     bool is_deleted_;
 
     std::vector<Hash> children_;
@@ -49,23 +45,47 @@ public:
         child_block_ids_(LEAF_ORDER, {}), 
         commit_{new_inf_p1()},
         is_deleted_{false},
-        gadgets_{gadgets}
+        gadgets_{gadgets},
+        count_{}
     {
         if (buff == nullptr) { return; }
 
-        byte* cursor = buff->data(); cursor++;
+        const size_t PATH_SIZE = sizeof(path_.h);
+        const size_t CHILD_SIZE = sizeof(children_[0]);
+        const size_t BLOCK_ID_SIZE = sizeof(child_block_ids_[0]);
+        const size_t COUNT_SIZE = sizeof(count_);
 
-        id_.from_bytes(cursor); cursor += id_.size();
+        byte* cursor = buff->data(); 
+        cursor++;
 
-        commit_ = p1_from_bytes(cursor); cursor += 48;
+        id_.from_bytes(cursor); 
+        cursor += id_.size();
 
-        std::memcpy(path_.h, cursor, 32); cursor += 32;
+        commit_ = p1_from_bytes(cursor); 
+        cursor += blst_p1_sizeof();
 
-        for (int i{}; i < LEAF_ORDER; i++) {
-            std::memcpy(children_[i].h, cursor, 32);
-            cursor += 32;
+        std::memcpy(path_.h, cursor, PATH_SIZE); 
+        cursor += PATH_SIZE;
+
+        std::memcpy(&count_, cursor, COUNT_SIZE); 
+        cursor += COUNT_SIZE;
+
+        uint8_t count2 = *cursor;
+        cursor++;
+
+        for (int i{}; i < count2; i++) {
+
+            byte nib = *cursor;
+            cursor++;
+
+            std::memcpy(children_[nib].h, cursor, CHILD_SIZE);
+            cursor += CHILD_SIZE;
+
+            std::memcpy(&child_block_ids_[nib], cursor, BLOCK_ID_SIZE);
+            cursor += BLOCK_ID_SIZE;
         }
     }
+
     ~Leaf() override { 
         if (should_delete()) return;
         gadgets_->alloc.persist_node(this); 
@@ -73,29 +93,67 @@ public:
 
     std::vector<byte> to_bytes() const override {
 
+        const size_t PATH_SIZE = sizeof(path_.h);
+        const size_t CHILD_SIZE = sizeof(children_[0]);
+        const size_t NIB_SIZE = sizeof(uint8_t);
+        const size_t BLOCK_ID_SIZE = sizeof(child_block_ids_[0]);
+
         std::vector<byte> buffer(
-            1 + 
+            sizeof(LEAF) + 
             id_.size() + 
-            48 + 
-            32 + 
-            (LEAF_ORDER * 32)
+            blst_p1_sizeof() + 
+            PATH_SIZE + 
+            sizeof(count_) +
+            sizeof(count_) +
+            (LEAF_ORDER * (
+                NIB_SIZE + 
+                CHILD_SIZE +
+                BLOCK_ID_SIZE
+            ))
         );
 
         byte* cursor = buffer.data();
 
-        *cursor = LEAF; cursor++;
+        *cursor = LEAF; 
+        cursor++;
 
         std::memcpy(cursor, id_.get_full(), id_.size());
         cursor += id_.size();
 
-        blst_p1_compress(cursor, &commit_); cursor += 48;
+        blst_p1_compress(cursor, &commit_); 
+        cursor += blst_p1_sizeof();
 
-        std::memcpy(cursor, path_.h, 32); cursor += 32;
+        std::memcpy(cursor, path_.h, PATH_SIZE); 
+        cursor += PATH_SIZE;
+
+        *cursor = count_; 
+        cursor++;
+
+        byte* count2_cursor = cursor;
+        cursor++;
+
+        uint8_t count2{};
 
         for (int i{}; i < LEAF_ORDER; i++) {
-            std::memcpy(cursor, children_[i].h, 32);
-            cursor += 32;
+            if (hash_is_zero(children_[i]) &&
+                child_block_ids_[i] == 0) continue;
+
+            count2++;
+
+            *cursor = i; 
+            cursor++;
+
+            std::memcpy(cursor, children_[i].h, CHILD_SIZE);
+            cursor += CHILD_SIZE;
+
+            std::memcpy(cursor, &child_block_ids_[i], BLOCK_ID_SIZE);
+            cursor += BLOCK_ID_SIZE;
         }
+
+        *count2_cursor = count2;
+
+        buffer.resize(cursor - buffer.data());
+
         return buffer;
     }
     
@@ -112,7 +170,7 @@ public:
 
     void set_path(const Hash* key, uint16_t block_id) override {
         std::memcpy(path_.h, key->h, 32);
-        // since last byte can be different just set to zero
+        // since last byte can be different just set to zeroleaf
         path_.h[31] = 0;
         insert_child(0, &path_, block_id);
     }
@@ -138,6 +196,7 @@ public:
         const Hash* val_hash, 
         const uint16_t block_id
     ) override {
+        if (hash_is_zero(children_[nib])) count_++;
         children_[nib] = *val_hash;
         child_block_ids_[nib] = block_id;
     }
@@ -279,6 +338,8 @@ public:
                 if (cache_res != OK) return cache_res;
             }
 
+            if (!hash_is_zero(children_[nib])) count_--;
+
             // remove child
             children_[nib] = ZERO_HASH;
 
@@ -357,7 +418,7 @@ public:
         return OK;
     }
 
-    int justify() override {
+    int justify(const uint16_t block_id) override {
         NodeId child_id_; 
         child_id_.set_block_id(0);
 
@@ -421,22 +482,29 @@ public:
             child_block_ids_[i] = 0;
         }
 
-        // delete self under this id
-        auto del_res = gadgets_->alloc.delete_node(id_);
-        if (del_res.is_err()) return del_res.unwrap_err();
+        if (id_.get_block_id() == block_id) {
 
-        // if have no children
-        if (should_delete()) return DELETED;
+            // delete self under this id
+            auto del_res = gadgets_->alloc.delete_node(id_);
+            if (del_res.is_err()) return del_res.unwrap_err();
 
-        id_.set_block_id(0);
+            // if have no children
+            if (should_delete()) return DELETED;
 
-        Node_ptr new_self = del_res.unwrap();
-        new_self->set_id(id_);
+            id_.set_block_id(0);
 
-        // this* and new_self should point to same addr
-        assert(std::addressof(*this) == std::addressof(*new_self.get()));
+            Node_ptr new_self = del_res.unwrap();
+            new_self->set_id(id_);
 
-        gadgets_->alloc.cache_node(new_self);
+            // this* and new_self should point to same addr
+            assert(std::addressof(*this) == std::addressof(*new_self.get()));
+
+            gadgets_->alloc.cache_node(new_self);
+
+        } else {
+            // if have no children
+            if (should_delete()) return DELETED;
+        }
         return OK;
     }
 };

@@ -17,7 +17,6 @@
  */
 
 #include "gadgets.h"
-#include <cassert>
 
 Gadgets_ptr init_gadgets(
     size_t degree, 

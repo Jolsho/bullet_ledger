@@ -19,11 +19,22 @@
 #pragma once
 #include "kzg.h"
 #include "ledger.h"
-#include "state_types.h"
 
-int finalize_block(Ledger &ledger, uint16_t block_id, Hash* out);
-int prune_block(Ledger &ledger, uint16_t block_id);
-int justify_block(Ledger &ledger, uint16_t block_id);
+int finalize_block(
+    Ledger &ledger, 
+    uint16_t block_id, 
+    Hash* out
+);
+
+int prune_block(
+    Ledger &ledger, 
+    uint16_t block_id
+);
+
+int justify_block(
+    Ledger &ledger, 
+    uint16_t block_id
+);
 
 int generate_proof(
     Ledger &ledger, 
@@ -32,6 +43,7 @@ int generate_proof(
     Hash& key_hash,
     uint16_t block_id
 );
+
 void derive_Zs_n_Ys(
     Ledger &ledger, 
     Hash& key_hash,
