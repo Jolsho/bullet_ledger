@@ -18,7 +18,9 @@
 
 #include "processing.h"
 #include "fft.h"
+#include "hashing.h"
 #include "helpers.h"
+#include "kzg.h"
 #include <future>
 
 // descends subtree & generates proofs and commitments.
@@ -112,7 +114,7 @@ int generate_proof(
     Ledger &ledger,
     std::vector<Commitment> &Cs, 
     std::vector<Proof> &Pis,
-    Hash &key_hash, 
+    const Hash &key_hash, 
     uint16_t block_id
 ) {
     std::vector<Scalar_vec> Fxs; 
@@ -176,10 +178,31 @@ int generate_proof(
     return res_atomic.load();
 }
 
+bool valid_proof(
+    Ledger &ledger,
+    std::vector<Commitment>* Cs,
+    std::vector<Proof>* Pis,
+    const Hash& key_hash,
+    const Hash& val_hash,
+    const uint8_t val_idx
+) {
+    std::vector<size_t> Zs;
+    std::vector<blst_scalar> Ys;
+
+    derive_Zs_n_Ys(ledger, key_hash, val_hash, Cs, Pis, &Zs, &Ys);
+
+    auto tag = ledger.get_gadgets()->settings.tag;
+    ByteSlice tag_slice(reinterpret_cast<byte*>(tag.data()), tag.size());
+    Hash base_hash;
+    derive_hash(base_hash.h, tag_slice);
+
+    return batch_verify(*Pis, *Cs, Zs, Ys, base_hash, ledger.get_gadgets()->settings);
+}
+
 void derive_Zs_n_Ys(
     Ledger &ledger,
-    Hash& key_hash,
-    Hash& val_hash,
+    const Hash& key_hash,
+    const Hash& val_hash,
     std::vector<Commitment>* Cs,
     std::vector<Proof>* Pis,
     std::vector<size_t>* Zs,

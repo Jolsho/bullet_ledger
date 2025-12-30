@@ -40,14 +40,23 @@ int generate_proof(
     Ledger &ledger, 
     std::vector<Commitment> &Cs,
     std::vector<Proof> &Pis,
-    Hash& key_hash,
+    const Hash& key_hash,
     uint16_t block_id
+);
+
+bool valid_proof(
+    Ledger &ledger,
+    std::vector<Commitment>* Cs,
+    std::vector<Proof>* Pis,
+    const Hash& key_hash,
+    const Hash& val_hash,
+    const uint8_t val_idx
 );
 
 void derive_Zs_n_Ys(
     Ledger &ledger, 
-    Hash& key_hash,
-    Hash& val_hash,
+    const Hash& key_hash,
+    const Hash& val_hash,
     std::vector<Commitment>* Cs,
     std::vector<Proof>* Pis,
     std::vector<size_t>* Zs,

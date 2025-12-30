@@ -19,13 +19,11 @@
 #pragma once
 #include <lmdb.h>
 #include <shared_mutex>
-#include <unordered_map>
 #include <vector>
 
 class BulletDB {
 public:
     MDB_env* env_;
-    std::unordered_map<int, MDB_txn*> txns_;
     MDB_dbi dbi_;
     int count_;
     std::shared_mutex mux_;

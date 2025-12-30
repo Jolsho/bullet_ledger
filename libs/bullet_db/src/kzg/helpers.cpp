@@ -75,6 +75,16 @@ blst_p1 p1_from_bytes(const byte* buff) {
     blst_p1_from_affine(&commit, &commit_aff);
     return commit;
 }
+
+blst_p2 p2_from_bytes(const byte* buff) {
+    blst_p2_affine commit_aff;
+    blst_p2_uncompress(&commit_aff, buff);
+
+    blst_p2 commit;
+    blst_p2_from_affine(&commit, &commit_aff);
+    return commit;
+}
+
 inline bool fr_is_zero(const blst_fr &x) {
     return (x.l[0] | x.l[1] | x.l[2] | x.l[3]) == 0;
 }
