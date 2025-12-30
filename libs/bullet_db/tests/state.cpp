@@ -57,7 +57,10 @@ void main_state_trie() {
         int res = l.create_account(key, block_id);
         assert(res == OK);
 
-        res = l.put(key, value, idx, block_id);
+        Hash val_hash;
+        derive_hash(val_hash.h, value);
+
+        res = l.put(key, val_hash, idx, block_id);
         assert(res == OK);
         printf("INSERT %d, %d\n", i, res);
         i++;
@@ -115,10 +118,10 @@ void main_state_trie() {
     }
 
     ByteSlice rh{raw_hashes[0].h, sizeof(raw_hashes[0].h)};
-    Hash val_hash;
-    derive_hash(val_hash.h, rh);
+    Hash val_hash_tmp;
+    derive_hash(val_hash_tmp.h, rh);
 
-    Hash key_hash = val_hash;
+    Hash key_hash = val_hash_tmp;
 
     key_hash.h[31] = 32;
     res = generate_proof(l, Cs, Pis, key_hash, 0);
@@ -138,7 +141,7 @@ void main_state_trie() {
 
     res = generate_proof(l, Cs, Pis, key_hash, 0);
     assert(res == OK);
-    assert(valid_proof(l, &Cs, &Pis, key_hash, val_hash, idx));
+    assert(valid_proof(l, &Cs, &Pis, key_hash, val_hash_tmp, idx));
     printf("SUCCESSFUL JUSTIFICATION \n");
 
 
@@ -153,7 +156,10 @@ void main_state_trie() {
     for (Hash h: raw_hashes) {
 
         ByteSlice key(h.h, 32);
-        ByteSlice val_hash(h.h, 32);
+        ByteSlice value(h.h, 32);
+
+        Hash val_hash;
+        derive_hash(val_hash.h, value);
 
         int res = l.put(key, val_hash, idx, block_id);
         printf("INSERT %d, %d\n", i, res);

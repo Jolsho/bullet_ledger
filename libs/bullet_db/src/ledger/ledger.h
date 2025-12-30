@@ -87,13 +87,34 @@ public:
         uint16_t prev_block_id = 0
     );
 
-    int put(
-        const ByteSlice& key,
+    int store_value( 
+        const Hash &key_hash,
         const ByteSlice& value,
+        uint16_t block_id
+    );
+
+    int delete_value( 
+        const Hash &key_hash,
+        uint16_t block_id
+    );
+
+    int put(
+        const ByteSlice &key, 
+        const Hash &val_hash, 
         uint8_t idx,
         uint16_t block_id,
         uint16_t prev_block_id = 0
     );
+
+    int replace(
+        const ByteSlice &key, 
+        const Hash &val_hash, 
+        const Hash &prev_val_hash, 
+        uint8_t idx,
+        uint16_t block_id,
+        uint16_t prev_block_id = 0
+    );
+
     int create_account(
         const ByteSlice& key,
         uint16_t block_id
@@ -103,6 +124,7 @@ public:
         const ByteSlice &key, 
         uint16_t block_id
     );
+
 
     ~Ledger();
 };

@@ -18,6 +18,7 @@
 
 #include "ledger.h"
 #include "branch.h"
+#include "state_types.h"
 
 Ledger::Ledger(
     std::string path, 
@@ -88,10 +89,59 @@ bool Ledger::in_shard(const Hash h) {
     return matched == path_size;
 }
 
+int Ledger::store_value( 
+    const Hash &key_hash,
+    const ByteSlice& value,
+    uint16_t block_id
+) {
+
+    // determine leaf value node id and then insert value with block_id
+    uint64_t node_id = 1;
+    for (int i{}; i < 6; i++) {
+        node_id *= BRANCH_ORDER;
+        node_id += key_hash.h[i];
+    }
+
+    NodeId id(node_id, block_id);
+
+    void* trx = gadgets_->alloc.db_.start_txn();
+    int rc = gadgets_->alloc.db_.put(
+        id.get_full(), id.size(), 
+        value.data(), value.size(), 
+        trx
+    );
+    gadgets_->alloc.db_.end_txn(trx, rc);
+
+    return rc;
+}
+
+int Ledger::delete_value( 
+    const Hash &key_hash,
+    uint16_t block_id
+) {
+
+    // determine leaf value node id and then insert value with block_id
+    uint64_t node_id = 1;
+    for (int i{}; i < 6; i++) {
+        node_id *= BRANCH_ORDER;
+        node_id += key_hash.h[i];
+    }
+
+    NodeId id(node_id, block_id);
+
+    void* trx = gadgets_->alloc.db_.start_txn();
+    int rc = gadgets_->alloc.db_.del(
+        id.get_full(), id.size(), 
+        trx
+    );
+    gadgets_->alloc.db_.end_txn(trx, rc);
+    if (rc == MDB_NOTFOUND) return NOT_EXIST;
+    return rc;
+}
 
 int Ledger::put(
     const ByteSlice &key, 
-    const ByteSlice &value, 
+    const Hash &val_hash, 
     uint8_t idx,
     uint16_t block_id,
     uint16_t prev_block_id
@@ -100,41 +150,40 @@ int Ledger::put(
     derive_hash(key_hash.h, key);
     key_hash.h[32-1] = idx;
 
-    Hash val_hash;
-    derive_hash(val_hash.h, value);
+    if (!in_shard(key_hash)) return NOT_IN_SHARD;
+
+    Result<Node_ptr, int> root = get_root(block_id, prev_block_id);
+    if (root.is_err()) return root.unwrap_err();
+
+    return root.unwrap()->put(
+        &key_hash, &val_hash, 
+        block_id, 0
+    );
+}
+
+int Ledger::replace(
+    const ByteSlice &key, 
+    const Hash &val_hash, 
+    const Hash &prev_val_hash, 
+    uint8_t idx,
+    uint16_t block_id,
+    uint16_t prev_block_id
+) {
+    Hash key_hash;
+    derive_hash(key_hash.h, key);
+    key_hash.h[32-1] = idx;
 
     if (!in_shard(key_hash)) return NOT_IN_SHARD;
 
     Result<Node_ptr, int> root = get_root(block_id, prev_block_id);
     if (root.is_err()) return root.unwrap_err();
 
-    int res = root.unwrap()->put(
-        &key_hash, &val_hash, 
+    return root.unwrap()->replace(
+        &key_hash, &val_hash, &prev_val_hash,
         block_id, 0
     );
-
-    if (res == OK) {
-        // determine leaf value node id and then insert value with block_id
-        uint64_t node_id = 1;
-        for (int i{}; i < 6; i++) {
-            node_id *= BRANCH_ORDER;
-            node_id += key_hash.h[i];
-        }
-
-        NodeId id(node_id, block_id);
-
-        void* trx = gadgets_->alloc.db_.start_txn();
-        res = gadgets_->alloc.db_.put(
-            id.get_full(), id.size(), 
-            value.data(), value.size(), 
-            trx
-        );
-        gadgets_->alloc.db_.end_txn(trx, res);
-    }
-
-    
-    return res;
 }
+
 
 int Ledger::create_account(
     const ByteSlice &key, 
@@ -166,5 +215,4 @@ int Ledger::delete_account(
     if (root.is_err()) return root.unwrap_err();
 
     return root.unwrap()->delete_account(&key_hash, block_id, 0);
-
 }

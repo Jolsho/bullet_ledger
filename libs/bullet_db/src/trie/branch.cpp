@@ -225,15 +225,15 @@ public:
         int i
     ) override {
 
-        if (const NodeId* next_id = get_next_id(key->h[i])) {
-            Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
-            if (res.is_ok()) {
+        byte nib = key->h[i];
+        const NodeId* next_id = get_next_id(nib);
+        if (!next_id) return NOT_EXIST;
 
-                int rc = res.unwrap()->generate_proof(key, Fxs, Cs, ++i);
-                if (rc != OK) return rc;
+        Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
+        if (res.is_err()) return res.unwrap_err();
 
-            } else return res.unwrap_err();
-        } else return NOT_EXIST;
+        int rc = res.unwrap()->generate_proof(key, Fxs, Cs, ++i);
+        if (rc != OK) return rc;
 
         Polynomial Fx(children_);
         Fxs.push_back(Fx);
@@ -248,28 +248,35 @@ public:
         uint16_t block_id,
         int i
     ) override {
+        return replace(key, val_hash, nullptr, block_id, i);
+    }
 
+    int replace(
+        const Hash* key,
+        const Hash* val_hash,
+        const Hash* prev_val_hash,
+        uint16_t block_id,
+        int i
+    ) override {
         byte nib = key->h[i];
-        if (const NodeId* next_id = get_next_id(nib)) {
-            Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
-            if (res.is_ok()) {
+        const NodeId* next_id = get_next_id(nib);
+        if (!next_id) return NOT_EXIST;
 
-                int rc = res.unwrap()->put(key, val_hash, block_id, ++i);
-                if (rc != OK) return rc;
+        Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
+        if (res.is_err()) return res.unwrap_err();
 
-                if (id_.get_block_id() != block_id) {
-                    NodeId new_id(id_.get_node_id(), block_id);
-                    int cache_res = gadgets_->alloc.recache(&id_, &new_id);
-                    if (cache_res != OK) return cache_res;
-                }
+        int rc = res.unwrap()->replace(key, val_hash, prev_val_hash, block_id, ++i);
+        if (rc != OK) return rc;
 
-                insert_child(nib, block_id);
-
-                return OK;
-
-            } else return res.unwrap_err();
+        if (id_.get_block_id() != block_id) {
+            NodeId new_id(id_.get_node_id(), block_id);
+            int cache_res = gadgets_->alloc.recache(&id_, &new_id);
+            if (cache_res != OK) return cache_res;
         }
-        return NOT_EXIST;
+
+        insert_child(nib, block_id);
+
+        return OK;
     }
 
     int remove(
@@ -278,38 +285,39 @@ public:
         int i
     ) override {
         byte nib = key->h[i];
-        if (const NodeId* next_id = get_next_id(nib)) {
-            Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
-            if (res.is_ok()) {
-                Node_ptr n = res.unwrap();
 
-                int res = n->remove(key, block_id, ++i);
-                if (res == DELETED) {
+        const NodeId* next_id = get_next_id(nib);
+        if (!next_id) return NOT_EXIST;
 
-                    if (!scalar_is_zero(children_[nib])) {
+        Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
+        if (res.is_err()) return res.unwrap_err();
 
-                        child_block_ids_[nib] = block_id;
-                        children_[nib] = ZERO_SK;
-                        count_--;
+        Node_ptr n = res.unwrap();
 
-                    } else return ALREADY_DELETED;
+        int rc = n->remove(key, block_id, ++i);
+        if (rc == DELETED) {
 
-                } else if (res == OK) {
+            if (!scalar_is_zero(children_[nib])) {
 
-                    child_block_ids_[nib] = block_id;
+                child_block_ids_[nib] = block_id;
+                children_[nib] = ZERO_SK;
+                count_--;
 
-                } else return res;
+            } else return ALREADY_DELETED;
 
-                if (id_.get_block_id() != block_id) {
-                    NodeId new_id (id_.get_node_id(), block_id);
-                    int cache_res = gadgets_->alloc.recache(&id_, &new_id);
-                    if (cache_res != 0) return cache_res;
-                }
+        } else if (rc == OK) {
 
-                return OK;
-            }
+            child_block_ids_[nib] = block_id;
+
+        } else return rc;
+
+        if (id_.get_block_id() != block_id) {
+            NodeId new_id (id_.get_node_id(), block_id);
+            int cache_res = gadgets_->alloc.recache(&id_, &new_id);
+            if (cache_res != 0) return cache_res;
         }
-        return NOT_EXIST;
+
+        return OK;
     }
 
     inline int create_account(
@@ -318,14 +326,16 @@ public:
         int i
     ) override { 
         byte nib = key->h[i];
-        if (const NodeId* next_id = get_next_id(nib)) {
+        const NodeId* next_id = get_next_id(nib);
+
+        if (next_id) {
+
             Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
-            if (res.is_ok()) {
+            if (res.is_err()) return res.unwrap_err();
 
-                int rc = res.unwrap()->create_account(key, block_id, ++i);
-                if (rc != OK) return rc;
+            int rc = res.unwrap()->create_account(key, block_id, ++i);
+            if (rc != OK) return rc;
 
-            } else return res.unwrap_err();
 
         } else {
 
@@ -341,6 +351,7 @@ public:
             int cache_res = gadgets_->alloc.recache(&id_, &new_id);
             if (cache_res != OK) return cache_res;
         }
+
         insert_child(nib, block_id);
 
         return OK;

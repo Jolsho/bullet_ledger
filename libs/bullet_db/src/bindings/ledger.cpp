@@ -16,15 +16,12 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "ledger.h"
 #include <sys/random.h>
 #include "helpers.h"
-#include "processing.h"
 
-extern "C" {
-    extern const int SECRET_SIZE = 32;
-}
-
-void* ledger_open(
+int ledger_open(
+    void** out,
     const char* path, 
     size_t cache_size,
     size_t map_size,
@@ -32,6 +29,9 @@ void* ledger_open(
     unsigned char* secret,
     size_t secret_size
 ) {
+    if (!cache_size || !map_size) return ZERO_PARAMETER;
+    if (!path || !tag) return NULL_PARAMETER;
+
     blst_scalar s;
     if (secret) {
 
@@ -46,7 +46,10 @@ void* ledger_open(
         hash_to_sk(&s, random);
         std::memset(random, 0, 32);
     }
-    return new Ledger(path, cache_size, map_size, tag, s);
+
+    *out = new Ledger(path, cache_size, map_size, tag, s);
+
+    return OK;
 }
 
 int ledger_get_SRS(
@@ -54,6 +57,7 @@ int ledger_get_SRS(
     void** out,
     size_t* out_size
 ) {
+    if (!ledger) return NULL_PARAMETER;
     auto l = reinterpret_cast<Ledger*>(ledger);
 
     size_t EXPECTED_SIZE = (
@@ -88,6 +92,8 @@ int ledger_set_SRS(
     const unsigned char *setup, 
     size_t setup_size
 ) {
+    if (!ledger || !setup) return NULL_PARAMETER;
+
     auto l = reinterpret_cast<Ledger*>(ledger);
 
     size_t EXPECTED_SIZE = (BRANCH_ORDER * blst_p1_sizeof() * 2);
@@ -115,196 +121,3 @@ int ledger_set_SRS(
 
     return 0;
 }
-
-
-int ledger_put(
-    void* ledger, 
-    const unsigned char* key,
-    size_t key_size,
-    const unsigned char* value,
-    size_t value_size,
-    uint8_t val_idx,
-    uint16_t block_id,
-    uint16_t prev_block_id = 0
-) {
-    auto l = reinterpret_cast<Ledger*>(ledger);
-
-    const ByteSlice key_slice((byte*)key, key_size);
-    const ByteSlice value_slice((byte*)key, key_size);
-
-    return l->put(key_slice, value_slice, val_idx, block_id, prev_block_id);
-}
-
-int ledger_remove(
-    void* ledger, 
-    const unsigned char* key,
-    size_t key_size,
-    uint8_t val_idx,
-    uint16_t block_id,
-    uint16_t prev_block_id = 0
-) {
-    auto l = reinterpret_cast<Ledger*>(ledger);
-
-    const ByteSlice key_slice((byte*)key, key_size);
-
-    byte zeros[32];
-    std::memset(zeros, 0, 32);
-    const ByteSlice zero_slice(zeros, 32);
-
-    return l->put(key_slice, zero_slice, val_idx, block_id, prev_block_id);
-}
-
-int ledger_finalize(
-    void* ledger, 
-    uint16_t block_id, 
-    void** out,
-    size_t* out_size
-) {
-    Hash h;
-    int rc = finalize_block(*(Ledger*)ledger, block_id, &h);
-    if (rc == 0) {
-        const size_t HASH_SIZE = sizeof(h.h);
-
-        *out = malloc(HASH_SIZE);
-        *out_size = HASH_SIZE;
-
-        std::memcpy(*out, h.h, HASH_SIZE);
-    }
-    return rc;
-}
-
-int ledger_prune(void* ledger,  uint16_t block_id) {
-    auto l = reinterpret_cast<Ledger*>(ledger);
-    return prune_block(*l, block_id);
-}
-
-int ledger_justify(void* ledger,  uint16_t block_id) {
-    auto l = reinterpret_cast<Ledger*>(ledger);
-    return justify_block(*l, block_id);
-}
-
-int ledger_create_account(
-    void* ledger,
-    uint16_t block_id,
-    const unsigned char* key,
-    size_t key_size
-) {
-    auto l = reinterpret_cast<Ledger*>(ledger);
-    const ByteSlice key_slice((byte*)key, key_size);
-    return l->create_account(key_slice, block_id);
-}
-
-int ledger_delete_account(
-    void* ledger,
-    uint16_t block_id,
-    const unsigned char* key,
-    size_t key_size
-) {
-    auto l = reinterpret_cast<Ledger*>(ledger);
-    const ByteSlice key_slice((byte*)key, key_size);
-    return l->delete_account(key_slice, block_id);
-}
-
-int ledger_generate_existence_proof(
-    void* ledger, 
-    uint16_t block_id, 
-
-    const unsigned char* key,
-    size_t key_size,
-    uint8_t val_idx,
-
-    void** out,
-    size_t* out_size
-) {
-    auto l = reinterpret_cast<Ledger*>(ledger);
-
-    const ByteSlice key_slice((byte*)key, key_size);
-
-    Hash key_hash;
-    derive_hash(key_hash.h, key_slice);
-    key_hash.h[31] = val_idx;
-
-    std::vector<Commitment> Cs;
-    std::vector<Proof> Pis;
-
-    int rc = generate_proof(*l, Cs, Pis, key_hash, block_id);
-    if (rc != 0) return rc;
-
-    size_t total_size;
-    total_size += sizeof(uint8_t);
-    total_size += (Cs.size() * sizeof(Commitment));
-    total_size += sizeof(uint8_t);
-    total_size += (Pis.size() * sizeof(Proof));
-
-    *out = malloc(total_size);
-    *out_size = total_size;
-
-    auto cursor = reinterpret_cast<byte*>(*out);
-
-    *cursor = static_cast<uint8_t>(Cs.size());
-    for (auto &commit: Cs) {
-        blst_p1_compress(cursor, &commit);
-        cursor += sizeof(Commitment);
-    }
-
-    *cursor = static_cast<uint8_t>(Pis.size());
-    for (auto &proof: Pis) {
-        blst_p1_compress(cursor, &proof);
-        cursor += sizeof(Proof);
-    }
-
-    return 0;
-}
-
-int ledger_validate_proof(
-    void* ledger, 
-    uint16_t block_id, 
-
-    const unsigned char* key,
-    size_t key_size,
-
-    const unsigned char* value_hash,
-    size_t value_hash_size,
-    uint8_t val_idx,
-
-    const unsigned char* proof,
-    size_t proof_size
-) {
-    auto l = reinterpret_cast<Ledger*>(ledger);
-
-    auto cursor = proof;
-
-    uint8_t Cs_size = *cursor;
-    cursor++;
-    std::vector<Commitment> Cs(Cs_size);;
-    for (auto &commit: Cs) {
-        commit = p1_from_bytes(cursor);
-        cursor += sizeof(Commitment);
-    }
-
-
-    uint8_t Pis_size = *cursor;
-    cursor++;
-    std::vector<Proof> Pis(Pis_size);
-    for (auto &proof: Pis) {
-        proof = p1_from_bytes(cursor);
-        cursor += sizeof(Proof);
-    }
-
-
-    const ByteSlice key_slice((byte*)key, key_size);
-    Hash key_hash;
-    derive_hash(key_hash.h, key_slice);
-    key_hash.h[31] = val_idx;
-
-    Hash val_hash;
-    std::memcpy(val_hash.h, value_hash, value_hash_size);
-
-    std::vector<size_t> Zs;
-    std::vector<blst_scalar> Ys;
-
-    derive_Zs_n_Ys(*l, key_hash, val_hash, &Cs, &Pis, &Zs, &Ys);
-
-    return valid_proof(*l, &Cs, &Pis, key_hash, val_hash, val_idx);
-}
-

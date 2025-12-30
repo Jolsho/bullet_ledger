@@ -21,7 +21,8 @@
 #include <cstdint>
 
 extern "C" {
-    void* ledger_open(
+    int ledger_open(
+        void** out,
         const char* path, 
         size_t cache_size,
         size_t map_size,
@@ -42,12 +43,40 @@ extern "C" {
         size_t setup_size
     );
 
+    int ledger_create_account(
+        void* ledger,
+        uint16_t block_id,
+        const unsigned char* key,
+        size_t key_size
+    );
+
+    int ledger_delete_account(
+        void* ledger,
+        uint16_t block_id,
+        const unsigned char* key,
+        size_t key_size
+    );
+
+
     int ledger_put(
         void* ledger, 
         const unsigned char* key,
         size_t key_size,
-        const unsigned char* value,
-        size_t value_size,
+        const unsigned char* value_hash,
+        size_t value_hash_size,
+        uint8_t val_idx,
+        uint16_t block_id,
+        uint16_t prev_block_id = 0
+    );
+
+    int replace(
+        void* ledger, 
+        const unsigned char* key,
+        size_t key_size,
+        const unsigned char* value_hash,
+        size_t value_hash_size,
+        const unsigned char* prev_value_hash,
+        size_t prev_value_hash_size,
         uint8_t val_idx,
         uint16_t block_id,
         uint16_t prev_block_id = 0
@@ -79,20 +108,6 @@ extern "C" {
         uint16_t block_id
     );
 
-    int ledger_create_account(
-        void* ledger,
-        uint16_t block_id,
-        const unsigned char* key,
-        size_t key_size
-    );
-
-    int ledger_delete_account(
-        void* ledger,
-        uint16_t block_id,
-        const unsigned char* key,
-        size_t key_size
-    );
-
     int ledger_generate_existence_proof(
         void* ledger, 
         uint16_t block_id, 
@@ -115,5 +130,21 @@ extern "C" {
 
         const unsigned char* proof,
         size_t proof_size
+    );
+
+    int ledger_db_store_value(
+        void* ledger, 
+        const unsigned char* key_hash,
+        size_t key_hash_size,
+        const unsigned char* value,
+        size_t value_size,
+        uint16_t block_id
+    );
+
+    int ledger_db_delete_value(
+        void* ledger, 
+        const unsigned char* key_hash,
+        size_t key_hash_size,
+        uint16_t block_id
     );
 }

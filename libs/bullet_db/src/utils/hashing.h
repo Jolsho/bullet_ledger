@@ -26,6 +26,10 @@
 
 struct Hash {
     byte h[32];
+
+    bool operator==(const Hash& other) const noexcept {
+        return std::memcmp(h, other.h, sizeof(h)) == 0;
+    }
 };
 
 using ByteSlice = std::span<byte>;

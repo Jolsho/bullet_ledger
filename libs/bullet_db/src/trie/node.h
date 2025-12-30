@@ -53,6 +53,14 @@ public:
         int i
     ) = 0;
 
+    virtual int replace(
+        const Hash* key,
+        const Hash* val_hash,
+        const Hash* prev_val_hash,
+        uint16_t block_id,
+        int i
+    ) = 0;
+
     virtual int remove(
         const Hash* key,
         uint16_t block_id,

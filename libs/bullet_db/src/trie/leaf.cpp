@@ -247,24 +247,40 @@ public:
         uint16_t block_id,
         int i
     ) override {
-        if (key->h[31] == 0) return LEAF_IDX_ZERO;
+        return replace(key, val_hash, nullptr, block_id, i);
+    }
+
+    int replace(
+        const Hash* key,
+        const Hash* val_hash,
+        const Hash* prev_val_hash,
+        uint16_t block_id,
+        int i
+    ) override {
+        byte nib = key->h[31];
+
+        if (nib == 0) return LEAF_IDX_ZERO;
 
         std::optional<size_t> matching = matching_path(key, i);
-        if (!matching.has_value()) {
+        if (matching.has_value()) return NOT_EXIST;
 
-            if (id_.get_block_id() != block_id) {
-                NodeId new_id (id_.get_node_id(), block_id);
-                int cache_res = gadgets_->alloc.recache(&id_, &new_id);
-                if (cache_res != OK) return cache_res;
+        if (prev_val_hash) {
+            if (children_[nib] != *prev_val_hash) {
+                return INVALID_PREV_VAL_HASH;
             }
-
-            insert_child(key->h[31], val_hash, block_id);
-
-            return OK;
         }
 
-        return NOT_EXIST;
+        if (id_.get_block_id() != block_id) {
+            NodeId new_id (id_.get_node_id(), block_id);
+            int cache_res = gadgets_->alloc.recache(&id_, &new_id);
+            if (cache_res != OK) return cache_res;
+        }
+
+        insert_child(nib, val_hash, block_id);
+
+        return OK;
     }
+
 
     int remove(
         const Hash* key,
