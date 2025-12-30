@@ -116,5 +116,4 @@ extern "C" {
         const unsigned char* proof,
         size_t proof_size
     );
-
 }

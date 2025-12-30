@@ -1,7 +1,7 @@
 # Bullet Ledger
 
 ## Sharded Block Based Verkle State Trie
-*Still in BETA*
+*USE AT OWN RISK*
 
 ---
 
@@ -81,13 +81,11 @@ In all what is illustrated here is that if there is some agreed commitment to a 
 
 ---
 
-## BLOCKS
-*/src/blocks*
-In Progress
-
----
-
 ## Bindings
 */src/bindings*
-In Progress
 
+I suggest just referencing `/bindings/extern.h` and then the implementation in `src/bindings/ledger.cpp` when you are trying to figure how to use this library. They should be fairly self explanatory at this point. I suppose the only thing that might be confusing is the `ledger_open()` call because it takes some odd parameters. 
+
+First, `cache_size` is how many nodes are held in the LRU cache and each node is just below 2.3kb. Next,`map_size` is the upper bound of the entire databases size. The underlying database is LMDB so it has to virtually map everything meaning it needs an upper bound. I need to figure out some rough calculations but it depends on how much sharding is going on and how close keys are. But I would say generally assuming even distribution of keys and shards of size around 1,000 accounts putting 20GB would be pretty reasonable. 
+
+The next parameter is tag which is just a domain seperation tag, aka a string, and should just be something unique to your project like its name. Last is the secret bytes which should just be random bytes sampled from a cryptographically secure source. If they are not provided the function will use a linux syscall to do it for you, so these are not mandatory. If you want to import a `setup` from someone else you can call `ledger_set_SRS()` or if you want to export yours so you can share it call `ledger_get_SRS()` which return them in an encoded format.
