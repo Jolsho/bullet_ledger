@@ -56,7 +56,7 @@ int ledger_put(
 ) {
     if (!ledger || !key || !val_hash) return NULL_PARAMETER;
     if (val_hash_size != 32) return VAL_HASH_SIZE;
-    if (val_idx < LEAF_ORDER) return VAL_IDX_RANGE;
+    if (val_idx > LEAF_ORDER) return VAL_IDX_RANGE;
 
     auto l = reinterpret_cast<Ledger*>(ledger);
 
@@ -86,7 +86,7 @@ int ledger_replace(
 ) {
     if (!ledger || !val_hash || !key || !prev_val_hash) return NULL_PARAMETER;
     if (val_hash_size != 32 || prev_val_hash_size != 32) return VAL_HASH_SIZE;
-    if (val_idx < LEAF_ORDER) return VAL_IDX_RANGE;
+    if (val_idx > LEAF_ORDER) return VAL_IDX_RANGE;
 
     auto l = reinterpret_cast<Ledger*>(ledger);
 
