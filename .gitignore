@@ -3,6 +3,7 @@ Cargo.lock
 notes.txt
 
 build/
+test_build/
 deps/
 .cache/
 trash/
