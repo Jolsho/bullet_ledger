@@ -46,24 +46,28 @@ public:
         uint16_t block_id
     ) = 0;
 
-    // TODO -- differentiate put from create_account
-    // aka add create_account method + change put implementations
     virtual int put(
         const Hash* key,
         const Hash* val_hash,
-        uint16_t new_block_id,
+        uint16_t block_id,
         int i
     ) = 0;
 
     virtual int remove(
         const Hash* key,
-        uint16_t new_block_id,
+        uint16_t block_id,
+        int i
+    ) = 0;
+
+    virtual int create_account(
+        const Hash* key,
+        uint16_t block_id,
         int i
     ) = 0;
 
     virtual int delete_account(
         const Hash* key,
-        uint16_t new_block_id,
+        uint16_t block_id,
         int i
     ) = 0;
 

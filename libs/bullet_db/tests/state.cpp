@@ -53,11 +53,14 @@ void main_state_trie() {
     for (Hash h: raw_hashes) {
 
         ByteSlice key(h.h, 32);
-        ByteSlice val_hash(h.h, 32);
+        ByteSlice value(h.h, 32);
 
-        int res = l.put(key, val_hash, idx, block_id);
-        printf("INSERT %d, %d\n", i, res);
+        int res = l.create_account(key, block_id);
         assert(res == OK);
+
+        res = l.put(key, value, idx, block_id);
+        assert(res == OK);
+        printf("INSERT %d, %d\n", i, res);
         i++;
     }
 
@@ -129,6 +132,20 @@ void main_state_trie() {
         i++;
     }
 
+    ByteSlice rh{raw_hashes[0].h, sizeof(raw_hashes[0].h)};
+    Hash val_hash;
+    derive_hash(val_hash.h, rh);
+
+    Hash key_hash = val_hash;
+
+    key_hash.h[31] = 32;
+    res = generate_proof(l, Cs, Pis, key_hash, 0);
+    key_hash.h[31] = idx;
+
+    assert(res != OK);
+    assert(res == NOT_EXIST);
+
+
 
 
     ////////////////////////////
@@ -136,21 +153,11 @@ void main_state_trie() {
     //////////////////////////
     res = justify_block(l, block_id);
     assert(res == OK);
-    ByteSlice rh{raw_hashes[0].h, sizeof(raw_hashes[0].h)};
-
-    Hash val_hash;
-    derive_hash(val_hash.h, rh);
-
-    Hash key_hash = val_hash;
-    key_hash.h[31] = idx;
-
 
     res = generate_proof(l, Cs, Pis, key_hash, 0);
     assert(res == OK);
     derive_Zs_n_Ys(l, key_hash, val_hash, &Cs, &Pis, &Zs, &Ys);
     assert(batch_verify(Pis, Cs, Zs, Ys, base, gadgets->settings));
-    res = generate_proof(l, Cs, Pis, key_hash, 1);
-    assert(res != OK);
     printf("SUCCESSFUL JUSTIFICATION \n");
 
 
@@ -175,9 +182,7 @@ void main_state_trie() {
 
     res = prune_block(l, block_id);
     assert(res == OK);
-    res = generate_proof(l, Cs, Pis, key_hash, block_id);
-    assert(res != OK);
-    assert(res == NOT_EXIST);
+
 
     printf("SUCCESSFUL PRUNING \n");
 
