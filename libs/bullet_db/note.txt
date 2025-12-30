@@ -1,0 +1,19 @@
+
+I dont know what to do next.
+Like what sort of functions do I expose?
+Do I do all the parsing of the block and all that stuff?
+I dont know.
+
+I could just make it so that the bindings are like new block...
+and prune block or justify and what not...
+but that turns this into an entire execution client.
+and all that shit.
+But I think I kinda want to leave that open to everyone.
+So all they have to do is just put and what not.
+Like that would be the ideal thing I think.
+
+Yea there shouldnt be any blocks or anything like that.
+It should legit just be here are some methods you can call and what not.
+And I think that will be all...
+You can call some of those ledger methods and what not...
+and that is it...

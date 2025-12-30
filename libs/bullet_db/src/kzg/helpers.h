@@ -30,6 +30,7 @@ bool equal_scalars(const blst_scalar &a, const blst_scalar &b);
 void print_scalar(blst_scalar* s);
 void print_p1(blst_p1* p);
 blst_p1 p1_from_bytes(const byte* buff);
+blst_p2 p2_from_bytes(const byte* buff);
 blst_scalar modular_pow(const blst_scalar &base, const BigInt &exp);
 void hash_to_sk(blst_scalar* dst, const byte* hash);
 blst_p1 new_p1();

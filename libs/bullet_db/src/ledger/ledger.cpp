@@ -90,8 +90,8 @@ bool Ledger::in_shard(const Hash h) {
 
 
 int Ledger::put(
-    ByteSlice &key, 
-    ByteSlice &value, 
+    const ByteSlice &key, 
+    const ByteSlice &value, 
     uint8_t idx,
     uint16_t block_id,
     uint16_t prev_block_id
@@ -137,7 +137,7 @@ int Ledger::put(
 }
 
 int Ledger::create_account(
-    ByteSlice &key, 
+    const ByteSlice &key, 
     uint16_t block_id
 ) {
     Hash key_hash;
@@ -153,7 +153,7 @@ int Ledger::create_account(
 }
 
 int Ledger::delete_account(
-    ByteSlice &key, 
+    const ByteSlice &key, 
     uint16_t block_id
 ) {
     Hash key_hash;

@@ -57,7 +57,6 @@
  *              - buckets per epoch
  *              - each bucket is a set of block_ids
  *                  - with vote counts and what not
- *
  */
 
 #pragma once
@@ -89,19 +88,19 @@ public:
     );
 
     int put(
-        ByteSlice& key,
-        ByteSlice& value,
+        const ByteSlice& key,
+        const ByteSlice& value,
         uint8_t idx,
         uint16_t block_id,
         uint16_t prev_block_id = 0
     );
     int create_account(
-        ByteSlice& key,
+        const ByteSlice& key,
         uint16_t block_id
     );
 
     int delete_account(
-        ByteSlice &key, 
+        const ByteSlice &key, 
         uint16_t block_id
     );
 

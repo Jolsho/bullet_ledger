@@ -18,7 +18,6 @@
 
 #include "hashing.h"
 #include "helpers.h"
-#include "kzg.h"
 #include "ledger.h"
 #include "processing.h"
 #include <filesystem>
@@ -83,8 +82,6 @@ void main_state_trie() {
     //////////////////////////
     std::vector<Commitment> Cs;
     std::vector<Proof> Pis;
-    std::vector<size_t> Zs;
-    std::vector<blst_scalar> Ys;
 
     Hash base;
     seeded_hash(&base, 2);
@@ -103,30 +100,15 @@ void main_state_trie() {
         key_hash.h[31] = idx;
 
         int res = generate_proof(l, Cs, Pis, key_hash, block_id);
-        printf("GENERATE %d\n", res);
+        printf("GENERATED %d\n", res);
         assert(res == OK);
 
-        derive_Zs_n_Ys(l, key_hash, val_hash, &Cs, &Pis, &Zs, &Ys);
-
-        printf("PROVING %d == ", i);
-
-        for (int k {}; k < Pis.size(); k++) {
-            assert(verify_kzg(
-                Cs[k], 
-                gadgets->settings.roots.roots[Zs[k]], 
-                Ys[k], 
-                Pis[k], 
-                gadgets->settings.setup
-            ));
-            printf("%d/%zu, ", k+1, Pis.size());
-        }
-
-        assert(batch_verify(Pis, Cs, Zs, Ys, base, gadgets->settings));
+        // PROVING
+        assert(valid_proof(l, &Cs, &Pis, key_hash, val_hash, idx));
+        printf("PROVED %d\n", res);
 
         Cs.clear();
         Pis.clear();
-        Zs.clear();
-        Ys.clear();
 
         printf("\n");
         i++;
@@ -156,8 +138,7 @@ void main_state_trie() {
 
     res = generate_proof(l, Cs, Pis, key_hash, 0);
     assert(res == OK);
-    derive_Zs_n_Ys(l, key_hash, val_hash, &Cs, &Pis, &Zs, &Ys);
-    assert(batch_verify(Pis, Cs, Zs, Ys, base, gadgets->settings));
+    assert(valid_proof(l, &Cs, &Pis, key_hash, val_hash, idx));
     printf("SUCCESSFUL JUSTIFICATION \n");
 
 
