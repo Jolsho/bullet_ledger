@@ -1,28 +1,35 @@
-#include <cassert>
-#include <cstdio>
-#include <cstdlib>
-#include <cstring>
+/*
+ * Bullet Ledger
+ * Copyright (C) 2025 Joshua Olson
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
 #include <string>
 #include "tests.h"
 
 int main(int argc, char* argv[]) {
-    printf("\noptions == {multi, single, key_sig, kzg, state}\n\n");
+    printf("\noptions == {key_sig, kzg, state}\n\n");
     printf("=====================================\n");
 
     if (argc > 1) {
         std::string a = argv[1];
-        if (a == "multi") {
-            main_multi();
-
-        } else if (a == "single") {
-            main_single();
-
-        } else if (a == "key_sig") {
+        if (a == "key_sig") {
             main_key_sig();
 
         } else if (a == "kzg") {
-            main_multi();
-            main_single();
+            main_kzg();
 
         } else if (a == "state") {
             main_state_trie();
@@ -34,11 +41,8 @@ int main(int argc, char* argv[]) {
     // KEY_N_SIG
     main_key_sig();
 
-    // SINGLE_POINT
-    main_single();
-
-    // MULTI_POINT
-    main_multi();
+    // KZG
+    main_kzg();
 
     // STATE_TRIE
     main_state_trie();

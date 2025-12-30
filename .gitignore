@@ -2,9 +2,12 @@ target/
 Cargo.lock
 notes.txt
 
+test_build/
 build/
 test_build/
 deps/
 .cache/
 trash/
+
+fake_db/
 
