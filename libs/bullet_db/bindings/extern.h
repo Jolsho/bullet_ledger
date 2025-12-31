@@ -17,6 +17,7 @@
  */
 
 // extern.h
+#include "hashing.h"
 #include <cstddef>
 #include <cstdint>
 
@@ -43,108 +44,93 @@ extern "C" {
         size_t setup_size
     );
 
+    // prev_block_hash is optional, and defaults to cannonical
     int ledger_create_account(
         void* ledger,
-        uint16_t block_id,
-        const unsigned char* key,
-        size_t key_size
+        const unsigned char* key, size_t key_size,
+        const Hash* block_hash,
+        const Hash* prev_block_hash
     );
 
+    // prev_block_hash is optional, and defaults to cannonical
     int ledger_delete_account(
         void* ledger,
-        uint16_t block_id,
-        const unsigned char* key,
-        size_t key_size
+        const unsigned char* key, size_t key_size,
+        const Hash* block_hash,
+        const Hash* prev_block_hash
     );
 
 
+    // prev_block_hash is optional, and defaults to cannonical
     int ledger_put(
         void* ledger, 
-        const unsigned char* key,
-        size_t key_size,
-        const unsigned char* value_hash,
-        size_t value_hash_size,
-        uint8_t val_idx,
-        uint16_t block_id,
-        uint16_t prev_block_id = 0
+        const unsigned char* key, size_t key_size,
+        const Hash* value_hash, uint8_t val_idx,
+        const Hash* block_hash,
+        const Hash* prev_block_hash
     );
 
+    // prev_block_hash is optional, and defaults to cannonical
     int replace(
         void* ledger, 
-        const unsigned char* key,
-        size_t key_size,
-        const unsigned char* value_hash,
-        size_t value_hash_size,
-        const unsigned char* prev_value_hash,
-        size_t prev_value_hash_size,
-        uint8_t val_idx,
-        uint16_t block_id,
-        uint16_t prev_block_id = 0
+        const unsigned char* key, size_t key_size,
+        const Hash* value_hash, uint8_t val_idx,
+        const Hash* prev_value_hash,
+        const Hash* block_hash,
+        const Hash* prev_block_hash
     );
 
+    // prev_block_hash is optional, and defaults to cannonical
     int ledger_remove(
         void* ledger, 
-        const unsigned char* key,
-        size_t key_size,
+        const unsigned char* key, size_t key_size,
         uint8_t val_idx,
-        uint16_t block_id,
-        uint16_t prev_block_id = 0
+        const Hash* block_hash,
+        const Hash* prev_block_hash
     );
 
     int ledger_finalize(
         void* ledger, 
-        uint16_t block_id, 
+        const Hash* block_hash, 
         void** out,
         size_t* out_size
     );
 
     int ledger_prune(
         void* ledger, 
-        uint16_t block_id
+        const Hash* block_hash
     );
 
     int ledger_justify(
         void* ledger, 
-        uint16_t block_id
+        const Hash* block_hash
     );
 
+    // block_hash is optional, and defaults to cannonical
     int ledger_generate_existence_proof(
         void* ledger, 
-        uint16_t block_id, 
-
-        const unsigned char* key,
-        size_t key_size,
+        const unsigned char* key, size_t key_size,
         uint8_t val_idx,
-
-        void** out,
-        size_t* out_size
+        void** out, size_t* out_size,
+        const Hash* block_hash
     );
 
+    // block_hash is optional, and defaults to cannonical
     int ledger_validate_proof(
         void* ledger, 
-        uint16_t block_id, 
-
-        const unsigned char* key,
-        size_t key_size,
-        uint8_t val_idx,
-
-        const unsigned char* proof,
-        size_t proof_size
+        const unsigned char* key, size_t key_size,
+        const Hash* value_hash, uint8_t val_idx,
+        const unsigned char* proof, size_t proof_size
     );
 
     int ledger_db_store_value(
         void* ledger, 
-        const unsigned char* key_hash,
-        size_t key_hash_size,
-        const unsigned char* value,
-        size_t value_size,
-        uint16_t block_id
+        const unsigned char* key_hash, size_t key_hash_size,
+        const unsigned char* value, size_t value_size
     );
 
     int ledger_db_delete_value(
         void* ledger, 
-        const unsigned char* key_hash,
-        size_t key_hash_size,
-        uint16_t block_id
+        const unsigned char* key_hash, size_t key_hash_size
     );
 }

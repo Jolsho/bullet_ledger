@@ -25,7 +25,11 @@
 
 // descends subtree & generates proofs and commitments.
 // returns the new root hash for that block.
-int finalize_block(Ledger &ledger, uint16_t block_id, Hash* out) {
+int finalize_block(
+    Ledger &ledger, 
+    const Hash* block_hash, 
+    Hash* out
+) {
 
     size_t BATCHES = 4;
     size_t PER_BATCH = BRANCH_ORDER / BATCHES;
@@ -35,6 +39,8 @@ int finalize_block(Ledger &ledger, uint16_t block_id, Hash* out) {
     std::vector<std::future<int>> futures; 
     futures.reserve(BATCHES);
 
+    uint16_t block_id = ledger.get_block_id(block_hash, false);
+    if (block_id == 0) return BLOCK_NOT_EXIST;
 
     Result<Node_ptr, int> r = ledger.get_root(block_id);
     if (r.is_err()) return r.unwrap_err();
@@ -87,7 +93,11 @@ int finalize_block(Ledger &ledger, uint16_t block_id, Hash* out) {
         // and if leaf, save values under new block_id??
     // return OK
 // ALL DESCENDANTS AND COMPETITORS MUST BE PRUNED
-int justify_block(Ledger &ledger, uint16_t block_id) {
+int justify_block(Ledger &ledger, const Hash* block_hash) {
+
+
+    uint16_t block_id = ledger.get_block_id(block_hash, false);
+    if (block_id == 0) return BLOCK_NOT_EXIST;
 
     Result<Node_ptr, int> root = ledger.get_root(block_id);
     if (root.is_err()) return root.unwrap_err();
@@ -98,7 +108,11 @@ int justify_block(Ledger &ledger, uint16_t block_id) {
 
 // descends subtree and removes all nodes belonging to that block_id.
 // including leaf values
-int prune_block(Ledger &ledger, uint16_t block_id) {
+int prune_block(Ledger &ledger, const Hash* block_hash) {
+
+    uint16_t block_id = ledger.get_block_id(block_hash, false);
+    if (block_id == 0) return BLOCK_NOT_EXIST;
+    ledger.remove_block_id(block_hash);
 
     Result<Node_ptr, int> root = ledger.get_root(block_id);
     if (root.is_err()) {
@@ -114,8 +128,8 @@ int generate_proof(
     Ledger &ledger,
     std::vector<Commitment> &Cs, 
     std::vector<Proof> &Pis,
-    const Hash &key_hash, 
-    uint16_t block_id
+    const Hash* key_hash, 
+    const Hash* block_hash
 ) {
     std::vector<Scalar_vec> Fxs; 
     Fxs.reserve(6);
@@ -123,12 +137,14 @@ int generate_proof(
 
     if (!ledger.in_shard(key_hash)) return NOT_IN_SHARD;
 
+    uint16_t block_id = ledger.get_block_id(block_hash, false);
+
     // Get components for proving Fxs, and Zs
     Result<Node_ptr, int> r = ledger.get_root(block_id);
     if (r.is_err()) return r.unwrap_err();
     Node_ptr root = r.unwrap();
 
-    int res = root->generate_proof(&key_hash, Fxs, Cs, 0);
+    int res = root->generate_proof(key_hash, Fxs, Cs, 0);
     if (res != OK) return res;
 
     size_t n = Fxs.size();
@@ -157,11 +173,11 @@ int generate_proof(
                 }
 
                 // value index nibble 
-                nib = key_hash.h[31];
+                nib = key_hash->h[31];
             } else {
 
                 // nibble propogating upward from leaf
-                nib = key_hash.h[(n - 1) - i];
+                nib = key_hash->h[(n - 1) - i];
             }
 
             auto kzg_res = prove_kzg(Fxs[i], nib, settings);
@@ -182,8 +198,8 @@ bool valid_proof(
     Ledger &ledger,
     std::vector<Commitment>* Cs,
     std::vector<Proof>* Pis,
-    const Hash& key_hash,
-    const Hash& val_hash,
+    const Hash* key_hash,
+    const Hash* val_hash,
     const uint8_t val_idx
 ) {
     std::vector<size_t> Zs;
@@ -196,13 +212,24 @@ bool valid_proof(
     Hash base_hash;
     derive_hash(base_hash.h, tag_slice);
 
+    if (!ledger.in_shard(key_hash)) return NOT_IN_SHARD;
+
+    uint16_t block_id = ledger.get_block_id(nullptr, false);
+
+    Result<Node_ptr, int> r = ledger.get_root(block_id);
+    if (r.is_err()) return r.unwrap_err();
+
+    // check that the last commit, which is the closest to root exists
+    int rc = r.unwrap()->commit_is_in_path(key_hash, Cs->back(), 0);
+    if (rc != OK) return false;
+
     return batch_verify(*Pis, *Cs, Zs, Ys, base_hash, ledger.get_gadgets()->settings);
 }
 
 void derive_Zs_n_Ys(
     Ledger &ledger,
-    const Hash& key_hash,
-    const Hash& val_hash,
+    const Hash* key_hash,
+    const Hash* val_hash,
     std::vector<Commitment>* Cs,
     std::vector<Proof>* Pis,
     std::vector<size_t>* Zs,
@@ -223,20 +250,20 @@ void derive_Zs_n_Ys(
             Zs->at(0) = 0;
 
             // evals to full key_hash where last byte is ZERO
-            Hash key_hash_c = key_hash;
+            Hash key_hash_c = *key_hash;
             key_hash_c.h[32 - 1] = 0;
 
             blst_scalar_from_le_bytes(&Ys->at(0), key_hash_c.h, 32);
 
         } else if (k == 1) {
             // idx of value being proven in leaf.
-            Zs->at(1) = key_hash.h[32 - 1];
+            Zs->at(1) = key_hash->h[32 - 1];
             // evals to val hash
-            blst_scalar_from_le_bytes(&Ys->at(1), val_hash.h, 32);
+            blst_scalar_from_le_bytes(&Ys->at(1), val_hash->h, 32);
 
         } else {
             // F(z) == H(Cs[k - 1])
-            Zs->at(k) = key_hash.h[(n - 1) - k];
+            Zs->at(k) = key_hash->h[(n - 1) - k];
             hash_p1_to_scalar(&Cs->at(k - 1), &Ys->at(k), &tag);
 
         }

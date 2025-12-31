@@ -56,3 +56,14 @@ Hash new_hash(const byte* h = nullptr);
 void print_hash(const Hash &hash);
 void seeded_hash(Hash* out, int i);
 void hash_p1_to_scalar(const blst_p1* p1, blst_scalar* s, const std::string* tag);
+
+struct HashHash {
+    size_t operator()(const Hash& h) const noexcept {
+        uint64_t h1 = 1469598103934665603ull; // FNV-1a
+        for (byte b : h.h) {
+            h1 ^= static_cast<unsigned char>(b);
+            h1 *= 1099511628211ull;
+        }
+        return static_cast<size_t>(h1);
+    }
+};

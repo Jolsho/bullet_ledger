@@ -98,5 +98,11 @@ public:
     virtual int prune(const uint16_t block_id) = 0;
 
     virtual int justify(const uint16_t block_id) = 0;
+
+    virtual bool commit_is_in_path(
+        const Hash* key,
+        const Commitment &commitment,
+        int i
+    ) = 0;
 };
 

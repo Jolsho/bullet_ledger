@@ -22,41 +22,41 @@
 
 int finalize_block(
     Ledger &ledger, 
-    uint16_t block_id, 
+    const Hash* block_hash,
     Hash* out
 );
 
 int prune_block(
     Ledger &ledger, 
-    uint16_t block_id
+    const Hash* block_hash
 );
 
 int justify_block(
     Ledger &ledger, 
-    uint16_t block_id
+    const Hash* block_hash
 );
 
 int generate_proof(
     Ledger &ledger, 
     std::vector<Commitment> &Cs,
     std::vector<Proof> &Pis,
-    const Hash& key_hash,
-    uint16_t block_id
+    const Hash* key_hash,
+    const Hash* block_hash
 );
 
 bool valid_proof(
     Ledger &ledger,
     std::vector<Commitment>* Cs,
     std::vector<Proof>* Pis,
-    const Hash& key_hash,
-    const Hash& val_hash,
+    const Hash* key_hash,
+    const Hash* val_hash,
     const uint8_t val_idx
 );
 
 void derive_Zs_n_Ys(
-    Ledger &ledger, 
-    const Hash& key_hash,
-    const Hash& val_hash,
+    Ledger &ledger,
+    const Hash* key_hash,
+    const Hash* val_hash,
     std::vector<Commitment>* Cs,
     std::vector<Proof>* Pis,
     std::vector<size_t>* Zs,

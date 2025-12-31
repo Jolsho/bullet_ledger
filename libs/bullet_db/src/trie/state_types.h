@@ -64,6 +64,6 @@ enum LedgerCodes {
     INVALID_PREV_VAL_HASH = 16,
     ZERO_PARAMETER = 17,
     NULL_PARAMETER = 18,
-    VAL_HASH_SIZE = 19,
-    VAL_IDX_RANGE = 20,
+    VAL_IDX_RANGE = 19,
+    BLOCK_NOT_EXIST = 20,
 };

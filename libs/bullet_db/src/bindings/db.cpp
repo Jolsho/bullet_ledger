@@ -20,11 +20,8 @@
 
 int ledger_db_store_value(
     void* ledger, 
-    const unsigned char* key,
-    size_t key_size,
-    const unsigned char* value,
-    size_t value_size,
-    uint16_t block_id
+    const unsigned char* key, size_t key_size,
+    const unsigned char* value, size_t value_size
 ) {
     if (!ledger || !value || !key) return NULL_PARAMETER;
     auto l = reinterpret_cast<Ledger*>(ledger);
@@ -35,14 +32,12 @@ int ledger_db_store_value(
 
     const ByteSlice value_slice((byte*)value, value_size);
 
-    return l->store_value(key_hash, value_slice, block_id);
+    return l->store_value(&key_hash, value_slice);
 }
 
 int ledger_db_delete_value(
     void* ledger, 
-    const unsigned char* key,
-    size_t key_size,
-    uint16_t block_id
+    const unsigned char* key, size_t key_size
 ) {
     if (!ledger || !key) return NULL_PARAMETER;
     auto l = reinterpret_cast<Ledger*>(ledger);
@@ -51,7 +46,7 @@ int ledger_db_delete_value(
     Hash key_hash;
     derive_hash(key_hash.h, key_slice);
 
-    return l->delete_value(key_hash, block_id);
+    return l->delete_value(&key_hash);
 }
 
 

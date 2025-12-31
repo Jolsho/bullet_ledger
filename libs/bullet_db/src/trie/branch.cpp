@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "blst.h"
 #include "fft.h"
 #include "branch.h"
 #include "helpers.h"
@@ -492,6 +493,26 @@ public:
 
         return OK;
     }
+
+    bool commit_is_in_path(
+        const Hash* key,
+        const Commitment &commitment,
+        int i
+    ) override {
+        if (blst_p1_is_equal(&commit_, &commitment)) return true;
+
+        byte nib = key->h[i];
+        const NodeId* next_id = get_next_id(nib);
+        if (next_id) {
+
+            Result<Node_ptr, int> res = gadgets_->alloc.load_node(next_id);
+            if (res.is_err()) return res.unwrap_err();
+
+            return res.unwrap()->commit_is_in_path(key, commitment, ++i);
+        }
+
+        return false;
+    };
 };
 
 std::shared_ptr<Branch_i> create_branch(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff) {

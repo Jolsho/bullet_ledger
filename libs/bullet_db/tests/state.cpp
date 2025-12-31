@@ -45,7 +45,8 @@ void main_state_trie() {
     ///////////////////////////
     // --- Insert phase --- //
     /////////////////////////
-    uint16_t block_id = 1;
+    Hash block_hash;
+    seeded_hash(&block_hash, 69);
     uint8_t idx = 3;
 
     int i = 0;
@@ -54,13 +55,13 @@ void main_state_trie() {
         ByteSlice key(h.h, 32);
         ByteSlice value(h.h, 32);
 
-        int res = l.create_account(key, block_id);
+        int res = l.create_account(key, &block_hash, nullptr);
         assert(res == OK);
 
         Hash val_hash;
         derive_hash(val_hash.h, value);
 
-        res = l.put(key, val_hash, idx, block_id);
+        res = l.put(key, &val_hash, idx, &block_hash, nullptr);
         assert(res == OK);
         printf("INSERT %d, %d\n", i, res);
         i++;
@@ -72,7 +73,7 @@ void main_state_trie() {
     ///////////////////////////
     Hash h;
     printf("FINALIZING......\n");
-    int res = finalize_block(l, block_id, &h);
+    int res = finalize_block(l, &block_hash, &h);
     printf("DONE FINALIZING\n");
     assert(res == OK);
 
@@ -102,12 +103,12 @@ void main_state_trie() {
         Hash key_hash = val_hash;
         key_hash.h[31] = idx;
 
-        int res = generate_proof(l, Cs, Pis, key_hash, block_id);
+        int res = generate_proof(l, Cs, Pis, &key_hash, &block_hash);
         printf("GENERATED %d\n", res);
         assert(res == OK);
 
         // PROVING
-        assert(valid_proof(l, &Cs, &Pis, key_hash, val_hash, idx));
+        assert(valid_proof(l, &Cs, &Pis, &key_hash, &val_hash, idx));
         printf("PROVED %d\n", res);
 
         Cs.clear();
@@ -124,11 +125,11 @@ void main_state_trie() {
     Hash key_hash = val_hash_tmp;
 
     key_hash.h[31] = 32;
-    res = generate_proof(l, Cs, Pis, key_hash, 0);
-    key_hash.h[31] = idx;
-
+    res = generate_proof(l, Cs, Pis, &key_hash, &block_hash);
     assert(res != OK);
     assert(res == NOT_EXIST);
+
+    key_hash.h[31] = idx;
 
 
 
@@ -136,12 +137,12 @@ void main_state_trie() {
     ////////////////////////////
     // --- JUSTIFY phase --- //
     //////////////////////////
-    res = justify_block(l, block_id);
+    res = justify_block(l, &block_hash);
     assert(res == OK);
 
-    res = generate_proof(l, Cs, Pis, key_hash, 0);
+    res = generate_proof(l, Cs, Pis, &key_hash, nullptr);
     assert(res == OK);
-    assert(valid_proof(l, &Cs, &Pis, key_hash, val_hash_tmp, idx));
+    assert(valid_proof(l, &Cs, &Pis, &key_hash, &val_hash_tmp, idx));
     printf("SUCCESSFUL JUSTIFICATION \n");
 
 
@@ -149,7 +150,7 @@ void main_state_trie() {
     //////////////////////////
     // --- PRUNE phase --- //
     ////////////////////////
-    block_id = 3;
+    seeded_hash(&block_hash, 1124);
     idx = 4;
 
     i = 0;
@@ -161,13 +162,13 @@ void main_state_trie() {
         Hash val_hash;
         derive_hash(val_hash.h, value);
 
-        int res = l.put(key, val_hash, idx, block_id);
+        int res = l.put(key, &val_hash, idx, &block_hash);
         printf("INSERT %d, %d\n", i, res);
         assert(res == OK);
         i++;
     }
 
-    res = prune_block(l, block_id);
+    res = prune_block(l, &block_hash);
     assert(res == OK);
 
 

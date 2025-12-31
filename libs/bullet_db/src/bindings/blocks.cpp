@@ -21,13 +21,13 @@
 
 int ledger_finalize(
     void* ledger, 
-    uint16_t block_id, 
+    const Hash* block_hash, 
     void** out,
     size_t* out_size
 ) {
-    if (!ledger) return NULL_PARAMETER;
+    if (!ledger || !block_hash) return NULL_PARAMETER;
     Hash h;
-    int rc = finalize_block(*(Ledger*)ledger, block_id, &h);
+    int rc = finalize_block(*(Ledger*)ledger, block_hash, &h);
     if (rc == 0) {
         const size_t HASH_SIZE = sizeof(h.h);
 
@@ -39,28 +39,31 @@ int ledger_finalize(
     return rc;
 }
 
-int ledger_prune(void* ledger,  uint16_t block_id) {
-    if (!ledger) return NULL_PARAMETER;
+int ledger_prune(
+    void* ledger,  
+    const Hash* block_hash
+) {
+    if (!ledger || !block_hash) return NULL_PARAMETER;
     auto l = reinterpret_cast<Ledger*>(ledger);
-    return prune_block(*l, block_id);
+    return prune_block(*l, block_hash);
 }
 
-int ledger_justify(void* ledger,  uint16_t block_id) {
-    if (!ledger) return NULL_PARAMETER;
+int ledger_justify(
+    void* ledger,  
+    const Hash* block_hash
+) {
+    if (!ledger || !block_hash) return NULL_PARAMETER;
     auto l = reinterpret_cast<Ledger*>(ledger);
-    return justify_block(*l, block_id);
+    return justify_block(*l, block_hash);
 }
 
 int ledger_generate_existence_proof(
     void* ledger, 
-    uint16_t block_id, 
-
-    const unsigned char* key,
-    size_t key_size,
+    const unsigned char* key, size_t key_size,
     uint8_t val_idx,
-
-    void** out,
-    size_t* out_size
+    void** out, 
+    size_t* out_size,
+    const Hash* block_hash = nullptr
 ) {
     if (!ledger || !key) return NULL_PARAMETER;
     if (val_idx < LEAF_ORDER) return VAL_IDX_RANGE;
@@ -75,8 +78,8 @@ int ledger_generate_existence_proof(
     std::vector<Commitment> Cs;
     std::vector<Proof> Pis;
 
-    int rc = generate_proof(*l, Cs, Pis, key_hash, block_id);
-    if (rc != 0) return rc;
+    int rc = generate_proof(*l, Cs, Pis, &key_hash, block_hash);
+    if (rc != OK) return rc;
 
     size_t total_size;
     total_size += sizeof(uint8_t);
@@ -106,20 +109,13 @@ int ledger_generate_existence_proof(
 
 int ledger_validate_proof(
     void* ledger, 
-    uint16_t block_id, 
+    const unsigned char* key, size_t key_size,
 
-    const unsigned char* key,
-    size_t key_size,
+    const Hash* value_hash, uint8_t val_idx,
 
-    const unsigned char* value_hash,
-    size_t value_hash_size,
-    uint8_t val_idx,
-
-    const unsigned char* proof,
-    size_t proof_size
+    const unsigned char* proof, size_t proof_size
 ) {
     if (!ledger || !key || !value_hash) return NULL_PARAMETER;
-    if (value_hash_size != 32) return VAL_HASH_SIZE;
     if (val_idx < LEAF_ORDER) return VAL_IDX_RANGE;
 
     auto l = reinterpret_cast<Ledger*>(ledger);
@@ -149,14 +145,11 @@ int ledger_validate_proof(
     derive_hash(key_hash.h, key_slice);
     key_hash.h[31] = val_idx;
 
-    Hash val_hash;
-    std::memcpy(val_hash.h, value_hash, value_hash_size);
-
     std::vector<size_t> Zs;
     std::vector<blst_scalar> Ys;
 
-    derive_Zs_n_Ys(*l, key_hash, val_hash, &Cs, &Pis, &Zs, &Ys);
+    derive_Zs_n_Ys(*l, &key_hash, value_hash, &Cs, &Pis, &Zs, &Ys);
 
-    return valid_proof(*l, &Cs, &Pis, key_hash, val_hash, val_idx);
+    return valid_proof(*l, &Cs, &Pis, &key_hash, value_hash, val_idx);
 }
 

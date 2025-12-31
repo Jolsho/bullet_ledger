@@ -17,99 +17,92 @@
  */
 
 #include "ledger.h"
+#include <cstring>
 
 int ledger_create_account(
     void* ledger,
-    uint16_t block_id,
-    const unsigned char* key,
-    size_t key_size
+    const unsigned char* key, size_t key_size,
+    const Hash* block_hash,
+    const Hash* prev_block_hash
 ) {
-    if (!ledger || !key) return NULL_PARAMETER;
+    if (!ledger || !key || !block_hash) return NULL_PARAMETER;
 
     auto l = reinterpret_cast<Ledger*>(ledger);
     const ByteSlice key_slice((byte*)key, key_size);
-    return l->create_account(key_slice, block_id);
+
+    return l->create_account(key_slice, block_hash, prev_block_hash);
 }
 
 int ledger_delete_account(
     void* ledger,
-    uint16_t block_id,
-    const unsigned char* key,
-    size_t key_size
+    const unsigned char* key, size_t key_size,
+    const Hash* block_hash,
+    const Hash* prev_block_hash
 ) {
-    if (!ledger || !key) return NULL_PARAMETER;
+    if (!ledger || !key || !block_hash) return NULL_PARAMETER;
+
     auto l = reinterpret_cast<Ledger*>(ledger);
     const ByteSlice key_slice((byte*)key, key_size);
-    return l->delete_account(key_slice, block_id);
+
+    return l->delete_account(key_slice, block_hash, prev_block_hash);
 }
 
 
 int ledger_put(
     void* ledger, 
-    const unsigned char* key,
-    size_t key_size,
-    const unsigned char* val_hash,
-    size_t val_hash_size,
-    uint8_t val_idx,
-    uint16_t block_id,
-    uint16_t prev_block_id = 0
+    const unsigned char* key, size_t key_size,
+    const Hash* value_hash, uint8_t val_idx,
+    const Hash* block_hash,
+    const Hash* prev_block_hash
 ) {
-    if (!ledger || !key || !val_hash) return NULL_PARAMETER;
-    if (val_hash_size != 32) return VAL_HASH_SIZE;
+    if (!ledger || !key || !block_hash || !value_hash) return NULL_PARAMETER;
     if (val_idx > LEAF_ORDER) return VAL_IDX_RANGE;
 
     auto l = reinterpret_cast<Ledger*>(ledger);
 
     const ByteSlice key_slice((byte*)key, key_size);
 
-
-    Hash hash;
-    std::memcpy(hash.h, val_hash, val_hash_size);
-
-    return l->put(key_slice, hash, val_idx, block_id, prev_block_id);
+    return l->put(key_slice, value_hash, val_idx, block_hash, prev_block_hash);
 }
 
 int ledger_replace(
     void* ledger, 
-    const unsigned char* key,
-    size_t key_size,
-
-    const unsigned char* val_hash,
-    size_t val_hash_size,
-
-    const unsigned char* prev_val_hash,
-    size_t prev_val_hash_size,
-
-    uint8_t val_idx,
-    uint16_t block_id,
-    uint16_t prev_block_id = 0
+    const unsigned char* key, size_t key_size,
+    const Hash* value_hash, uint8_t val_idx,
+    const Hash* prev_value_hash,
+    const Hash* block_hash,
+    const Hash* prev_block_hash
 ) {
-    if (!ledger || !val_hash || !key || !prev_val_hash) return NULL_PARAMETER;
-    if (val_hash_size != 32 || prev_val_hash_size != 32) return VAL_HASH_SIZE;
+    if (!ledger || 
+        !value_hash || 
+        !key || 
+        !prev_value_hash || 
+        !block_hash
+    ) return NULL_PARAMETER;
     if (val_idx > LEAF_ORDER) return VAL_IDX_RANGE;
 
     auto l = reinterpret_cast<Ledger*>(ledger);
 
     const ByteSlice key_slice((byte*)key, key_size);
 
-    Hash hash;
-    std::memcpy(hash.h, val_hash, val_hash_size);
-
-    Hash prev_hash;
-    std::memcpy(prev_hash.h, prev_val_hash, prev_val_hash_size);
-
-    return l->replace(key_slice, hash, prev_hash, val_idx, block_id, prev_block_id);
+    return l->replace(
+        key_slice, 
+        value_hash, 
+        prev_value_hash, 
+        val_idx, 
+        block_hash, 
+        prev_block_hash
+    );
 }
 
 int ledger_remove(
     void* ledger, 
-    const unsigned char* key,
-    size_t key_size,
+    const unsigned char* key, size_t key_size,
     uint8_t val_idx,
-    uint16_t block_id,
-    uint16_t prev_block_id = 0
+    const Hash* block_hash,
+    const Hash* prev_block_hash 
 ) {
-    if (!ledger || !key) return NULL_PARAMETER;
+    if (!ledger || !key || !block_hash) return NULL_PARAMETER;
     if (val_idx < LEAF_ORDER) return VAL_IDX_RANGE;
 
     auto l = reinterpret_cast<Ledger*>(ledger);
@@ -119,5 +112,5 @@ int ledger_remove(
     Hash zero_h;
     std::memset(zero_h.h, 0, 32);
 
-    return l->put(key_slice, zero_h, val_idx, block_id, prev_block_id);
+    return l->put(key_slice, &zero_h, val_idx, block_hash, prev_block_hash);
 }

@@ -20,6 +20,8 @@
 #include "branch.h"
 #include "state_types.h"
 
+const size_t PENDING_BLOCKS_SIZE = 256;
+
 Ledger::Ledger(
     std::string path, 
     size_t cache_size, 
@@ -33,6 +35,7 @@ Ledger::Ledger(
         path, cache_size, map_size
     ))
 {
+    block_hash_map_.reserve(PENDING_BLOCKS_SIZE);
     shard_prefix_.reserve(32);
 }
 
@@ -41,11 +44,37 @@ Ledger::~Ledger() {}
 const Gadgets_ptr Ledger::get_gadgets() const { return gadgets_; }
 
 
+uint16_t Ledger::get_block_id(const Hash* block_hash, bool create_new) {
+    if (block_hash) {
+        auto it = block_hash_map_.find(*block_hash);
+        if (it != block_hash_map_.end()) 
+            return it->second;
+    }
+
+    if (create_new) {
+        uint16_t id = current_block_id_++;
+
+        if (current_block_id_ == 0)
+            current_block_id_++;
+
+        block_hash_map_.emplace(*block_hash, id);
+        return id;
+    } else {
+
+        return 0;
+    }
+}
+
+bool Ledger::remove_block_id(const Hash* block_hash) {
+    if (!block_hash) return false;
+    return block_hash_map_.erase(*block_hash) > 0;
+}
+
+
 Result<Node_ptr, int> Ledger::get_root( 
     uint16_t block_id, 
     uint16_t prev_block_id
 ) {
-
     NodeId id(ROOT_NODE_ID, block_id);
     Result<Node_ptr, int> res = gadgets_->alloc.load_node(&id);
     if (res.is_err() && res.unwrap_err() == MDB_NOTFOUND) {
@@ -76,12 +105,12 @@ Result<Node_ptr, int> Ledger::get_root(
     return res.unwrap();
 }
 
-bool Ledger::in_shard(const Hash h) {
+bool Ledger::in_shard(const Hash* h) {
     size_t matched = 0;
     size_t path_size = shard_prefix_.size();
 
     while (matched < path_size && matched < 32) {
-        if (shard_prefix_[matched] != h.h[matched]) {
+        if (shard_prefix_[matched] != h->h[matched]) {
             break;
         }
         ++matched;
@@ -90,23 +119,12 @@ bool Ledger::in_shard(const Hash h) {
 }
 
 int Ledger::store_value( 
-    const Hash &key_hash,
-    const ByteSlice& value,
-    uint16_t block_id
+    const Hash* key_hash,
+    const ByteSlice& value
 ) {
-
-    // determine leaf value node id and then insert value with block_id
-    uint64_t node_id = 1;
-    for (int i{}; i < 6; i++) {
-        node_id *= BRANCH_ORDER;
-        node_id += key_hash.h[i];
-    }
-
-    NodeId id(node_id, block_id);
-
     void* trx = gadgets_->alloc.db_.start_txn();
     int rc = gadgets_->alloc.db_.put(
-        id.get_full(), id.size(), 
+        key_hash->h, sizeof(key_hash->h), 
         value.data(), value.size(), 
         trx
     );
@@ -115,23 +133,10 @@ int Ledger::store_value(
     return rc;
 }
 
-int Ledger::delete_value( 
-    const Hash &key_hash,
-    uint16_t block_id
-) {
-
-    // determine leaf value node id and then insert value with block_id
-    uint64_t node_id = 1;
-    for (int i{}; i < 6; i++) {
-        node_id *= BRANCH_ORDER;
-        node_id += key_hash.h[i];
-    }
-
-    NodeId id(node_id, block_id);
-
+int Ledger::delete_value(const Hash* key_hash) {
     void* trx = gadgets_->alloc.db_.start_txn();
     int rc = gadgets_->alloc.db_.del(
-        id.get_full(), id.size(), 
+        key_hash->h, sizeof(key_hash->h), 
         trx
     );
     gadgets_->alloc.db_.end_txn(trx, rc);
@@ -141,45 +146,52 @@ int Ledger::delete_value(
 
 int Ledger::put(
     const ByteSlice &key, 
-    const Hash &val_hash, 
+    const Hash* val_hash, 
     uint8_t idx,
-    uint16_t block_id,
-    uint16_t prev_block_id
+    const Hash* block_hash,
+    const Hash* prev_block_hash
 ) {
+
     Hash key_hash;
     derive_hash(key_hash.h, key);
     key_hash.h[32-1] = idx;
 
-    if (!in_shard(key_hash)) return NOT_IN_SHARD;
+    if (!in_shard(&key_hash)) return NOT_IN_SHARD;
+
+    uint16_t block_id = get_block_id(block_hash);
+    uint16_t prev_block_id = get_block_id(prev_block_hash, false);
 
     Result<Node_ptr, int> root = get_root(block_id, prev_block_id);
     if (root.is_err()) return root.unwrap_err();
 
     return root.unwrap()->put(
-        &key_hash, &val_hash, 
+        &key_hash, val_hash, 
         block_id, 0
     );
 }
 
 int Ledger::replace(
     const ByteSlice &key, 
-    const Hash &val_hash, 
-    const Hash &prev_val_hash, 
+    const Hash* val_hash, 
+    const Hash* prev_val_hash, 
     uint8_t idx,
-    uint16_t block_id,
-    uint16_t prev_block_id
+    const Hash* block_hash,
+    const Hash* prev_block_hash
 ) {
     Hash key_hash;
     derive_hash(key_hash.h, key);
     key_hash.h[32-1] = idx;
 
-    if (!in_shard(key_hash)) return NOT_IN_SHARD;
+    if (!in_shard(&key_hash)) return NOT_IN_SHARD;
+
+    uint16_t block_id = get_block_id(block_hash);
+    uint16_t prev_block_id = get_block_id(prev_block_hash, false);
 
     Result<Node_ptr, int> root = get_root(block_id, prev_block_id);
     if (root.is_err()) return root.unwrap_err();
 
     return root.unwrap()->replace(
-        &key_hash, &val_hash, &prev_val_hash,
+        &key_hash, val_hash, prev_val_hash,
         block_id, 0
     );
 }
@@ -187,13 +199,17 @@ int Ledger::replace(
 
 int Ledger::create_account(
     const ByteSlice &key, 
-    uint16_t block_id
+    const Hash* block_hash,
+    const Hash* prev_block_hash
 ) {
     Hash key_hash;
     derive_hash(key_hash.h, key);
     key_hash.h[32-1] = 0;
 
-    if (!in_shard(key_hash)) return NOT_IN_SHARD;
+    if (!in_shard(&key_hash)) return NOT_IN_SHARD;
+
+    uint16_t block_id = get_block_id(block_hash);
+    uint16_t prev_block_id = get_block_id(prev_block_hash, false);
 
     Result<Node_ptr, int> root = get_root(block_id);
     if (root.is_err()) return root.unwrap_err();
@@ -203,13 +219,17 @@ int Ledger::create_account(
 
 int Ledger::delete_account(
     const ByteSlice &key, 
-    uint16_t block_id
+    const Hash* block_hash,
+    const Hash* prev_block_hash
 ) {
     Hash key_hash;
     derive_hash(key_hash.h, key);
     key_hash.h[32-1] = 0;
 
-    if (!in_shard(key_hash)) return NOT_IN_SHARD;
+    if (!in_shard(&key_hash)) return NOT_IN_SHARD;
+
+    uint16_t block_id = get_block_id(block_hash);
+    uint16_t prev_block_id = get_block_id(prev_block_hash, false);
 
     Result<Node_ptr, int> root = get_root(block_id);
     if (root.is_err()) return root.unwrap_err();

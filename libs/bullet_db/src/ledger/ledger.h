@@ -61,6 +61,7 @@
 
 #pragma once
 #include "gadgets.h"
+#include "hashing.h"
 #include "node.h"
 
 
@@ -68,6 +69,8 @@ class Ledger {
 private:
     Gadgets_ptr gadgets_;
     std::vector<byte> shard_prefix_;
+    std::unordered_map<Hash, uint16_t, HashHash> block_hash_map_;
+    uint16_t current_block_id_;
 
 public:
     Ledger(
@@ -80,7 +83,10 @@ public:
 
     const Gadgets_ptr get_gadgets() const;
 
-    bool in_shard(const Hash hash);
+    bool in_shard(const Hash* hash);
+
+    uint16_t get_block_id(const Hash* block_hash, bool create_new = true);
+    bool remove_block_id(const Hash* block_hash);
 
     Result<Node_ptr, int> get_root(
         uint16_t block_id,
@@ -88,41 +94,39 @@ public:
     );
 
     int store_value( 
-        const Hash &key_hash,
-        const ByteSlice& value,
-        uint16_t block_id
+        const Hash* key_hash,
+        const ByteSlice& value
     );
 
-    int delete_value( 
-        const Hash &key_hash,
-        uint16_t block_id
-    );
+    int delete_value(const Hash* key_hash);
 
     int put(
         const ByteSlice &key, 
-        const Hash &val_hash, 
+        const Hash* val_hash, 
         uint8_t idx,
-        uint16_t block_id,
-        uint16_t prev_block_id = 0
+        const Hash* block_hash,
+        const Hash* prev_block_hash = nullptr
     );
 
     int replace(
         const ByteSlice &key, 
-        const Hash &val_hash, 
-        const Hash &prev_val_hash, 
+        const Hash* val_hash, 
+        const Hash* prev_val_hash, 
         uint8_t idx,
-        uint16_t block_id,
-        uint16_t prev_block_id = 0
+        const Hash* block_hash,
+        const Hash* prev_block_hash = nullptr
     );
 
     int create_account(
         const ByteSlice& key,
-        uint16_t block_id
+        const Hash* block_hash,
+        const Hash* prev_block_hash = nullptr
     );
 
     int delete_account(
         const ByteSlice &key, 
-        uint16_t block_id
+        const Hash* block_hash,
+        const Hash* prev_block_hash = nullptr
     );
 
 

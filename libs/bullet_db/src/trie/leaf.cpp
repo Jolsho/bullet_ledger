@@ -542,6 +542,14 @@ public:
         }
         return OK;
     }
+
+    bool commit_is_in_path(
+        const Hash* key,
+        const Commitment &commitment,
+        int i
+    ) override {
+        return blst_p1_is_equal(&commit_, &commitment);
+    };
 };
 
 std::shared_ptr<Leaf_i> create_leaf(Gadgets_ptr gadgets, const NodeId* id, const ByteSlice* buff) {
