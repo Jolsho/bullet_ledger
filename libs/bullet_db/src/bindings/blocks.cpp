@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "bitmap.h"
 #include "helpers.h"
 #include "processing.h"
 
@@ -77,8 +78,9 @@ int ledger_generate_existence_proof(
 
     std::vector<Commitment> Cs;
     std::vector<Proof> Pis;
+    Bitmap<8> split_map{};
 
-    int rc = generate_proof(*l, Cs, Pis, &key_hash, block_hash);
+    int rc = generate_proof(*l, Cs, Pis, &split_map, &key_hash, block_hash);
     if (rc != OK) return rc;
 
     size_t total_size;
@@ -86,23 +88,26 @@ int ledger_generate_existence_proof(
     total_size += (Cs.size() * sizeof(Commitment));
     total_size += sizeof(uint8_t);
     total_size += (Pis.size() * sizeof(Proof));
+    total_size += sizeof(uint8_t); // split_map
 
     *out = malloc(total_size);
     *out_size = total_size;
 
     auto cursor = reinterpret_cast<byte*>(*out);
 
-    *cursor = static_cast<uint8_t>(Cs.size());
+    *cursor++ = Cs.size();
     for (auto &commit: Cs) {
         blst_p1_compress(cursor, &commit);
         cursor += sizeof(Commitment);
     }
 
-    *cursor = static_cast<uint8_t>(Pis.size());
+    *cursor++ = Pis.size();
     for (auto &proof: Pis) {
         blst_p1_compress(cursor, &proof);
         cursor += sizeof(Proof);
     }
+
+    *cursor++ = *split_map.data_ptr();
 
     return 0;
 }
@@ -139,6 +144,7 @@ int ledger_validate_proof(
         cursor += sizeof(Proof);
     }
 
+    Bitmap<8> split_map(cursor++);
 
     const ByteSlice key_slice((byte*)key, key_size);
     Hash key_hash;
@@ -148,8 +154,8 @@ int ledger_validate_proof(
     std::vector<size_t> Zs;
     std::vector<blst_scalar> Ys;
 
-    derive_Zs_n_Ys(*l, &key_hash, value_hash, &Cs, &Pis, &Zs, &Ys);
+    derive_Zs_n_Ys(*l, &key_hash, value_hash, &split_map, &Cs, &Pis, &Zs, &Ys);
 
-    return valid_proof(*l, &Cs, &Pis, &key_hash, value_hash, val_idx);
+    return valid_proof(*l, &Cs, &Pis, &split_map, &key_hash, value_hash, val_idx);
 }
 

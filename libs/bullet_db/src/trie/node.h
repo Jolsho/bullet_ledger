@@ -17,6 +17,7 @@
  */
 
 #pragma once
+#include "bitmap.h"
 #include "nodeid.h"
 #include "state_types.h"
 #include "polynomial.h"
@@ -34,17 +35,13 @@ public:
 
     virtual const Commitment* get_commitment() const = 0;
     virtual void set_commitment(const Commitment &c) = 0;
+    virtual const Commitment* derive_commitment() = 0;
 
     virtual const byte get_type() const = 0;
     virtual const bool should_delete() const = 0;
 
     virtual const NodeId* get_next_id(byte nib) = 0;
     virtual std::vector<byte> to_bytes() const = 0;
-
-    virtual int change_id(
-        uint64_t node_id, 
-        uint16_t block_id
-    ) = 0;
 
     virtual int put(
         const Hash* key,
@@ -83,11 +80,12 @@ public:
         const Hash* key,
         std::vector<Polynomial> &Fxs,
         std::vector<blst_p1> &Cs,
-        int i
+        int i, Bitmap<8>* split_map
     ) = 0;
 
 
     virtual int finalize(
+        std::vector<ShardVote>* hashes,
         const uint16_t block_id,
         Commitment *out,
         const size_t start = 0, 

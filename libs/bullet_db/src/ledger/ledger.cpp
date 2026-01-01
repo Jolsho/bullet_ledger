@@ -75,6 +75,7 @@ Result<Node_ptr, int> Ledger::get_root(
     uint16_t block_id, 
     uint16_t prev_block_id
 ) {
+
     NodeId id(ROOT_NODE_ID, block_id);
     Result<Node_ptr, int> res = gadgets_->alloc.load_node(&id);
     if (res.is_err() && res.unwrap_err() == MDB_NOTFOUND) {

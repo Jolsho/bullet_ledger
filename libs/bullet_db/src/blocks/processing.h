@@ -40,23 +40,27 @@ int generate_proof(
     Ledger &ledger, 
     std::vector<Commitment> &Cs,
     std::vector<Proof> &Pis,
+    Bitmap<8>* split_map,
     const Hash* key_hash,
-    const Hash* block_hash
+    const Hash* block_hash = nullptr
 );
 
 bool valid_proof(
     Ledger &ledger,
     std::vector<Commitment>* Cs,
     std::vector<Proof>* Pis,
+    Bitmap<8>* split_map,
     const Hash* key_hash,
     const Hash* val_hash,
-    const uint8_t val_idx
+    const uint8_t val_idx,
+    const Hash* block_hash = nullptr
 );
 
 void derive_Zs_n_Ys(
     Ledger &ledger,
     const Hash* key_hash,
     const Hash* val_hash,
+    Bitmap<8>* split_map,
     std::vector<Commitment>* Cs,
     std::vector<Proof>* Pis,
     std::vector<size_t>* Zs,

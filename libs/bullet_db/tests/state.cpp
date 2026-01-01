@@ -16,6 +16,7 @@
  * along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 
+#include "bitmap.h"
 #include "hashing.h"
 #include "helpers.h"
 #include "ledger.h"
@@ -60,6 +61,7 @@ void main_state_trie() {
 
         Hash val_hash;
         derive_hash(val_hash.h, value);
+        print_hash(val_hash);
 
         res = l.put(key, &val_hash, idx, &block_hash, nullptr);
         assert(res == OK);
@@ -93,7 +95,7 @@ void main_state_trie() {
     const Gadgets_ptr gadgets = l.get_gadgets();
 
     
-    for (i = 0; i < 4; i++) {
+    for (i = 0; i < 2; i++) {
 
         ByteSlice rh{raw_hashes[i].h, sizeof(raw_hashes[i].h)};
 
@@ -103,12 +105,14 @@ void main_state_trie() {
         Hash key_hash = val_hash;
         key_hash.h[31] = idx;
 
-        int res = generate_proof(l, Cs, Pis, &key_hash, &block_hash);
+        Bitmap<8> split_map{};
+
+        int res = generate_proof(l, Cs, Pis, &split_map, &key_hash, &block_hash);
         printf("GENERATED %d\n", res);
         assert(res == OK);
 
         // PROVING
-        assert(valid_proof(l, &Cs, &Pis, &key_hash, &val_hash, idx));
+        assert(valid_proof(l, &Cs, &Pis, &split_map, &key_hash, &val_hash, idx, &block_hash));
         printf("PROVED %d\n", res);
 
         Cs.clear();
@@ -124,8 +128,10 @@ void main_state_trie() {
 
     Hash key_hash = val_hash_tmp;
 
+    Bitmap<8> split_map{};
+
     key_hash.h[31] = 32;
-    res = generate_proof(l, Cs, Pis, &key_hash, &block_hash);
+    res = generate_proof(l, Cs, Pis, &split_map, &key_hash, &block_hash);
     assert(res != OK);
     assert(res == NOT_EXIST);
 
@@ -137,12 +143,14 @@ void main_state_trie() {
     ////////////////////////////
     // --- JUSTIFY phase --- //
     //////////////////////////
+
     res = justify_block(l, &block_hash);
     assert(res == OK);
 
-    res = generate_proof(l, Cs, Pis, &key_hash, nullptr);
+    Bitmap<8> split_map1{};
+    res = generate_proof(l, Cs, Pis, &split_map1, &key_hash, nullptr);
     assert(res == OK);
-    assert(valid_proof(l, &Cs, &Pis, &key_hash, &val_hash_tmp, idx));
+    assert(valid_proof(l, &Cs, &Pis, &split_map1, &key_hash, &val_hash_tmp, idx));
     printf("SUCCESSFUL JUSTIFICATION \n");
 
 

@@ -1,0 +1,32 @@
+Now we need to add the sharding mechanism...
+I dont know exactly what that looks like but it needs to be done...
+
+Essentially it is something like this:::
+
+SHARD(new_shard_prefix)
+    - all nodes adjacent to the path are pruned
+
+then what about the chain of pretty much empty nodes?
+    - well that is not what sharding would look like..
+    - it would be some even distribution...
+    - you would likely either have a shard 1/256 of the state.
+    - or perhaps n/65,536
+
+the head of a shard is a series of hashes...
+
+so really you have 
+    SHARD(new_shard_prefix, new_shard_nib_range)
+        where the prefix is like the shared key.
+        then the range is of nibs in the root node.
+
+    So can you split a child hash into a combination of child commitments?
+    so in a root node R you have two children which are the two sub shards...
+        and they have an equal size key space which is half of Rs
+        they R commits to their hashes...perhaps just at 0, 1
+            and then those shard can report on their single commitment
+            which is just their range in the 256 and the rest is set to zero...
+
+    This would mean we need that new kind of node type...
+    which would commit to two hashes, and then somehow filters traffic to either shard.
+    and it has no state in itself really... it doesnt take any nibble or anything
+            

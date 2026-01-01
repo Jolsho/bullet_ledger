@@ -27,7 +27,6 @@ constexpr uint64_t LEAF_ORDER   = 128;
 
 constexpr byte BRANCH = static_cast<byte>(69);
 constexpr byte LEAF   = static_cast<byte>(71);
-constexpr byte EDGE   = static_cast<byte>(73);
 
 const uint64_t ROOT_NODE_ID = 0;
 
@@ -41,6 +40,19 @@ const Hash ZERO_HASH = new_zero_hash();
 inline bool hash_is_zero(const Hash& h) {
     return std::memcmp(h.h, ZERO_HASH.h, 32) == 0;
 }
+
+struct Child {
+    uint8_t anchor;
+    uint8_t end;
+    blst_scalar sk;
+    uint16_t blk_id;
+};
+
+struct ShardVote {
+    Hash hash;
+    Hash path;
+};
+
 
 enum LedgerCodes {
     OK = 0,
