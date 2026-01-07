@@ -31,21 +31,31 @@ pub fn load_config(path: &str) -> Config {
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
-    pub core: CoreConfig,
-    pub server: ServerConfig,
+    pub blockchain: BlockchainConfig,
+    pub rpc: ServerConfig,
     pub peer: PeerServerConfig,
+    pub social: SocialConfig,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub struct CoreConfig {
+pub struct SocialConfig {
+    pub idle_polltimeout: u64,
+    pub event_len: usize,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct BlockchainConfig {
     pub idle_polltimeout: u64,
     pub event_len: usize,
     pub pool_cap: usize,
     pub bullet_count: usize,
-    pub db_path: String,
-    pub db_cache_size: usize,
-    pub trxs_per_block: usize,
     pub epoch_interval: u64,
+
+    pub ledger_path: String,
+    pub ledger_cache_size: usize,
+    pub ledger_map_size: usize,
+    pub ledger_tag: String,
+    pub block_size: usize,
 }
 
 #[derive(Debug, Deserialize, Clone)]

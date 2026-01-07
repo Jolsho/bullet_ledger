@@ -21,10 +21,10 @@ fn net_outbound() {
     use std::{time::Duration, fs};
     use crate::config::load_config;
     use crate::spsc::SpscQueue;
-    use crate::peer_net::handlers::ping_pong::send_ping;
+    use crate::peer_net::ping_pong::send_ping;
     use crate::peer_net::{start_peer_networker};
-    use crate::crypto::montgomery::load_keys;
-    use crate::{utils, CORE};
+    use crate::utils::keys::load_keys;
+    use crate::{utils, BLOCKCHAIN};
 
     let mut config = load_config("config.toml");
     config.peer.bind_addr = "127.0.0.1:4143".to_string();
@@ -37,8 +37,8 @@ fn net_outbound() {
 
     let cfg = config.peer.clone();
     let net_handle1 = start_peer_networker( cfg,
-        vec![(to_c, CORE), ],
-        vec![(from_c, CORE), ]
+        vec![(to_c, BLOCKCHAIN), ],
+        vec![(from_c, BLOCKCHAIN), ]
     ).unwrap();
 
     // -- setup2 (sender)----------------------------------------------------------------
@@ -52,8 +52,8 @@ fn net_outbound() {
 
     let cfg = config.peer.clone();
     let net_handle2 = start_peer_networker(cfg,
-        vec![(to_c, CORE), ],
-        vec![(from_c, CORE), ]
+        vec![(to_c, BLOCKCHAIN), ],
+        vec![(from_c, BLOCKCHAIN), ]
     ).unwrap();
 
     // -- send da tings ----------------------------------------------------------------
@@ -63,14 +63,14 @@ fn net_outbound() {
         send_ping(
             &mut to_n, 
             remote.clone().parse().unwrap(), 
-            public, CORE, Some(i)
+            public, BLOCKCHAIN, Some(i)
         );
     }
 
     // -----------------------------------------------------------------
     
     std::thread::sleep(Duration::from_secs(3));
-    utils::request_shutdown();
+    utils::shutdown::request_shutdown();
     let _ = net_handle1.join().unwrap();
     let _ = net_handle2.join().unwrap();
 

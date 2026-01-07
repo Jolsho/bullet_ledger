@@ -17,8 +17,9 @@
  */
 
 use std::collections::{HashMap, VecDeque};
+use std::io::{Read, Write};
 use std::net::SocketAddr;
-use std::{io::{self, Read, Write},time::Instant};
+use std::{io, time::Instant};
 use std::os::fd::AsRawFd;
 use chacha20poly1305::aead::{AeadMutInPlace, OsRng};
 use chacha20poly1305::{AeadCore, ChaCha20Poly1305, Key, KeyInit};
@@ -26,11 +27,13 @@ use mio::net::TcpStream;
 use mio::{Interest, Poll, Token};
 use zeroize::Zeroize;
 
-use crate::crypto::{ random_b32, montgomery::{ecdh_shared_secret, hkdf_derive_key}};
-use crate::peer_net::handlers::{code_switcher, Handler, HandlerRes, PacketCode};
-use crate::peer_net::header::{Header, HEADER_LEN,PREFIX_LEN};
-use crate::utils::{next_deadline, NetError, NetMsg, NetMsgCode, NetResult, WriteBuffer};
-use crate::server::{NetServer, TcpConnection};
+use crate::peer_net::handlers::{Handler, HandlerRes, PacketCode, code_switcher};
+use crate::peer_net::header::{HEADER_LEN, Header, PREFIX_LEN};
+use crate::server::{NetServer, TcpConnection, next_deadline};
+use crate::utils::{ random::random_b32, keys::{ecdh_shared_secret, hkdf_derive_key}};
+use crate::utils::buffs::WriteBuffer;
+use crate::utils::errors::{NetError, NetResult};
+use crate::utils::msg::{NetMsg, NetMsgCode};
 
 #[derive(PartialEq, Eq, Debug, Clone)]
 pub enum ReadState {
@@ -45,26 +48,36 @@ pub enum WriteState {
     Writing,
 }
 
+pub enum Flow {
+    CONTINUE,
+    BREAK
+}
+
 pub struct PeerConnection {
+    // BASIC
     stream: Option<TcpStream>,
     pub token: Token,
     pub last_deadline: Instant,
 
+    // NEGOTIATION/ENCRYPTION
     pub addr: Option<SocketAddr>,
     pub remote_pub_key: [u8;32],
-    key: Key,
-    is_negotiated: bool,
+    pub key: Key,
+    pub is_negotiated: bool,
     is_acking: bool,
 
+    // MSGING
     outbound: VecDeque<NetMsg>,
     inbound_handlers: HashMap<u16, Handler>,
 
+    // READING
     pub read_header: Header,
-    read_state: Option<ReadState>,
+    pub read_state: Option<ReadState>,
     pub read_buf: Vec<u8>,
     pub read_pos: usize, 
-    read_target: usize,
+    pub read_target: usize,
 
+    // WRITING
     pub write_header: Header,
     write_state: Option<WriteState>,
     write_buf: WriteBuffer,
@@ -176,148 +189,34 @@ impl TcpConnection for PeerConnection {
     // -- Reading ---------------------------------------------------------------
     ///////////////////////////////////////////////////////////////////////////////
     fn on_readable(&mut self, server: &mut NetServer<Self>) -> NetResult<bool> {
-        let mut did_work = false;
         loop {
             match self.read_state.take() {
 
                 Some(ReadState::ReadingPrefix) => {
-                    if self.read_buf.len() < PREFIX_LEN {
-                        self.read_buf.resize(PREFIX_LEN, 0);
-                    }
-
-                    match self.stream.as_mut().unwrap().read(&mut self.read_buf[..PREFIX_LEN]) {
-                        Ok(0) => return Err(NetError::ConnectionAborted),
-                        Ok(n) => {
-                            did_work = true;
-                            self.read_pos += n;
-
-                            if self.read_pos < PREFIX_LEN { 
-                                self.read_state = Some(ReadState::ReadingPrefix);
-                                continue; 
-                            }
-
-                            // Read LENGTH of encrypted load
-                            let len = usize::from_le_bytes(
-                                self.read_buf[..8].try_into()
-                                .map_err(|_| NetError::MalformedPrefix)?
-                            );
-
-
-                            // Read NONCE of encrypted load
-                            self.read_header.nonce.copy_from_slice(
-                                &self.read_buf[8..20]
-                            );
-
-                            // Read AUTH_TAG of encrypted load
-                            self.read_header.tag.copy_from_slice(
-                                &self.read_buf[20..36]
-                            );
-
-                            // Prepare to read load
-                            self.read_buf.clear();
-                            self.read_buf.resize(len, 0);
-                            self.read_pos = 0;
-                            self.read_target = len;
-                            self.read_state = Some(ReadState::Reading);
-                        }
-                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            self.read_state = Some(ReadState::ReadingPrefix);
-                            break;
-                        },
-                        Err(e) => return Err(NetError::Other(e.to_string())),
+                    match self.read_prefix(server)? {
+                        Flow::CONTINUE => continue,
+                        Flow::BREAK => break,
                     }
                 }
-
-                //==================================================================
-                //==================================================================
 
                 Some(ReadState::Reading) => {
-                    match self.stream.as_mut().unwrap().read(&mut self.read_buf[self.read_pos..self.read_target]) {
-                        Ok(0) => { return Err(NetError::ConnectionAborted); }
-                        Ok(n) => {
-                            did_work = true;
-                            self.read_pos += n;
-                            if self.read_pos < self.read_target { 
-                                self.read_state = Some(ReadState::Reading);
-                                continue; 
-                            }
-
-                            if self.is_negotiated {
-                                self.read_header.encrypt_unmarshal(
-                                    &mut self.read_buf, &self.key
-                                )?;
-                            } else {
-                                self.read_header.raw_unmarshal(
-                                    &mut self.read_buf
-                                )?;
-                            }
-
-                            
-                            // full message received
-                            self.read_state = Some(ReadState::Processing);
-                        }
-                        Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
-                            self.read_state = Some(ReadState::Reading);
-                            break
-                        },
-                        Err(e) => return Err(NetError::Other(e.to_string())),
+                    match self.read_body(server)? {
+                        Flow::CONTINUE => continue,
+                        Flow::BREAK => break,
                     }
                 }
 
-                //==================================================================
-                //==================================================================
-
                 Some(ReadState::Processing) => {
-
-                    self.read_pos = HEADER_LEN;
-
-                    // if not negotiated and attempting to do anything that is not negotiating
-                    if !self.is_negotiated && 
-                    self.read_header.code != PacketCode::NegotiationAck &&
-                    self.read_header.code != PacketCode::NegotiationSyn {
-                        return Err(NetError::Unauthorized);
+                    match self.process_packet(server)? {
+                        Flow::CONTINUE => continue,
+                        Flow::BREAK => break,
                     }
-
-
-                    // Handle the packet
-                    let res = match self.inbound_handlers.remove(&self.read_header.msg_id) {
-                        Some(handler) => handler(self, server),
-                        None => code_switcher(self, server),
-                    };
-
-                    did_work = true;
-
-                    self.read_buf.clear();
-                    self.read_buf.resize(PREFIX_LEN, 0);
-                    self.read_pos = 0;
-                    self.read_target = PREFIX_LEN;
-                    match res {
-                        Ok(HandlerRes::Write(msg)) => {
-                            if let Err(msg) = self.enqueue_msg(msg, server) {
-                                server.put_msg(msg);
-                            } else {
-
-                                // if writer is idle enable it
-                                if self.write_state == Some(WriteState::Idle) {
-                                    let _ = self.enable_writable(&mut server.poll);
-                                }
-                            }
-                        }
-                        Ok(HandlerRes::Read((msg_id, handler))) => {
-                            self.inbound_handlers.insert(msg_id, handler);
-                        },
-                        Ok(HandlerRes::None) => {}
-                        Err(e) => return Err(e),
-                    }
-                    self.read_state = Some(ReadState::ReadingPrefix);
-                    break;
                 },
 
                 None => return Err(NetError::Other("ReadState == None".to_string())),
             }
         }
-
-        Ok(did_work)
+        Ok(true)
     }
 
 
@@ -350,97 +249,16 @@ impl TcpConnection for PeerConnection {
     }
 
     fn on_writable(&mut self, server: &mut NetServer<Self>) -> NetResult<bool> {
-        let mut did_work = false;
-        loop {
-            match self.write_state.take() {
+        match self.write_state.take() {
 
-                Some(WriteState::Idle) => {
-                    // If there appears to be nothing to write
-                    // check outbound buffer for queued msgs...
-                    if let Some(mut msg) = self.outbound.pop_front() {
+            Some(WriteState::Idle) => 
+                return self.idle_write(server),
 
-                        if self.outbound.len() < self.outbound.capacity() / 2 {
-                            self.outbound.shrink_to_fit();
-                        }
+            Some(WriteState::Writing) => 
+                return self.write_packet(server),
 
-                        if let NetMsgCode::External(c) = msg.code {
-                            self.write_header.code = c;
-
-                        } else {
-                            server.put_msg(msg);
-                            self.write_state = Some(WriteState::Idle);
-                            continue;
-                        }
-
-                        self.write_header.response_handler = msg.handler.take();
-                        self.write_header.msg_id = msg.id;
-
-                        // switch buffers
-                        std::mem::swap(&mut self.write_buf, &mut msg.body);
-                       
-                        server.put_msg(msg);
-                        self.write_state = Some(WriteState::Writing);
-
-                    } else {
-
-                        let _ = self.disable_writable(&mut server.poll);
-                        self.write_state = Some(WriteState::Idle);
-                        return Ok(false)
-                    }
-                }
-
-                //==================================================================
-                //==================================================================
-
-                Some(WriteState::Writing) => {
-                    if self.is_negotiated && !self.write_header.is_marshalled {
-                        self.write_header.encrypt_marshal(&mut *self.write_buf, &self.key)?;
-                    } else if !self.write_header.is_marshalled {
-                        self.write_header.raw_marshal(&mut *self.write_buf);
-                    }
-
-                    while self.write_pos < self.write_buf.len() {
-                        match self.stream.as_mut().unwrap().write(&self.write_buf[self.write_pos..]) {
-                            Ok(0) => {return Err(NetError::ConnectionAborted)},
-                            Ok(n) => {
-                                did_work = true;
-                                self.write_pos += n;
-                            },
-                            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                            Err(e) => return Err(NetError::Other(e.to_string())),
-                        }
-                    }
-                    if self.write_pos < self.write_buf.len() {
-                        self.write_state = Some(WriteState::Writing);
-                        break;
-                    }
-
-                    self.write_buf.reset();
-                    self.write_pos = 0;
-                    self.write_header.is_marshalled = false;
-
-                    if let Some(res_handle) = self.write_header.response_handler.take() {
-                        self.inbound_handlers.insert(self.write_header.msg_id, res_handle);
-                    }
-
-                    if self.is_acking {
-                        self.is_acking = false;
-                        self.is_negotiated = true;
-                    }
-
-                    self.write_state = Some(WriteState::Idle);
-                    // if no more messages queued Or wait until negotiation has finsihed
-                    if self.outbound.len() == 0 || !self.is_negotiated {
-                        let _ = self.disable_writable(&mut server.poll);
-                    }
-                    break;
-                }
-
-
-                None => return Err(NetError::Other("Writestate == None".to_string())),
-            };
-        }
-        Ok(did_work)
+            None => return Err(NetError::Other("Writestate == None".to_string())),
+        };
     }
 
     fn initiate_negotiation(&mut self, server: &mut NetServer<Self>) -> NetResult<()> {
@@ -503,6 +321,8 @@ impl PeerConnection {
                 &self.read_buf[self.read_pos..self.read_pos + 32]
             );
             self.read_pos += 32;
+            // TODO -- this should check pub key...
+            
 
             // recover initiator salt
             let mut remote_salt = [0u8;32];
@@ -634,5 +454,236 @@ impl PeerConnection {
 
             return Ok(HandlerRes::None);
         }
+    }
+}
+
+impl PeerConnection {
+
+    pub fn read_prefix(
+        &mut self, 
+        _server: &mut NetServer<Self>
+    ) -> NetResult<Flow> {
+
+        if self.read_buf.len() < PREFIX_LEN {
+            self.read_buf.resize(PREFIX_LEN, 0);
+        }
+
+        match self.stream.as_mut().unwrap().read(&mut self.read_buf[..PREFIX_LEN]) {
+            Ok(0) => return Err(NetError::ConnectionAborted),
+            Ok(n) => {
+                self.read_pos += n;
+
+                if self.read_pos < PREFIX_LEN { 
+                    self.read_state = Some(ReadState::ReadingPrefix);
+                    return Ok(Flow::CONTINUE); 
+                }
+
+                // Read LENGTH of encrypted load
+                let len = usize::from_le_bytes(
+                    self.read_buf[..8].try_into()
+                    .map_err(|_| NetError::MalformedPrefix)?
+                );
+
+
+                // Read NONCE of encrypted load
+                self.read_header.nonce.copy_from_slice(
+                    &self.read_buf[8..20]
+                );
+
+                // Read AUTH_TAG of encrypted load
+                self.read_header.tag.copy_from_slice(
+                    &self.read_buf[20..36]
+                );
+
+                // Prepare to read load
+                self.read_buf.clear();
+                self.read_buf.resize(len, 0);
+                self.read_pos = 0;
+                self.read_target = len;
+                self.read_state = Some(ReadState::Reading);
+                return Ok(Flow::CONTINUE); 
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.read_state = Some(ReadState::ReadingPrefix);
+                return Ok(Flow::BREAK); 
+            },
+            Err(e) => return Err(NetError::Other(e.to_string())),
+        }
+    }
+
+    pub fn read_body(
+        &mut self,
+        _server: &mut NetServer<Self>
+    ) -> NetResult<Flow> {
+        match self.stream.as_mut().unwrap().read(&mut self.read_buf[self.read_pos..self.read_target]) {
+            Ok(0) => { return Err(NetError::ConnectionAborted); }
+            Ok(n) => {
+                self.read_pos += n;
+                if self.read_pos < self.read_target { 
+                    self.read_state = Some(ReadState::Reading);
+                    return Ok(Flow::CONTINUE); 
+                }
+
+                if self.is_negotiated {
+                    self.read_header.encrypt_unmarshal(
+                        &mut self.read_buf, &self.key
+                    )?;
+                } else {
+                    self.read_header.raw_unmarshal(
+                        &mut self.read_buf
+                    )?;
+                }
+
+                // full message received
+                self.read_state = Some(ReadState::Processing);
+
+                return Ok(Flow::CONTINUE); 
+            }
+            Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
+                self.read_state = Some(ReadState::Reading);
+                return Ok(Flow::BREAK); 
+            },
+            Err(e) => return Err(NetError::Other(e.to_string())),
+        }
+    }
+
+    pub fn process_packet(
+        &mut self,
+        server: &mut NetServer<Self>
+    ) -> NetResult<Flow> {
+        self.read_pos = HEADER_LEN;
+
+        // if not negotiated and attempting to do anything that is not negotiating
+        if !self.is_negotiated && 
+        self.read_header.code != PacketCode::NegotiationAck &&
+        self.read_header.code != PacketCode::NegotiationSyn {
+            return Err(NetError::Unauthorized);
+        }
+
+
+        // Handle the packet
+        let res = match self.inbound_handlers.remove(&self.read_header.msg_id) {
+            Some(handler) => handler(self, server),
+            None => code_switcher(self, server),
+        };
+
+        self.read_buf.clear();
+        self.read_buf.resize(PREFIX_LEN, 0);
+        self.read_pos = 0;
+        self.read_target = PREFIX_LEN;
+        match res {
+            Ok(HandlerRes::Write(msg)) => {
+                if let Err(msg) = self.enqueue_msg(msg, server) {
+                    server.put_msg(msg);
+                } else {
+
+                    // if writer is idle enable it
+                    if self.write_state == Some(WriteState::Idle) {
+                        let _ = self.enable_writable(&mut server.poll);
+                    }
+                }
+            }
+            Ok(HandlerRes::Read((msg_id, handler))) => {
+                self.inbound_handlers.insert(msg_id, handler);
+            },
+            Ok(HandlerRes::None) => {}
+            Err(e) => return Err(e),
+        }
+        self.read_state = Some(ReadState::ReadingPrefix);
+
+        return Ok(Flow::BREAK);
+    }
+}
+impl PeerConnection {
+
+    pub fn idle_write(
+        &mut self, 
+        server: &mut NetServer<Self>
+    ) -> NetResult<bool> {
+        // If there appears to be nothing to write
+        // check outbound buffer for queued msgs...
+        if let Some(mut msg) = self.outbound.pop_front() {
+
+            if self.outbound.len() < self.outbound.capacity() / 2 {
+                self.outbound.shrink_to_fit();
+            }
+
+            if let NetMsgCode::External(c) = msg.code {
+                self.write_header.code = c;
+
+            } else {
+                server.put_msg(msg);
+                self.write_state = Some(WriteState::Idle);
+                return Ok(true);
+            }
+
+            self.write_header.response_handler = msg.handler.take();
+            self.write_header.msg_id = msg.id;
+
+            // switch buffers
+            std::mem::swap(&mut self.write_buf, &mut msg.body);
+           
+            server.put_msg(msg);
+            self.write_state = Some(WriteState::Writing);
+
+            return Ok(true);
+        } else {
+
+            let _ = self.disable_writable(&mut server.poll);
+            self.write_state = Some(WriteState::Idle);
+            return Ok(false)
+        }
+    }
+
+    pub fn write_packet(
+        &mut self, 
+        server: &mut NetServer<Self>
+    ) -> NetResult<bool> {
+        let mut did_work = false;
+
+        if self.is_negotiated && !self.write_header.is_marshalled {
+            self.write_header.encrypt_marshal(&mut *self.write_buf, &self.key)?;
+        } else if !self.write_header.is_marshalled {
+            self.write_header.raw_marshal(&mut *self.write_buf);
+        }
+
+        while self.write_pos < self.write_buf.len() {
+            match self.stream.as_mut().unwrap().write(&self.write_buf[self.write_pos..]) {
+                Ok(0) => {return Err(NetError::ConnectionAborted)},
+                Ok(n) => {
+                    did_work = true;
+                    self.write_pos += n;
+                },
+                Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(NetError::Other(e.to_string())),
+            }
+        }
+        if self.write_pos < self.write_buf.len() {
+            self.write_state = Some(WriteState::Writing);
+            return Ok(did_work);
+        }
+
+        self.write_buf.reset();
+        self.write_pos = 0;
+        self.write_header.is_marshalled = false;
+
+        if let Some(res_handle) = self.write_header.response_handler.take() {
+            self.inbound_handlers.insert(
+                self.write_header.msg_id, res_handle
+            );
+        }
+
+        if self.is_acking {
+            self.is_acking = false;
+            self.is_negotiated = true;
+        }
+
+        self.write_state = Some(WriteState::Idle);
+        // if no more messages queued Or wait until negotiation has finsihed
+        if self.outbound.len() == 0 || !self.is_negotiated {
+            let _ = self.disable_writable(&mut server.poll);
+        }
+
+        return Ok(did_work);
     }
 }

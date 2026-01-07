@@ -18,7 +18,7 @@
 
 use std::{collections::VecDeque, io::{self, Read, Write}, net::SocketAddr, os::fd::AsRawFd, time::Instant, usize};
 use mio::{net::TcpStream, Interest, Poll, Token};
-use crate::{RPC, utils::{NetError, NetManCode, NetMsg, NetResult, WriteBuffer}};
+use crate::{RPC, utils::{buffs::WriteBuffer, errors::{NetError, NetResult}, msg::{NetManCode, NetMsg}}};
 use crate::{server::{NetServer, TcpConnection}, NETWORKER};
 
 pub enum RpcCodes {

@@ -20,11 +20,11 @@
 fn hidden() {
     use ed25519_dalek::SigningKey;
     use curve25519_dalek::ristretto::CompressedRistretto;
-    use crate::crypto::random_b32;
+    use crate::utils::random::random_b32; 
     use crate::tests::TestFile;
-    use crate::core::ledger::Ledger;
-    use crate::crypto;
-    use crate::trxs::{
+    use crate::blockchain::ledger::Ledger;
+    use crate::blockchain::schnorr::TrxGenerators;
+    use crate::blockchain::trxs::{
         PROOF_LENGTH, RECEIVER, SENDER, TRX_LENGTH,
         hidden_value_commit, visible_value_commit,
         hidden::{HiddenTrx, TOTAL_TRX_PROOF},
@@ -38,8 +38,12 @@ fn hidden() {
 
     let test_file = TestFile::new("ledger_hidden");
 
-    let mut ledger = Ledger::new(&test_file.path, 20).unwrap();
-    let gens = crypto::TrxGenerators::new("custom_zkp", 1);
+    let ledger = Ledger::open(
+        "assets/fake_db", 32, 
+        10 * 1024 * 1024, 
+        "fake_tag", None
+    ).unwrap();
+    let gens = TrxGenerators::new("custom_zkp", 1);
 
     // ==================================================
     // Initialize some balances to work with
@@ -51,7 +55,7 @@ fn hidden() {
 
     let x = 42u64;
     let sender_balance = hidden_value_commit(&gens, x);
-    ledger.put(sender_pub.as_bytes(), sender_balance.commit.as_bytes().to_vec())
+    ledger.db_put(sender_pub.as_bytes(), sender_balance.commit.as_bytes())
         .expect("SENDER INIT PUT FAILED");
 
     // initialize receiver account
@@ -59,7 +63,7 @@ fn hidden() {
     let receiver_pub = receiver_priv.verifying_key();
 
     let receiver_balance = hidden_value_commit(&gens, 0u64);
-    ledger.put(receiver_pub.as_bytes(), receiver_balance.commit.as_bytes().to_vec())
+    ledger.db_put(receiver_pub.as_bytes(), receiver_balance.commit.as_bytes())
         .expect("RECEIVER INIT PUT FAILED");
 
 
@@ -106,11 +110,11 @@ fn hidden() {
 
     // get initial balances
     let sender_init = CompressedRistretto::from_slice(
-        &ledger.get_value(sender_pub.as_bytes()).unwrap()
+        &ledger.db_get(sender_pub.as_bytes()).unwrap()
     ).unwrap();
 
     let receiver_init = CompressedRistretto::from_slice(
-        &ledger.get_value(receiver_pub.as_bytes()).unwrap()
+        &ledger.db_get(receiver_pub.as_bytes()).unwrap()
     ).unwrap();
 
     // Validate it
@@ -120,10 +124,10 @@ fn hidden() {
 
     // Put new balances
     ledger
-        .put(sender_pub.as_bytes(), sender_final.as_bytes().to_vec())
+        .db_put(sender_pub.as_bytes(), sender_final.as_bytes())
         .expect("SENDER FINAL PUT FAILED");
     ledger
-        .put(receiver_pub.as_bytes(), receiver_final.as_bytes().to_vec())
+        .db_put(receiver_pub.as_bytes(), receiver_final.as_bytes())
         .expect("RECEIVER FINAL PUT FAILED");
 
     println!("Validation (time estimate): {:.3?}", start.elapsed());

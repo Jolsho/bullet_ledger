@@ -18,7 +18,7 @@
 
 #[test]
 fn peers() {
-    use crate::utils::NetError;
+    use crate::utils::errors::NetError;
     use std::net::{SocketAddr, Ipv4Addr, IpAddr};
     use std::fs;
     use crate::config::load_config;

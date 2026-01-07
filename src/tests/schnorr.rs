@@ -19,8 +19,8 @@
 #[test]
 fn schnorr() {
     use curve25519_dalek::Scalar;
-    use crate::crypto::{random_b32, TrxGenerators};
-    use crate::crypto::schnorr::SchnorrProof;
+    use crate::blockchain::schnorr::{TrxGenerators,SchnorrProof};
+    use crate::utils::random::random_b32; 
 
     let gens = TrxGenerators::new("zk_schnorr", 1);
     let mut proof = SchnorrProof::default();

@@ -19,11 +19,11 @@
 #[test]
 fn regular() {
     use ed25519_dalek::SigningKey;
-    use crate::crypto::random_b32;
+    use crate::utils::random::random_b32; 
     use crate::tests::TestFile;
-    use crate::core::ledger::Ledger;
-    use crate::crypto;
-    use crate::trxs::regular::{RegularTrx, TRX_LENGTH, TOTAL_TRX_LENGTH};
+    use crate::blockchain::ledger::Ledger;
+    use crate::blockchain::schnorr::TrxGenerators;
+    use crate::blockchain::trxs::regular::{RegularTrx, TRX_LENGTH, TOTAL_TRX_LENGTH};
     use std::time::Instant;
 
     println!("TRX LENGTH:    {} bytes", TRX_LENGTH);
@@ -32,8 +32,12 @@ fn regular() {
 
     let test_file = TestFile::new("ledger_regular");
 
-    let mut ledger = Ledger::new(&test_file.path, 20).unwrap();
-    let gens = crypto::TrxGenerators::new("custom_zkp", 1);
+    let ledger = Ledger::open(
+        "assets/fake_db", 32, 
+        10 * 1024 * 1024, 
+        "fake_tag", None
+    ).unwrap();
+    let gens = TrxGenerators::new("custom_zkp", 1);
 
     // ==================================================
     // Initialize some balances to work with
@@ -44,7 +48,7 @@ fn regular() {
     let sender_pub = sender_priv.verifying_key();
 
     let sender_balance = 42u64;
-    ledger.put(sender_pub.as_bytes(), sender_balance.to_le_bytes().to_vec())
+    ledger.db_put(sender_pub.as_bytes(), &sender_balance.to_le_bytes())
         .expect("SENDER INIT PUT FAILED");
 
     // initialize receiver account
@@ -52,7 +56,7 @@ fn regular() {
     let receiver_pub = receiver_priv.verifying_key();
 
     let receiver_balance = 0u64;
-    ledger.put(receiver_pub.as_bytes(), receiver_balance.to_le_bytes().to_vec())
+    ledger.db_put(receiver_pub.as_bytes(), &receiver_balance.to_le_bytes())
         .expect("RECEIVER INIT PUT FAILED");
 
 
@@ -83,10 +87,10 @@ fn regular() {
     trx.unmarshal(&mut buffer).unwrap();
 
     // get initial balances
-    let sender_init_raw = ledger.get_value(sender_pub.as_bytes()).unwrap();
+    let sender_init_raw = ledger.db_get(sender_pub.as_bytes()).unwrap();
     let sender_init = u64::from_le_bytes(sender_init_raw.try_into().unwrap());
 
-    let receiver_init_raw = ledger.get_value(receiver_pub.as_bytes()).unwrap();
+    let receiver_init_raw = ledger.db_get(receiver_pub.as_bytes()).unwrap();
     let receiver_init = u64::from_le_bytes(receiver_init_raw.try_into().unwrap());
 
     // Validate it
@@ -95,9 +99,9 @@ fn regular() {
     let (sender_final, receiver_final) = res.unwrap();
 
     // Put new balances
-    ledger.put(sender_pub.as_bytes(), sender_final.to_le_bytes().to_vec())
+    ledger.db_put(sender_pub.as_bytes(), &sender_final.to_le_bytes())
         .expect("SENDER FINAL PUT FAILED");
-    ledger.put(receiver_pub.as_bytes(), receiver_final.to_le_bytes().to_vec())
+    ledger.db_put(receiver_pub.as_bytes(), &receiver_final.to_le_bytes())
         .expect("RECEIVER FINAL PUT FAILED");
 
     println!("Validation (time estimate): {:.3?}", start.elapsed());

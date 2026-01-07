@@ -18,7 +18,7 @@
 
 use std::{collections::HashMap, fs, io::{self, Read, Seek, Write}, net::{Ipv4Addr, SocketAddr}, os::unix::fs::MetadataExt};
 
-use crate::utils::{NetError, NetResult};
+use crate::utils::errors::{NetError, NetResult};
 
 pub struct PeerMan {
     file: fs::File,

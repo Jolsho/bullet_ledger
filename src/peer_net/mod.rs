@@ -25,14 +25,16 @@ use mio::Token;
 
 use crate::config::PeerServerConfig;
 use crate::peer_net::connection::PeerConnection;
-use crate::utils::{NetError, NetManCode, NetMsg, NetMsgCode};
 use crate::server::{to_internals_from_vec, NetServer};
 use crate::spsc::{Consumer, Producer};
+use crate::utils::errors::NetError;
+use crate::utils::msg::{NetManCode, NetMsg, NetMsgCode};
 
 pub mod handlers;
 pub mod connection;
 pub mod header;
 pub mod peers;
+pub mod ping_pong;
 
 pub fn start_peer_networker(
     config: PeerServerConfig, 

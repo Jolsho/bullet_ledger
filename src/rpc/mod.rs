@@ -24,10 +24,10 @@ use mio::Token;
 
 use crate::config::ServerConfig; 
 use crate::spsc::{Consumer, Producer};
-use crate::utils::{NetError, NetMsg};
+use crate::utils::{errors::NetError, msg::NetMsg};
 use crate::rpc::connection::RpcConn;
 use crate::server::{to_internals_from_vec, NetServer};
-use crate::{CORE, NETWORKER};
+use crate::{BLOCKCHAIN, NETWORKER};
 
 pub mod connection;
 
@@ -48,8 +48,8 @@ pub fn start_rpc(config: ServerConfig,
             let token = msg.from_code;
 
             if token == NETWORKER {
-                let new_msg = server.collect_internal(&CORE);
-                server.enqueue_internal((CORE, new_msg));
+                let new_msg = server.collect_internal(&BLOCKCHAIN);
+                server.enqueue_internal((BLOCKCHAIN, new_msg));
             }
             Some(msg) //RECYCLE
         };

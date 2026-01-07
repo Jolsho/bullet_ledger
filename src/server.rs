@@ -25,9 +25,10 @@ use std::error;
 use std::{io, os::fd::AsRawFd};
 use std::net::SocketAddr;
 use std::time::{Duration, Instant};
-use crate::crypto::montgomery::load_keys;
+use crate::utils::keys::load_keys;
 use crate::spsc::{Msg, Consumer, Producer};
-use crate::utils::{next_deadline, NetError, NetResult, NetMsg};
+use crate::utils::errors::{NetError, NetResult};
+use crate::utils::msg::NetMsg;
 
 pub trait TcpConnection: Sized + Send {
     fn new(server: &mut NetServer<Self>) -> Box<Self>;
@@ -174,7 +175,7 @@ impl<C: TcpConnection> NetServer<C> {
         
         // Poll loop
         loop {
-            if crate::utils::should_shutdown() { break; }
+            if crate::utils::shutdown::should_shutdown() { break; }
 
             let timeout = self.handle_timeouts(&mut maps);
             if self.poll.poll(&mut events, Some(timeout)).is_err() { 
@@ -472,6 +473,10 @@ impl<C: TcpConnection> NetServer<C> {
             });
         }
     }
+}
+
+pub fn next_deadline(timeout: u64) -> Instant {
+    Instant::now() + Duration::from_secs(timeout)
 }
 
 pub struct TimeoutEntry {

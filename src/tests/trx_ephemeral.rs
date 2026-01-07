@@ -20,9 +20,9 @@
 #[test]
 fn ephemeral() {
     use crate::tests::TestFile;
-    use crate::core::ledger::Ledger;
-    use crate::crypto;
-    use crate::trxs::{
+    use crate::blockchain::ledger::Ledger;
+    use crate::blockchain::schnorr::TrxGenerators;
+    use crate::blockchain::trxs::{
         PROOF_LENGTH, RECEIVER, SENDER, TRX_LENGTH,
         ephemeral::{EphemeralTrx, TOTAL_TRX_PROOF},
         hidden_value_commit, visible_value_commit,
@@ -36,8 +36,13 @@ fn ephemeral() {
 
     let test_file = TestFile::new("ledger_ephemeral");
 
-    let mut ledger = Ledger::new(&test_file.path, 20).unwrap();
-    let gens = crypto::TrxGenerators::new("custom_zkp", 1);
+    let ledger = Ledger::open(
+        "assets/fake_db", 32, 
+        10 * 1024 * 1024, 
+        "fake_tag", None
+    ).unwrap();
+
+    let gens = TrxGenerators::new("custom_zkp", 1);
 
     // ==================================================
     // Initialize some balances to work with
@@ -47,13 +52,19 @@ fn ephemeral() {
     let x = 42u64;
     let sender = hidden_value_commit(&gens, x);
     ledger
-        .put(sender.commit.as_bytes(), sender.commit.as_bytes().to_vec())
+        .db_put(
+            sender.commit.as_bytes(), 
+            sender.commit.as_bytes()
+        )
         .expect("SENDER INIT PUT FAILED");
 
     // initialize receiver account
     let receiver = hidden_value_commit(&gens, 0u64);
     ledger
-        .put(receiver.commit.as_bytes(), receiver.commit.as_bytes().to_vec())
+        .db_put(
+            receiver.commit.as_bytes(), 
+            receiver.commit.as_bytes()
+        )
         .expect("RECEIVER INIT PUT FAILED");
 
     // ==================================================
@@ -101,20 +112,21 @@ fn ephemeral() {
     let (sender_final, receiver_final) = res.unwrap();
 
     // remove old balances
-    ledger.remove(trx.sender_init.as_bytes())
+    ledger.db_remove(trx.sender_init.as_bytes())
         .expect("SENDER INIT REMOVE FAILED");
 
-    ledger.remove(trx.receiver_init.as_bytes())
+    ledger.db_remove(trx.receiver_init.as_bytes())
         .expect("RECEIVER INIT REMOVE FAILED");
 
     // Put new balances
     ledger
-        .put(sender_final.as_bytes(), sender_final.as_bytes().to_vec())
+        .db_put(sender_final.as_bytes(), 
+            sender_final.as_bytes()
+        )
         .expect("SENDER FINAL PUT FAILED");
     ledger
-        .put(
-            receiver_final.as_bytes(),
-            receiver_final.as_bytes().to_vec(),
+        .db_put(receiver_final.as_bytes(), 
+            receiver_final.as_bytes()
         )
         .expect("RECEIVER FINAL PUT FAILED");
 

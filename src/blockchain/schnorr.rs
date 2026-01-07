@@ -1,0 +1,111 @@
+/*
+ * Bullet Ledger
+ * Copyright (C) 2025 Joshua Olson
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+
+use curve25519_dalek::{ristretto::CompressedRistretto, RistrettoPoint, Scalar};
+use bulletproofs::{BulletproofGens, PedersenGens};
+
+pub struct TrxGenerators {
+    pub tag: &'static [u8],
+    pub pedersen: PedersenGens,
+    pub bullet: BulletproofGens,
+}
+
+impl TrxGenerators {
+    pub fn new(tag: &'static str, bullet_count: usize) -> Self {
+        Self { 
+            pedersen: PedersenGens::default(), 
+            bullet: BulletproofGens::new(64, bullet_count), 
+            tag: tag.as_bytes(),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct SchnorrProof {
+    pub random: CompressedRistretto,
+    pub s1: Scalar,
+    pub s2: Scalar,
+}
+
+impl SchnorrProof {
+    pub fn default() -> Self {
+        Self { 
+            random: CompressedRistretto::default(), 
+            s1: Scalar::ZERO, 
+            s2: Scalar::ZERO,
+        }
+    }
+
+    pub fn compute_challenge(&self, 
+        commit: &CompressedRistretto, 
+        context_hash: &[u8; 32],
+    ) -> Scalar {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(commit.as_bytes());
+        hasher.update(self.random.as_bytes());
+        hasher.update(context_hash);
+        let hash = hasher.finalize();
+        Scalar::from_bytes_mod_order(*hash.as_bytes())
+    }
+
+    pub fn generate(&mut self, 
+        gens: &super::TrxGenerators, 
+        x: Scalar, r:Scalar, 
+        context_hash: &[u8; 32],
+    ) {
+        use crate::utils::random::random_b32;
+
+        let commit = gens.pedersen.commit(x, r);
+        let r1 = Scalar::from_bytes_mod_order(random_b32());
+        let r2 = Scalar::from_bytes_mod_order(random_b32());
+        self.random = gens.pedersen.commit(r1, r2).compress();
+
+        let c = self.compute_challenge(&commit.compress(), context_hash);
+
+        self.s1 = r1 + c * x;
+        self.s2 = r2 + c * r;
+    }
+
+    pub fn verify(&self,
+        gens: &super::TrxGenerators, 
+        commit: &CompressedRistretto,
+        context_hash: &[u8; 32],
+    ) -> bool {
+        let c = self.compute_challenge(commit, context_hash);
+        let random = self.random.decompress().unwrap_or(RistrettoPoint::default());
+        gens.pedersen.commit(self.s1, self.s2) == random + c * commit.decompress().unwrap()
+    }
+
+    pub fn copy_to_slice(&mut self, buff: &mut [u8]) {
+        buff[..32].copy_from_slice(self.random.as_bytes());
+        buff[32..64].copy_from_slice(self.s1.as_bytes());
+        buff[64..96].copy_from_slice(self.s2.as_bytes());
+    }
+
+    pub fn from_bytes(&mut self, buff: &mut [u8]) {
+        self.random.0.copy_from_slice(&mut buff[..32]);
+
+        let mut s1 = [0u8;32];
+        s1.copy_from_slice(&mut buff[32..64]);
+        self.s1 = Scalar::from_bytes_mod_order(s1);
+
+        let mut s2 = [0u8;32];
+        s2.copy_from_slice(&mut buff[64..96]);
+        self.s2 = Scalar::from_bytes_mod_order(s2);
+    }
+}

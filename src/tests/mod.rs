@@ -25,9 +25,8 @@ mod schnorr;
 mod pool;
 mod msging;
 mod net_outbound;
-mod montgomery;
+mod keys;
 mod peers;
-mod ledger;
 
 pub struct TestFile {
     pub path: String,

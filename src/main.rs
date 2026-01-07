@@ -18,90 +18,112 @@
 
 use mio::Token;
 
-use crate::config::load_config;
-use crate::core::start_core;
-use crate::peer_net::start_peer_networker;
-use crate::rpc::start_rpc;
 use crate::spsc::SpscQueue;
 
-mod trxs;
 mod tests;
-mod core;
+mod blockchain;
 mod peer_net;
-mod crypto;
 mod config;
 mod rpc;
 mod server;
 mod utils;
 mod spsc;
+mod social;
 
 const NETWORKER: Token = Token(707070);
-const CORE: Token = Token(717171);
+const BLOCKCHAIN: Token = Token(717171);
 const RPC: Token = Token(727272);
+const SOCIAL: Token = Token(737373);
 
 
 fn main() {
-    let config = load_config("config.toml");
+    let config = config::load_config("config.toml");
     let buffer_size = Some(config.peer.max_buffer_size.clone());
 
-    // PEER_NET && CORE
-    let (to_core_net, from_net_core) = SpscQueue::new(256, buffer_size).unwrap();
-    let (to_net_core, from_core_net) = SpscQueue::new(256, buffer_size).unwrap();
+    // PEER_NET <-> BLOCKCHAIN
+    let (to_blockchain_net, from_net_blockchain) = SpscQueue::new(256, buffer_size).unwrap();
+    let (to_net_blockchain, from_blockchain_net) = SpscQueue::new(256, buffer_size).unwrap();
 
 
-    // PEER_NET && RPC
+    // PEER_NET <-> RPC
     let (to_net_rpc, from_rpc_net) = SpscQueue::new(128, buffer_size).unwrap();
     let (to_rpc_net, from_net_rpc) = SpscQueue::new(128, buffer_size).unwrap();
 
+    // PEER_NET <-> SOCIAL
+    let (to_net_social, from_social_net) = SpscQueue::new(128, buffer_size).unwrap();
+    let (to_social_net, from_net_social) = SpscQueue::new(128, buffer_size).unwrap();
 
-    // CORE && RPC
-    let (to_rpc_core, from_core_rpc) = SpscQueue::new(128, buffer_size).unwrap();
-    let (to_core_rpc, from_rpc_core) = SpscQueue::new(128, buffer_size).unwrap();
+    // RPC <-> SOCIAL
+    let (to_social_rpc, from_rpc_social) = SpscQueue::new(128, buffer_size).unwrap();
+    let (to_rpc_social, from_social_rpc) = SpscQueue::new(128, buffer_size).unwrap();
 
 
-    // START CORE
-    let core_handle = start_core(
-        config.core.clone(), 
+    // BLOCKCHAIN <-> RPC
+    let (to_rpc_blockchain, from_blockchain_rpc) = SpscQueue::new(128, buffer_size).unwrap();
+    let (to_blockchain_rpc, from_rpc_blockchain) = SpscQueue::new(128, buffer_size).unwrap();
+
+
+    // START BLOCKCHAIN
+    let blockchain_handle = blockchain::start_blockchain(
+        config.blockchain.clone(), 
         vec![
-            (to_net_core, NETWORKER),
-            (to_rpc_core, RPC),
+            (to_net_blockchain, NETWORKER),
+            (to_rpc_blockchain, RPC),
         ],
         vec![
-            (from_net_core, NETWORKER),
-            (from_rpc_core, RPC)
+            (from_net_blockchain, NETWORKER),
+            (from_rpc_blockchain, RPC)
         ],
     ).unwrap();
 
 
     // START RPC
-    let rpc_handle = start_rpc(
-        config.server.clone(), 
+    let rpc_handle = rpc::start_rpc(
+        config.rpc.clone(), 
         vec![
             (to_net_rpc, NETWORKER),
-            (to_core_rpc, CORE),
+            (to_blockchain_rpc, BLOCKCHAIN),
+            (to_social_rpc, SOCIAL),
         ],
         vec![
             (from_net_rpc, NETWORKER),
-            (from_core_rpc, CORE),
+            (from_blockchain_rpc, BLOCKCHAIN),
+            (from_social_rpc, SOCIAL),
+        ],
+    ).unwrap();
+
+    // START SOCIAL
+    let social_handle = social::start_social(
+        config.social.clone(), 
+        vec![
+            (to_net_social, NETWORKER),
+            (to_rpc_social, RPC),
+        ],
+        vec![
+            (from_rpc_social, RPC),
+            (from_net_social, NETWORKER),
         ],
     ).unwrap();
 
 
     // START NETWORKER
-    let net_handle = start_peer_networker(
+    let net_handle = peer_net::start_peer_networker(
         config.peer.clone(), 
         vec![
-            (to_core_net, CORE),
+            (to_blockchain_net, BLOCKCHAIN),
             (to_rpc_net, RPC),
+            (to_social_net, SOCIAL),
         ],
         vec![
-            (from_core_net, CORE), 
-            (from_rpc_net, RPC)
+            (from_blockchain_net, BLOCKCHAIN), 
+            (from_rpc_net, RPC),
+            (from_social_net, SOCIAL),
         ],
     ).unwrap();
 
 
-    let _ = core_handle.join().unwrap();
     let _ = net_handle.join().unwrap();
+    let _ = blockchain_handle.join().unwrap();
+    let _ = social_handle.join().unwrap();
     let _ = rpc_handle.join().unwrap();
 }

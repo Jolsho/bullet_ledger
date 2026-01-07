@@ -4,7 +4,7 @@
 bind_addr = "127.0.0.1:4141"
 
 # Database path.
-db_path = "assets/peers.sqlit3"
+db_path = "assets/peers.sqlite3"
 
 # Path to file with pub/priv key pair.
 key_path = "assets/keys_peer.bullet"
@@ -37,7 +37,7 @@ peer_threshold = 200
 
 
 
-[core]
+[blockchain]
 # Poll timeout (in milliseconds) for idle core tasks.
 idle_polltimeout = 100
 
@@ -50,28 +50,35 @@ event_len = 128
 # TRX pool capacity.
 pool_cap = 8
 
-# TRX count per block
-trxs_per_block = 500
-
 # How many bulletproofs to validate at once
 bullet_count = 1
 
-# Database path.
-db_path = "assets/ledger.sqlit3"
-
-# Database cache size.
-db_cache_size = 256
-
 epoch_interval = 240
 
+# Ledger path.
+ledger_path = "assets/ledger"
+
+# Ledger cache size.
+ledger_cache_size = 256
+
+# Ledger size == 10GB
+ledger_map_size = 10_000_000_000
+
+# Ledger domain specific tag.
+ledger_tag = "bullet_ledger"
+
+# Block Size == 2Mb
+block_size = 2_000_000
 
 
-[server]
+
+
+[rpc]
 # The address and port your server will bind to.
 bind_addr = "127.0.0.1:4040"
 
 # Database path.
-db_path = "assets/rpc.sqlit3"
+db_path = "assets/rpc.sqlite3"
 
 # Path to file with pub/priv key pair.
 key_path = "assets/keys_rpc.bullet"
@@ -98,3 +105,12 @@ idle_timeout = 2
 
 # Poll timeout (in milliseconds) for idle network polls.
 idle_polltimeout = 100
+
+
+[social]
+
+# Poll timeout (in milliseconds) for idle network polls.
+idle_polltimeout = 100
+
+# Event queue capacity (used for cross-actor event passing).
+event_len = 128
